@@ -1,0 +1,52 @@
+name: organizer
+
+services:
+  app:
+    build: .
+    image: organizer:latest
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-200}
+    volumes:
+      - organizer-data:/data
+
+  # HTTPS davanti all'app (necessario per installare la PWA su Android e per l'uso offline).
+  # Avvio:  docker compose --profile https up -d
+  # In locale usa una CA interna di Caddy; con un dominio vero (SITE_ADDRESS=todo.miodominio.it
+  # e CADDY_TLS="tls tu@mail.it") prende un certificato Let's Encrypt in automatico.
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["https"]
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+      CADDY_TLS: ${CADDY_TLS:-tls internal}
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+
+# Inline (non un file montato) così funziona anche dove Docker non condivide la cartella del progetto.
+# "$$" = "$" letterale: le variabili le risolve Caddy all'avvio, non compose.
+configs:
+  caddyfile:
+    content: |
+      {$$SITE_ADDRESS} {
+      	{$$CADDY_TLS}
+      	encode gzip
+      	reverse_proxy app:8080
+      }
+
+volumes:
+  organizer-data:
+  caddy-data:
+  caddy-config:
