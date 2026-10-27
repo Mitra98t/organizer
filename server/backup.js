@@ -3,13 +3,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { db, tx, migrate, DATA_DIR, UPLOAD_DIR, SCHEMA_VERSION } from './db.js';
+import { db, tx, migrate, DATA_DIR, UPLOAD_DIR, SCHEMA_VERSION, currentWorkspace } from './db.js';
+import { acc, workspaceById, syncMirror } from './accounts.js';
 import { route, saveUpload } from './api.js';
 import { fail } from './util.js';
 
 const KEEP_SAFETY_COPIES = 3;
-// Sessioni e token non si ripristinano: dopo il ripristino tutti rientrano con le credenziali del backup.
-const SKIP = new Set(['sessions', 'mail_tokens']);
+// Account, sessioni e inviti non stanno più nei dati del workspace (vedi accounts.js): non si ripristinano.
+const SKIP = new Set(['sessions', 'mail_tokens', 'invites']);
 
 function checkBackup(file) {
   let src;
@@ -28,7 +29,6 @@ function checkBackup(file) {
     if (!v || !hasUsers) fail(400, 'Il file non è un backup di Organizer');
     if (v > SCHEMA_VERSION) fail(400, 'Il backup viene da una versione più nuova dell\'app: aggiorna prima l\'app');
     migrate(src);
-    if (!src.prepare('SELECT COUNT(*) AS n FROM users WHERE is_admin = 1').get().n) fail(400, 'Il backup non contiene nessun amministratore');
     return src.prepare('SELECT COUNT(*) AS n FROM users').get().n;
   } finally {
     src.close();
@@ -37,9 +37,10 @@ function checkBackup(file) {
 
 function safetyCopy() {
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-  const file = path.join(DATA_DIR, `pre-restore-${stamp}.db`);
+  const prefix = `pre-restore-ws${currentWorkspace()}-`; // copie separate per workspace
+  const file = path.join(DATA_DIR, `${prefix}${stamp}.db`);
   db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
-  const old = fs.readdirSync(DATA_DIR).filter(f => /^pre-restore-.*\.db$/.test(f)).sort().reverse().slice(KEEP_SAFETY_COPIES);
+  const old = fs.readdirSync(DATA_DIR).filter(f => f.startsWith(prefix) && f.endsWith('.db')).sort().reverse().slice(KEEP_SAFETY_COPIES);
   for (const f of old) fs.rmSync(path.join(DATA_DIR, f), { force: true });
   return path.basename(file);
 }
@@ -50,7 +51,7 @@ route('POST', '/api/admin/restore', async ({ req }) => {
   const { stored } = await saveUpload(req);
   const file = path.join(UPLOAD_DIR, stored);
   try {
-    const users = checkBackup(file);
+    checkBackup(file);
     const copy = safetyCopy();
     // foreign_keys si può cambiare solo fuori da una transazione: le tabelle si svuotano e ricopiano in blocco.
     db.exec('PRAGMA foreign_keys = OFF');
@@ -66,11 +67,16 @@ route('POST', '/api/admin/restore', async ({ req }) => {
         }
         const bad = db.prepare('PRAGMA foreign_key_check').all();
         if (bad.length) fail(400, 'Il backup contiene riferimenti incoerenti: ripristino annullato');
+        // Gli utenti del backup restano come nomi (ex membri); i membri attuali vengono dagli account.
+        db.exec("UPDATE users SET pass = '', member = 0");
       });
     } finally {
       db.exec('DETACH DATABASE src');
       db.exec('PRAGMA foreign_keys = ON');
     }
+    const ws = workspaceById(currentWorkspace());
+    for (const m of acc.prepare('SELECT user_id FROM memberships WHERE workspace_id = ?').all(ws.id)) syncMirror(ws, m.user_id);
+    const users = acc.prepare('SELECT COUNT(*) AS n FROM memberships WHERE workspace_id = ?').get(ws.id).n;
     // I file caricati non sono nel .db: si segnala quanti documenti e allegati non hanno il file sul server.
     const stores = db.prepare(`SELECT stored FROM documents WHERE stored IS NOT NULL
       UNION ALL SELECT stored FROM mail_attachments WHERE stored IS NOT NULL`).all();

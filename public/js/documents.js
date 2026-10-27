@@ -67,7 +67,8 @@ export function viewDocuments() {
       }),
       h('div.seg',
         h('button', { class: byItem && 'on', onclick: () => setGroup('item'), title: 'Per articolo' }, icon('box')),
-        h('button', { class: !byItem && 'on', onclick: () => setGroup('kind'), title: 'Per tipo' }, icon('cols')))),
+        h('button', { class: !byItem && 'on', onclick: () => setGroup('kind'), title: 'Per tipo' }, icon('cols'))),
+      h('a.btn.ghost', { href: '#/magazzino', title: 'Torna al magazzino' }, icon('box'), h('span.only-wide', 'Magazzino'))),
     h('div.toolbar.cats',
       DOC_KINDS.filter(k => counts.get(k)).map(k =>
         h('button.chip', { class: ui.docKindF === k && 'on', onclick: () => { ui.docKindF = ui.docKindF === k ? null : k; render(); } },

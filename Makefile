@@ -8,7 +8,7 @@ APP_PORT    ?= 8080
 
 .DEFAULT_GOAL := help
 .PHONY: help up down restart logs ps https wait reset demo seed backup restore \
-        users invite reset-password make-admin mail-helper mail-helper-uninstall remote remote-off remote-status shell info test dev dev-reset dev-demo confirm
+        users invite workspaces reset-password make-admin mail-helper mail-helper-uninstall remote remote-off remote-status shell info test dev dev-reset dev-demo confirm
 
 help: ## Mostra questo elenco
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -78,16 +78,19 @@ restore: confirm ## Ripristina un backup: make restore FILE=backups/organizer-..
 users: ## Elenca gli utenti
 	$(COMPOSE) exec -T app $(NODE) server/cli.js users
 
-invite: ## Genera un codice invito (valido 7 giorni)
-	$(COMPOSE) exec -T app $(NODE) server/cli.js invite
+invite: ## Codice invito (7 giorni) per un workspace: make invite [WS=2] (predefinito: il primo)
+	$(COMPOSE) exec -T app $(NODE) server/cli.js invite $(WS)
+
+workspaces: ## Elenca i workspace
+	$(COMPOSE) exec -T app $(NODE) server/cli.js workspaces
 
 reset-password: ## Nuova password per un utente: make reset-password UTENTE=marco
 	@test -n "$(UTENTE)" || { echo "Uso: make reset-password UTENTE=nome"; exit 1; }
 	$(COMPOSE) exec -T app $(NODE) server/cli.js reset-password $(UTENTE)
 
-make-admin: ## Rende amministratore un utente: make make-admin UTENTE=marco
-	@test -n "$(UTENTE)" || { echo "Uso: make make-admin UTENTE=nome"; exit 1; }
-	$(COMPOSE) exec -T app $(NODE) server/cli.js make-admin $(UTENTE)
+make-admin: ## Rende admin di un workspace: make make-admin UTENTE=marco [WS=2]
+	@test -n "$(UTENTE)" || { echo "Uso: make make-admin UTENTE=nome [WS=id]"; exit 1; }
+	$(COMPOSE) exec -T app $(NODE) server/cli.js make-admin $(UTENTE) $(WS)
 
 # ---------- accesso da fuori casa (Tailscale) ----------
 TAILSCALE ?= $(shell command -v tailscale 2>/dev/null || echo /Applications/Tailscale.app/Contents/MacOS/Tailscale)

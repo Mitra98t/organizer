@@ -1,5 +1,5 @@
 // Rubrica: elenco filtrabile, scheda modificabile, mail collegate a ogni contatto.
-import { h, icon, S, ui, api, act, render, copy, trashIt, autosize } from './core.js';
+import { h, icon, S, ui, api, act, render, copy, trashIt, autosize, save } from './core.js';
 import { entryRow } from './views.js';
 
 const lc = s => String(s || '').toLowerCase();
@@ -20,21 +20,56 @@ function unknownRecipients() {
   return [...seen.values()].sort();
 }
 
+const GROUPS = {
+  company: { label: 'azienda', none: 'Senza azienda' },
+  timeslot: { label: 'fascia oraria', none: 'Senza fascia oraria' },
+  role: { label: 'ruolo', none: 'Senza ruolo' },
+};
+
 const newMail = c => window.dispatchEvent(new CustomEvent('org:quick', { detail: `m: >${c.email} ` }));
 
 export function viewContacts(id) {
   if (id) return viewContact(+id);
   const D = S.data;
   const f = lc(ui.contactFilter.trim());
-  const list = D.contacts.filter(c => !f || [c.name, c.email, c.company, c.role, c.phone, c.notes].some(v => lc(v).includes(f)));
+  const filtered = D.contacts.filter(c => !f || [c.name, c.email, c.company, c.role, c.timeslot, c.phone, c.notes].some(v => lc(v).includes(f)));
   const unknown = unknownRecipients();
+
+  // Raggruppamento dinamico: per azienda, fascia oraria o ruolo; ogni valore usato diventa una tab.
+  const field = GROUPS[ui.contactGroup] ? ui.contactGroup : null;
+  const valueOf = c => (field ? (c[field] || '').trim() : '');
+  const counts = new Map();
+  if (field) for (const c of filtered) counts.set(valueOf(c), (counts.get(valueOf(c)) || 0) + 1);
+  const values = [...counts.keys()].sort((a, b) => (!a) - (!b) || a.localeCompare(b));
+  if (ui.contactTab != null && !counts.has(ui.contactTab)) ui.contactTab = null;
+  const list = field && ui.contactTab != null ? filtered.filter(c => valueOf(c) === ui.contactTab) : filtered;
+  const setGroup = g => { ui.contactGroup = g; ui.contactTab = null; save('org.contactGroup', g); render(); };
+  const row = c => {
+    const n = mailsOf(c).filter(e => !e.done_at).length;
+    return h('a.item-row.contact-row', { href: `#/contatti/${c.id}` },
+      h('span.cname', c.name || h('span.muted', 'senza nome')),
+      c.company && field !== 'company' && h('span.muted', c.company),
+      h('span.item-meta',
+        c.timeslot && field !== 'timeslot' && h('span.slot', icon('cal'), c.timeslot),
+        c.email && h('span.mono', c.email),
+        c.phone && h('span', c.phone),
+        n > 0 && h('span.badge', { title: 'mail da mandare' }, n)));
+  };
 
   return h('div.view',
     h('div.toolbar',
       h('input.filter', {
         type: 'search', placeholder: 'Filtra per nome, email, azienda, telefono…', value: ui.contactFilter, 'data-fk': 'contactfilter',
         oninput: ev => { ui.contactFilter = ev.target.value; render(); },
-      })),
+      }),
+      h('div.seg.group-seg',
+        h('span.muted', 'Raggruppa'),
+        [['none', 'no'], ...Object.entries(GROUPS).map(([k, g]) => [k, g.label])].map(([k, label]) =>
+          h('button', { class: (field || 'none') === k && 'on', onclick: () => setGroup(k) }, label)))),
+    field && values.length > 0 && h('div.toolbar.cats',
+      h('button.chip', { class: ui.contactTab == null && 'on', onclick: () => { ui.contactTab = null; render(); } }, 'Tutti', h('span.n', filtered.length)),
+      values.map(v => h('button.chip', { class: ui.contactTab === v && 'on', onclick: () => { ui.contactTab = v; render(); } },
+        v || GROUPS[field].none, h('span.n', counts.get(v))))),
     h('form.inline-add', {
       onsubmit: ev => {
         ev.preventDefault();
@@ -52,16 +87,12 @@ export function viewContacts(id) {
       h('p', 'La rubrica è vuota.'),
       h('p', 'I contatti compaiono nei suggerimenti di ', h('code.k', '>'), ' e nel campo "A" delle mail, e ', h('code.k', '>nome'), ' diventa la sua email.')),
     D.contacts.length > 0 && !list.length && h('div.empty', h('p', 'Nessun contatto corrisponde al filtro.')),
-    h('div.items', list.map(c => {
-      const n = mailsOf(c).filter(e => !e.done_at).length;
-      return h('a.item-row.contact-row', { href: `#/contatti/${c.id}` },
-        h('span.cname', c.name || h('span.muted', 'senza nome')),
-        c.company && h('span.muted', c.company),
-        h('span.item-meta',
-          c.email && h('span.mono', c.email),
-          c.phone && h('span', c.phone),
-          n > 0 && h('span.badge', { title: 'mail da mandare' }, n)));
-    })),
+    // "Tutti" con un raggruppamento attivo: un blocco per valore, nell'ordine delle tab.
+    field && ui.contactTab == null
+      ? values.map(v => h('section.cgroup',
+        h('div.day-h', v || GROUPS[field].none, h('span.muted', ` · ${counts.get(v)}`)),
+        h('div.items', filtered.filter(c => valueOf(c) === v).map(row))))
+      : h('div.items', list.map(row)),
     unknown.length > 0 && h('div.unknown',
       h('div.day-h', 'Destinatari usati, non in rubrica'),
       h('div.item-chips', unknown.map(a => h('button.item-chip', {
@@ -86,8 +117,9 @@ function viewContact(id) {
     h('div.grid',
       field('email', 'Email', { type: 'email', class: 'mono' }),
       field('phone', 'Telefono', { type: 'tel' }),
-      field('company', 'Azienda', { 'data-ac': 'company', autocomplete: 'off' }),
-      field('role', 'Ruolo'),
+      field('company', 'Azienda', { 'data-ac': 'cfield', 'data-ac-field': 'company', autocomplete: 'off' }),
+      field('role', 'Ruolo', { 'data-ac': 'cfield', 'data-ac-field': 'role', autocomplete: 'off' }),
+      field('timeslot', 'Fascia oraria', { 'data-ac': 'cfield', 'data-ac-field': 'timeslot', autocomplete: 'off', placeholder: 'es. mattina, 14-18, Shenzhen (UTC+8)' }),
     ),
     h('textarea.proj-notes', {
       rows: 2, value: c.notes, placeholder: 'Note: orari, come preferisce essere contattato, riferimenti…', 'data-fk': `cnotes-${c.id}`,

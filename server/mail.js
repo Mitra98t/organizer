@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { db, UPLOAD_DIR } from './db.js';
+import { db, UPLOAD_DIR, currentWorkspace } from './db.js';
 import { route, getEntry, insertId, saveUpload } from './api.js';
 import { fail, now, str } from './util.js';
 
@@ -133,7 +133,8 @@ route('GET', '/api/entries/:id/eml', ({ res, params, user }) => {
 route('POST', '/api/entries/:id/send', ({ params, user }) => {
   const e = getEntry(params.id, user.id);
   db.prepare('DELETE FROM mail_tokens WHERE expires_at < ?').run(now());
-  const token = crypto.randomBytes(24).toString('base64url');
+  // Il token porta il numero del workspace (<id>x<casuale>): l'helper non ha sessione per saperlo.
+  const token = `${currentWorkspace()}x${crypto.randomBytes(24).toString('base64url')}`;
   db.prepare('INSERT INTO mail_tokens (token_hash, entry_id, expires_at) VALUES (?, ?, ?)')
     .run(sha(token), e.id, new Date(Date.now() + TOKEN_MINUTES * 60e3).toISOString());
   return { token };

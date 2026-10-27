@@ -4,10 +4,11 @@
 // data-ac="email": campo di indirizzi separati da virgola (A, Cc), suggerisce la rubrica senza simboli.
 // data-ac="code" / "project": tutto il campo è un codice di magazzino / un progetto; scegliere un
 // suggerimento conferma subito il campo (come premere Invio). data-ac-self esclude un codice.
-// data-ac="company": tutto il campo è un'azienda già usata in rubrica; scegliendola il campo si salva.
+// data-ac="cfield" + data-ac-field="company|timeslot|role": un campo dei contatti; suggerisce i valori già
+// usati in rubrica e scegliendone uno il campo si salva.
 // Nella barra in alto: modalità 'item' (/categoria, @progetto) e 'project' (@progetto padre).
 // Un solo menu flottante per tutta l'app, agganciato al campo che ha il focus: sopravvive ai re-render.
-import { h, S, fmtDay, hue, catStyle } from './core.js';
+import { h, S, fmtDay, hue, catStyle, projHue } from './core.js';
 import { parseDate, parseQuick, today, fromYmd } from './parse.js';
 
 const box = h('div.ac', { hidden: true, role: 'listbox' });
@@ -55,7 +56,7 @@ function update(el) {
   const pos = el.selectionStart;
   if (pos == null || pos !== el.selectionEnd) return close();
   if (el.dataset.ac === 'email') return updateEmail(el, pos);
-  if (['code', 'project', 'company'].includes(el.dataset.ac)) return updateWhole(el);
+  if (['code', 'project', 'cfield'].includes(el.dataset.ac)) return updateWhole(el);
   const kind = kindOf(el);
   const allowed = el.dataset.acOnly || { item: '/@', project: '@' }[kind] || '@#!+>';
   const m = el.value.slice(0, pos).match(/(?:^|\s)([@#!+>/])([^\s@#!+>/]*)$/);
@@ -80,8 +81,8 @@ function updateWhole(el) {
   if (el.dataset.ac === 'code') {
     const self = lc(el.dataset.acSelf);
     items = itemSuggestions(q, i => lc(i.code) !== self).map(i => ({ ...i, insert: i.label }));
-  } else if (el.dataset.ac === 'company') {
-    items = companySuggestions(q);
+  } else if (el.dataset.ac === 'cfield') {
+    items = contactFieldSuggestions(el.dataset.acField, q);
     commit = 'change';
     // Già scritta per intero ed è l'unica: niente menu.
     if (items.length === 1 && lc(items[0].insert) === q) items = [];
@@ -93,10 +94,10 @@ function updateWhole(el) {
   draw();
 }
 
-function companySuggestions(ql) {
+function contactFieldSuggestions(field, ql) {
   const counts = new Map();
   for (const c of S.data.contacts) {
-    const name = c.company?.trim();
+    const name = c[field]?.trim();
     if (!name) continue;
     const key = lc(name);
     const cur = counts.get(key) || { name, n: 0 };
@@ -124,7 +125,7 @@ function projectSuggestions(ql) {
     .filter(p => p.status !== 'closed' || ql)
     .sort((a, b) => rank(a.tag, ql) - rank(b.tag, ql) || order[a.status] - order[b.status] || a.tag.localeCompare(b.tag))
     .slice(0, 8)
-    .map(p => ({ label: `@${p.tag}`, hint: lc(p.name) !== lc(p.tag) ? p.name : '', extra: STATUS[p.status] || '', hue: hue(p.tag) }));
+    .map(p => ({ label: `@${p.tag}`, hint: lc(p.name) !== lc(p.tag) ? p.name : '', extra: STATUS[p.status] || '', hue: projHue(p) }));
 }
 
 function updateEmail(el, pos) {
@@ -182,7 +183,7 @@ function suggest(sig, q, kind) {
   }
 
   if (sig === '+') {
-    return D.users
+    return D.members
       .filter(u => !ql || lc(u.username).includes(ql) || lc(u.name).includes(ql))
       .map(u => ({ insert: `+${u.username}`, label: `+${u.username}`, hint: lc(u.name) !== lc(u.username) ? u.name : '' }));
   }

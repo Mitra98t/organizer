@@ -3,7 +3,7 @@ import { db } from './db.js';
 import { route, insertId } from './api.js';
 import { fail, now, str } from './util.js';
 
-const FIELDS = { name: 120, email: 200, phone: 60, company: 120, role: 120, notes: 20000 };
+const FIELDS = { name: 120, email: 200, phone: 60, company: 120, role: 120, timeslot: 60, notes: 20000 };
 
 function fields(b) {
   const f = {};

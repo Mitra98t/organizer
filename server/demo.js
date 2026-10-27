@@ -1,35 +1,47 @@
 // Carica dati dimostrativi (progetti, todo, mail, diario, magazzino con documenti).
-//   node server/demo.js           rifiuta se il database contiene già voci o articoli
-//   node server/demo.js --force   aggiunge comunque
-// Utenti creati se mancanti: demo (admin) e marco, password "demo1234".
+//   node server/demo.js                rifiuta se il workspace contiene già voci o articoli
+//   node server/demo.js --force        aggiunge comunque
+//   node server/demo.js --workspace 2  in un workspace preciso (predefinito: il primo; se non c'è, "Demo")
+// Account creati se mancanti: demo (admin del workspace) e marco, password "demo1234".
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { db, tx, UPLOAD_DIR } from './db.js';
+import { db, tx, UPLOAD_DIR, withWorkspace } from './db.js';
 import { hashPassword } from './auth.js';
+import { acc, createWorkspace, addMember, workspaceById, roleIn, syncMirror } from './accounts.js';
 import { createEntry, updateEntry, addLog, syncEntryItems } from './api.js';
 import { today, addDays } from '../public/js/parse.js';
 import { now } from './util.js';
 
 const DEMO_PASSWORD = 'demo1234';
+const wsArg = process.argv.includes('--workspace') ? process.argv[process.argv.indexOf('--workspace') + 1] : null;
 
+async function ensureAccount(username, name) {
+  const found = acc.prepare('SELECT id, username, name FROM users WHERE username = ?').get(username);
+  if (found) return found;
+  acc.prepare('INSERT INTO users (username, name, pass, created_at) VALUES (?, ?, ?, ?)')
+    .run(username, name, await hashPassword(DEMO_PASSWORD), now());
+  return acc.prepare('SELECT id, username, name FROM users WHERE username = ?').get(username);
+}
+
+const demo = await ensureAccount('demo', 'Demo');
+const marco = await ensureAccount('marco', 'Marco');
+const firstId = acc.prepare('SELECT id FROM workspaces WHERE deleted_at IS NULL ORDER BY id LIMIT 1').get()?.id;
+const ws = workspaceById(wsArg || firstId) || createWorkspace('Demo', demo.id);
+addMember(ws, demo.id, 'admin');
+if (roleIn(ws.id, demo.id) !== 'admin') {
+  acc.prepare("UPDATE memberships SET role = 'admin' WHERE workspace_id = ? AND user_id = ?").run(ws.id, demo.id);
+  syncMirror(ws, demo.id);
+}
+addMember(ws, marco.id, 'member');
+
+withWorkspace(ws, () => {
 const counts = db.prepare('SELECT (SELECT COUNT(*) FROM entries) AS e, (SELECT COUNT(*) FROM items) AS i').get();
 if ((counts.e || counts.i) && !process.argv.includes('--force')) {
-  console.error(`Il database contiene già ${counts.e} voci e ${counts.i} articoli. Usa "make reset" prima, oppure --force.`);
+  console.error(`Il workspace "${ws.name}" contiene già ${counts.e} voci e ${counts.i} articoli. Usa "make reset" prima, oppure --force.`);
   process.exit(1);
 }
 
-async function ensureUser(username, name, isAdmin) {
-  const u = db.prepare('SELECT id, username, name, is_admin FROM users WHERE username = ?').get(username);
-  if (u) return u;
-  const pass = await hashPassword(DEMO_PASSWORD);
-  db.prepare('INSERT INTO users (username, name, pass, is_admin, created_at) VALUES (?, ?, ?, ?, ?)')
-    .run(username, name, pass, isAdmin ? 1 : 0, now());
-  return db.prepare('SELECT id, username, name, is_admin FROM users WHERE username = ?').get(username);
-}
-
-const demo = await ensureUser('demo', 'Demo', true);
-const marco = await ensureUser('marco', 'Marco', false);
 const t = today();
 
 tx(() => {
@@ -106,5 +118,6 @@ tx(() => {
 });
 
 const c = db.prepare('SELECT (SELECT COUNT(*) FROM entries) AS e, (SELECT COUNT(*) FROM items) AS i, (SELECT COUNT(*) FROM projects) AS p').get();
-console.log(`Dati demo caricati: ${c.e} voci, ${c.p} progetti, ${c.i} articoli.`);
+console.log(`Dati demo caricati in "${ws.name}": ${c.e} voci, ${c.p} progetti, ${c.i} articoli.`);
 console.log(`Accesso: demo / ${DEMO_PASSWORD}  (oppure marco / ${DEMO_PASSWORD})`);
+});

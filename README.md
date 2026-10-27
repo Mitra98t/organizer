@@ -85,7 +85,10 @@ Cliccando un documento nella scheda di un articolo si apre il visualizzatore con
 
 - **PDF** (con PDF.js, incluso nel progetto in `public/vendor/pdfjs`, nessuna connessione esterna) e **immagini**: clicchi un punto e lasci una nota lì; il segnaposto numerato resta al suo posto a ogni zoom. Cliccando una nota il documento scorre al punto, e viceversa.
 - **File di testo**: anteprima del contenuto.
+- **Link a un PDF** (es. un datasheet su mouser.com): il server lo scarica al momento e lo mostra come un PDF caricato, con le stesse note. Solo indirizzi internet pubblici (mai la rete locale), solo PDF, massimo 60 MB (`REMOTE_MAX_MB`); se il sito mostra una pagina o una protezione anti-bot al posto del file, compare il motivo e il link originale.
 - **Qualsiasi altro file o link** (firmware, archivi, …): niente anteprima, ma le **note generali** sul file funzionano per tutti.
+
+Su schermo largo la pagina del documento (e la revisione) è alta quanto la finestra: scorre solo il documento.
 
 La pagina **Documenti** (barra laterale; su telefono dal pulsante in Magazzino) raccoglie tutti i documenti per articolo o per tipo, con filtri e "con note aperte". Spunta fino a 3 documenti e **Rivedi affiancati**: si aprono uno accanto all'altro, ognuno con le sue note (si aprono nel pannello in cui clicchi). Tipo e versione di un documento si cambiano in qualsiasi momento, qui, nella scheda dell'articolo o nel visualizzatore; se cambia un firmware, l'articolo prende la versione del firmware più recente.
 
@@ -107,7 +110,7 @@ Senza helper (per esempio dal telefono) **Manda** e **App mail** aprono l'app di
 
 ## Contatti
 
-Rubrica condivisa con nome, email, telefono, azienda, ruolo e note, tutto modificabile; il campo azienda suggerisce le aziende già presenti in rubrica. I contatti vengono suggeriti nei campi A/Cc e dopo `>` nella barra rapida; `>luca` diventa l'email del contatto "Luca …". Nella scheda di un contatto ci sono le sue mail e "Nuova mail"; i destinatari usati ma non in rubrica si aggiungono con un clic.
+Rubrica condivisa con nome, email, telefono, azienda, ruolo, **fascia oraria** (testo libero: "mattina", "14-18", "Shenzhen (UTC+8)"…) e note, tutto modificabile; azienda, ruolo e fascia oraria suggeriscono i valori già usati. **Raggruppa** per azienda, fascia oraria o ruolo: ogni valore diventa una tab con il suo conteggio. I contatti vengono suggeriti nei campi A/Cc e dopo `>` nella barra rapida; `>luca` diventa l'email del contatto "Luca …". Nella scheda di un contatto ci sono le sue mail e "Nuova mail"; i destinatari usati ma non in rubrica si aggiungono con un clic.
 
 ## Cestino
 
@@ -115,15 +118,25 @@ Eliminare sposta nel cestino: voci (con le loro sotto-attività), progetti, arti
 
 ## Magazzino
 
+Ogni articolo ha uno **stato**: attivo, **outdated** (superato) o **scartato** (valutato e lasciato perdere), da scegliere nella sua scheda. Negli elenchi e nelle colonne compare come pallino (arancione / rosso) e in cima ci sono i filtri per stato e "nascondi scartati".
+
 Ogni articolo può avere un **link** facoltativo (pagina prodotto, repo, wiki). Nella vista per categoria un articolo si sposta in un'altra categoria **trascinandolo** nella colonna (o in "Nuova categoria").
+
+**Colori**: progetti e categorie hanno un colore automatico, che si può cambiare (pagina del progetto → Colore; categoria → clic sul pallino colorato nella vista per categoria o nella scheda dell'articolo; "A" torna all'automatico).
 
 Il colore di un articolo dipende dalla sua categoria, ovunque compaia (elenchi, `#CODICE` nel testo, suggerimenti); senza categoria è grigio. Si può filtrare per categoria o passare alla vista **per categoria**, a colonne sugli schermi larghi. Nella composizione e nei collegamenti ai progetti il codice si autocompleta; se non esiste viene creato.
 
 Ogni articolo ha codice, descrizione, categoria, versione firmware, posizione, quantità e note (pinout, procedura di flash…). Gli carichi documenti (firmware, datasheet, schemi, manuali, foto) o link esterni. Un file di tipo firmware con versione aggiorna da solo il campo Firmware, e per ogni file si vede lo sha256. "Composizione" collega prodotti e schede. In basso trovi tutte le voci che citano quel `#CODICE`. Se rinomini un codice, i riferimenti nel testo delle voci vengono aggiornati.
 
-## Più persone
+## Workspace e più persone
 
-Impostazioni → Persone → **Crea invito**: mandi il link, chi lo apre si registra (link valido 7 giorni, una sola registrazione). Tutto è condiviso tranne le voci e i progetti marcati **privati**. Le modifiche arrivano a tutti in tempo reale.
+Un **workspace** è un insieme di dati separato (progetti, voci, magazzino, contatti, documenti) con i suoi membri. Lo stesso account può stare in più workspace con ruoli diversi: admin in uno, membro in un altro. Si cambia dal selettore in cima alla barra laterale (su telefono: Impostazioni → Workspace); chiunque può crearne uno nuovo e ne diventa admin.
+
+- **Inviti**: Impostazioni → Persone → **Crea invito** (solo admin) e mandi il link. Chi non ha un account si registra; chi ce l'ha già accede con le sue credenziali (o, se è già collegato, preme "Entra nel workspace"). Link valido 7 giorni, per una persona.
+- **Admin del workspace**: invita, toglie persone, nomina altri admin, rinomina o elimina il workspace, fa backup e ripristino. Un workspace ha sempre almeno un admin.
+- Dentro un workspace tutto è condiviso tranne le voci e i progetti marcati **privati**. Le modifiche arrivano in tempo reale solo a chi è nello stesso workspace.
+
+Sul server: `accounts.db` contiene account, sessioni, workspace e inviti; ogni workspace ha il suo file (`organizer.db` il primo, `ws-<id>.db` gli altri). Aggiornando da una versione senza workspace, l'installazione esistente diventa il workspace "Principale" (nome cambiabile con `WORKSPACE_NAME`) con gli stessi utenti e ruoli.
 
 ## Telefono e altri computer
 
@@ -163,9 +176,10 @@ Caddy ottiene il certificato Let's Encrypt da solo. Puoi togliere la porta `8080
 
 ```bash
 make users
+make workspaces
 make reset-password UTENTE=marco
-make make-admin UTENTE=marco
-make invite
+make make-admin UTENTE=marco WS=2
+make invite WS=2
 ```
 
 Variabili: `APP_PORT` (porta pubblicata, predefinita 8080), `MAX_UPLOAD_MB` (predefinito 200), `TRASH_DAYS` (predefinito 30).

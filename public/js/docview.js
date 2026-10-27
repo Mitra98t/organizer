@@ -20,7 +20,11 @@ function loadPdfjs() {
   return pdfjsLib;
 }
 
+// Link che puntano a un PDF: si caricano dal vivo attraverso il server (vedi server/remote.js).
+const isPdfLink = d => d.url && /\.pdf$/i.test((() => { try { return new URL(d.url).pathname; } catch { return ''; } })());
+
 function kindOf(d) {
+  if (isPdfLink(d)) return 'pdf';
   if (d.url) return 'link';
   if (d.mime === 'application/pdf' || /\.pdf$/i.test(d.filename || '')) return 'pdf';
   if (/^image\/(png|jpeg|gif|webp)$/.test(d.mime || '')) return 'image';
@@ -86,15 +90,25 @@ window.addEventListener('hashchange', () => {
 
 function fail(v, msg) {
   v.status = 'error';
-  v.pagesEl.replaceChildren(h('div.empty', h('p', msg)));
+  const d = S.data.docById.get(v.id);
+  v.pagesEl.replaceChildren(h('div.empty', h('p', msg),
+    d?.url && h('a.btn', { href: d.url, target: '_blank', rel: 'noopener noreferrer' }, icon('link'), 'Apri il link originale')));
 }
 
 async function openPdf(v, d) {
   v.pagesEl.replaceChildren(h('div.empty', 'Caricamento del PDF…'));
   try {
     const pdfjs = await loadPdfjs();
+    // PDF da link: lo scarica il server; si legge prima la risposta per mostrare il motivo di un errore.
+    let data;
+    if (d.url) {
+      v.pagesEl.replaceChildren(h('div.empty', 'Scarico il PDF dal link…'));
+      const r = await fetch(`api/docs/${d.id}/remote`, { credentials: 'same-origin' });
+      if (!r.ok) return fail(v, (await r.json().catch(() => null))?.error || `Errore ${r.status}`);
+      data = new Uint8Array(await r.arrayBuffer());
+    }
     v.task = pdfjs.getDocument({
-      url: docFileUrl(d, { inline: true }),
+      ...(data ? { data } : { url: docFileUrl(d, { inline: true }) }),
       withCredentials: true,
       standardFontDataUrl: `${PDFJS}standard_fonts/`,
       wasmUrl: `${PDFJS}wasm/`,
@@ -456,10 +470,12 @@ export function docMeta(d) {
     }));
 }
 
-const fileButtons = d => !d.url && [
+const fileButtons = d => (d.url
+  ? h('a.icon-btn', { href: d.url, target: '_blank', rel: 'noopener noreferrer', title: `Apri il link originale: ${d.url}` }, icon('link'))
+  : [
   h('a.icon-btn', { href: docFileUrl(d, { inline: true }), target: '_blank', rel: 'noopener', title: 'Apri il file originale' }, icon('link')),
   h('a.icon-btn', { href: docFileUrl(d), download: '', title: 'Scarica' }, icon('download')),
-];
+]);
 
 const notesChip = (d, v) => h('button.chip', { class: notesShown(v) && 'on', onclick: () => toggleNotes(v), title: 'Mostra o nascondi le note' },
   icon('log'), `note ${notesOf(d.id).filter(visible).length}`);

@@ -1,13 +1,21 @@
+// Database dei dati: uno per workspace (file SQLite separati). Quale usare lo decide la richiesta in corso:
+// `db` è un riferimento che punta al database del workspace attivo (AsyncLocalStorage), così il resto
+// del server scrive `db.prepare(...)` senza sapere quale workspace sta servendo.
+// Utenti, sessioni e appartenenze ai workspace stanno invece in accounts.db (vedi accounts.js).
 import { DatabaseSync } from 'node:sqlite';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'node:fs';
 import path from 'node:path';
 
 export const DATA_DIR = path.resolve(process.env.DATA_DIR || 'data');
-export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
+export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads'); // condivisa: i file hanno nomi casuali
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-export const db = new DatabaseSync(path.join(DATA_DIR, 'organizer.db'));
-db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
+export function openSqlite(file) {
+  const conn = new DatabaseSync(path.join(DATA_DIR, file));
+  conn.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
+  return conn;
+}
 
 // Ogni elemento è una migrazione; non modificare quelle già rilasciate, aggiungerne di nuove in coda.
 const MIGRATIONS = [
@@ -200,6 +208,24 @@ const MIGRATIONS = [
   );
   CREATE INDEX entry_projects_project ON entry_projects(project_id);
   `,
+  // v6: fascia oraria dei contatti; colori scelti a mano (tinta 0..359) per progetti e categorie.
+  `
+  ALTER TABLE contacts ADD COLUMN timeslot TEXT NOT NULL DEFAULT '';
+  ALTER TABLE projects ADD COLUMN hue INTEGER;
+  CREATE TABLE category_colors (
+    name TEXT PRIMARY KEY COLLATE NOCASE,
+    hue INTEGER NOT NULL
+  );
+  `,
+  // v7: workspace. La tabella users di ogni workspace diventa una copia dei suoi membri (nomi e ruolo)
+  // per le chiavi esterne e i nomi; password e sessioni vivono in accounts.db. member = 0: ex membro.
+  `
+  ALTER TABLE users ADD COLUMN member INTEGER NOT NULL DEFAULT 1;
+  `,
+  // v8: stato dell'articolo: '' attivo, 'outdated' superato, 'discarded' scartato (valutato e poi lasciato perdere).
+  `
+  ALTER TABLE items ADD COLUMN status TEXT NOT NULL DEFAULT '';
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
@@ -220,7 +246,35 @@ export function migrate(conn) {
   }
 }
 
-migrate(db);
+const als = new AsyncLocalStorage();
+const opened = new Map(); // file → connessione
+
+export function openDataDb(file) {
+  if (!opened.has(file)) {
+    const conn = openSqlite(file);
+    migrate(conn);
+    opened.set(file, conn);
+  }
+  return opened.get(file);
+}
+
+// Esegue fn con `db` che punta al database del workspace ws ({ id, file }).
+export const withWorkspace = (ws, fn) => als.run({ ws: ws.id, db: openDataDb(ws.file) }, fn);
+export const currentWorkspace = () => als.getStore()?.ws ?? null;
+
+export const db = new Proxy({}, {
+  get(_, key) {
+    const conn = als.getStore()?.db;
+    if (!conn) throw new Error('Nessun workspace attivo per questa operazione');
+    const v = conn[key];
+    return typeof v === 'function' ? v.bind(conn) : v;
+  },
+});
+
+export function closeAll() {
+  for (const conn of opened.values()) conn.close();
+  opened.clear();
+}
 
 export function tx(fn) {
   db.exec('BEGIN IMMEDIATE');

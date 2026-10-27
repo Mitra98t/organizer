@@ -1,6 +1,7 @@
 import {
   h, icon, S, ui, RS, api, sync, setRenderer, render, renderStatus, connectLive, disconnectLive, liveClosed,
-  flushOutbox, addEntry, loadCache, clearLocal, dueInfo, autosize, toast, isMine, dayDiff, save, hue, act, catStyle,
+  flushOutbox, addEntry, loadCache, clearLocal, dueInfo, autosize, toast, isMine, dayDiff, save, hue, act, catStyle, tagStyle,
+  switchWorkspace, newWorkspace,
 } from './core.js';
 import { initAutocomplete, acCheck } from './autocomplete.js';
 import { viewContacts } from './contacts.js';
@@ -125,7 +126,7 @@ function previewItem(text) {
   }
   if (p.project) {
     const known = D?.projectByTag.has(p.project.toLowerCase());
-    chips.push(h('span.pv.tag', { class: known ? null : 'warn', style: `--h:${hue(p.project.toLowerCase())}` }, `@${p.project}`, !known && h('i', ' inesistente')));
+    chips.push(h('span.pv.tag', { class: known ? null : 'warn', style: tagStyle(p.project) }, `@${p.project}`, !known && h('i', ' inesistente')));
   }
   return chips;
 }
@@ -137,7 +138,7 @@ function previewProject(text) {
   if (p.name) chips.push(h('span.pv', icon('folder'), p.name));
   if (p.parent) {
     const known = D?.projectByTag.has(p.parent.toLowerCase());
-    chips.push(h('span.pv', 'dentro'), h('span.pv.tag', { class: known ? null : 'warn', style: `--h:${hue(p.parent.toLowerCase())}` }, `@${p.parent}`, !known && h('i', ' inesistente')));
+    chips.push(h('span.pv', 'dentro'), h('span.pv.tag', { class: known ? null : 'warn', style: tagStyle(p.parent) }, `@${p.parent}`, !known && h('i', ' inesistente')));
   }
   return chips;
 }
@@ -155,7 +156,7 @@ function renderPreview() {
     if (p.kind !== 'todo' || p.kindExplicit) chips.push(h('span.kpill', { class: `k-${p.kind}` }, { todo: 'todo', mail: 'mail', note: 'nota' }[p.kind]));
     if (p.due === null) chips.push(h('span.pv', 'senza scadenza'));
     else if (p.due) { const d = dueInfo(p.due); chips.push(h('span.pv.due', { class: d.cls || null }, icon('cal'), d.label)); }
-    if (p.project) chips.push(h('span.pv.tag', { style: `--h:${hue(p.project.toLowerCase())}` }, `@${p.project}`, !D?.projectByTag.has(p.project.toLowerCase()) && h('i', ' nuovo')));
+    if (p.project) chips.push(h('span.pv.tag', { style: tagStyle(p.project) }, `@${p.project}`, !D?.projectByTag.has(p.project.toLowerCase()) && h('i', ' nuovo')));
     for (const c of p.codes) chips.push(h('span.pv.code', c, !D?.itemByCode.has(c.toUpperCase()) && h('i', ' nuovo')));
     if (p.assignee) {
       const known = D?.users.some(u => [u.username, u.name].some(n => n?.toLowerCase() === p.assignee.toLowerCase()));
@@ -254,6 +255,7 @@ function buildShell() {
     h('div.app',
       h('aside.side',
         h('div.brand', h('img', { src: 'icons/icon.svg', alt: '' }), h('span', 'Organizer')),
+        wsSwitch,
         // Documenti solo nella barra laterale (su telefono si raggiunge dal Magazzino): le tab in basso sono già 6.
         h('nav.side-nav', [...NAV.slice(0, 5), ['documenti', 'Documenti', 'file'], ...NAV.slice(5)].map(([k, l, i]) => navLink(k, l, i, navLinks, 'nav')),
           h('span.sep'), navLink('cestino', 'Cestino', 'trash', navLinks, 'nav'),
@@ -299,6 +301,53 @@ function updateBadges() {
   navLinks.get('cestino').badge.classList.add('muted-badge');
 }
 
+// ---------- workspace ----------
+const wsLabel = h('span.ws-name');
+const wsMenu = h('div.ws-menu', { hidden: true });
+const wsSwitch = h('div.ws-switch',
+  h('button.ws-btn', { title: 'Cambia workspace', onclick: () => { wsMenu.hidden = !wsMenu.hidden; renderWsMenu(); } }, icon('folder'), wsLabel, h('span.caret', '▾')),
+  wsMenu);
+document.addEventListener('click', ev => { if (!wsSwitch.contains(ev.target)) wsMenu.hidden = true; });
+
+function renderWsMenu() {
+  const D = S.data;
+  if (!D?.workspace) return;
+  wsMenu.replaceChildren(
+    ...D.workspaces.map(w => h('button.ws-item', {
+      class: w.id === D.workspace.id ? 'on' : null,
+      onclick: () => { if (w.id !== D.workspace.id) switchWorkspace(w.id); },
+    }, h('span', w.name), h('span.muted', w.role === 'admin' ? 'admin' : 'membro'))),
+    h('button.ws-item.new', { onclick: newWorkspace }, icon('plus'), 'Nuovo workspace'));
+}
+
+// Account senza workspace (tolto da tutti): si crea il proprio o si aspetta un invito.
+function viewNoWorkspace() {
+  return h('div.empty.no-ws',
+    h('p', h('b', 'Non fai parte di nessun workspace.')),
+    h('p', 'Creane uno (ne sarai admin) oppure apri il link di un invito.'),
+    h('button.btn.primary', { onclick: newWorkspace }, icon('plus'), 'Crea un workspace'));
+}
+
+// Invito aperto da chi è già collegato: si entra nel workspace con il proprio account.
+function viewJoin(code) {
+  const box = h('div.auth-card', h('p.muted', 'Controllo l\'invito…'));
+  api('GET', `/invites/${encodeURIComponent(code)}`).then(r => {
+    box.replaceChildren(
+      h('h2', `Entra in "${r.workspace}"`),
+      h('p.muted', `Sei collegato come ${S.me.username}: il workspace si aggiungerà ai tuoi.`),
+      h('button.btn.primary', {
+        onclick: () => act(async () => {
+          await api('POST', `/invites/${encodeURIComponent(code)}/accept`);
+          clearLocal();
+          location.hash = '#/agenda';
+          location.reload();
+        }),
+      }, 'Entra nel workspace'),
+      h('a.muted', { href: '#/agenda' }, 'Non ora'));
+  }).catch(e => box.replaceChildren(h('h2', 'Invito non valido'), h('p.muted', e.message), h('a', { href: '#/agenda' }, 'Torna all\'app')));
+  return h('div.view', box);
+}
+
 function renderApp() {
   if (RS.hold) {
     RS.pending = true;
@@ -312,6 +361,8 @@ function renderApp() {
   // Su telefono Documenti non ha una tab: si evidenzia Magazzino, da cui ci si arriva.
   for (const [k, { a }] of tabLinks) a.classList.toggle('on', k === v.nav || (v.nav === 'documenti' && k === 'magazzino'));
   titleEl.textContent = v.title;
+  wsLabel.textContent = S.data?.workspace?.name || (S.noWorkspace ? 'Nessun workspace' : '…');
+  if (!wsMenu.hidden) renderWsMenu();
   document.title = `${v.title} · Organizer`;
   if (r.name !== 'cerca' && document.activeElement !== searchInput && searchInput.value) { searchInput.value = ''; ui.q = ''; }
   renderPreview();
@@ -324,8 +375,12 @@ function renderApp() {
     ? { fk: a.dataset.fk, value: a.value, s: a.selectionStart, e: a.selectionEnd } : null;
   RS.busy = true;
   try {
-    viewEl.replaceChildren(S.data ? v.fn(r.id, r.query) : h('div.empty', 'Caricamento…'));
+    viewEl.replaceChildren(
+      r.name === 'registrati' && r.query.code ? viewJoin(r.query.code)
+        : S.noWorkspace ? viewNoWorkspace()
+          : S.data ? v.fn(r.id, r.query) : h('div.empty', 'Caricamento…'));
     viewEl.classList.toggle('wide', r.name === 'd' || r.name === 'review');
+    document.body.classList.toggle('doc-page', !!S.data && (r.name === 'd' || r.name === 'review'));
   } catch (e) {
     console.error(e);
     viewEl.replaceChildren(h('div.empty', `Errore di visualizzazione: ${e.message}`));
@@ -348,8 +403,11 @@ function renderApp() {
 function renderAuth() {
   shellBuilt = false;
   const r = route();
-  const mode = S.setup ? 'setup' : r.name === 'registrati' ? 'register' : 'login';
-  const titles = { setup: 'Primo avvio: crea l\'amministratore', register: 'Registrati con un invito', login: 'Accedi' };
+  const code = r.query.code || '';
+  const mode = S.setup ? 'setup' : r.name === 'registrati' && !r.query.login ? 'register' : 'login';
+  const titles = { setup: 'Primo avvio: crea il tuo account', register: 'Registrati con un invito', login: code ? 'Accedi ed entra nel workspace' : 'Accedi' };
+  const inviteInfo = h('p.muted');
+  if (code) api('GET', `/invites/${encodeURIComponent(code)}`).then(i => { inviteInfo.textContent = `Invito per il workspace "${i.workspace}".`; }).catch(e => { inviteInfo.textContent = e.message; });
   const err = h('p.err');
   const form = h('form.auth-card', {
     onsubmit: async ev => {
@@ -361,7 +419,7 @@ function renderAuth() {
         S.me = res.user;
         S.setup = false;
         clearLocal();
-        if (mode === 'register') location.hash = '#/agenda';
+        if (mode === 'register' || code) location.hash = '#/agenda';
         start();
       } catch (e) {
         err.textContent = e.message;
@@ -370,14 +428,17 @@ function renderAuth() {
   },
   h('div.brand', h('img', { src: 'icons/icon.svg', alt: '' }), h('span', 'Organizer')),
   h('h2', titles[mode]),
-  mode === 'register' && h('label.f', h('span', 'Codice invito'), h('input', { name: 'code', value: r.query.code || '', required: true, autocapitalize: 'characters' })),
+  code && inviteInfo,
+  mode === 'register' && h('label.f', h('span', 'Codice invito'), h('input', { name: 'code', value: code, required: true, autocapitalize: 'characters' })),
+  mode === 'login' && code && h('input', { type: 'hidden', name: 'code', value: code }),
+  mode === 'setup' && h('label.f', h('span', 'Nome del workspace'), h('input', { name: 'workspace', placeholder: 'es. Laboratorio, Lavoro, Casa' })),
   h('label.f', h('span', 'Username'), h('input', { name: 'username', required: true, autocomplete: 'username', autocapitalize: 'none', autocorrect: 'off' })),
   mode !== 'login' && h('label.f', h('span', 'Nome'), h('input', { name: 'name', autocomplete: 'name', placeholder: 'come ti vedono gli altri' })),
   h('label.f', h('span', 'Password'), h('input', { name: 'password', type: 'password', required: true, minlength: mode === 'login' ? null : 8, autocomplete: mode === 'login' ? 'current-password' : 'new-password' })),
   err,
   h('button.btn.primary', { type: 'submit' }, mode === 'login' ? 'Entra' : 'Crea account'),
   mode === 'login' && h('p.muted', 'Hai un invito? ', h('a', { href: '#/registrati' }, 'Registrati')),
-  mode === 'register' && h('p.muted', h('a', { href: '#/' }, 'Ho già un account')));
+  mode === 'register' && h('p.muted', 'Hai già un account? ', h('a', { href: `#/registrati?code=${encodeURIComponent(code)}&login=1` }, 'Accedi ed entra nel workspace')));
   root.replaceChildren(h('div.auth', form), h('div#toasts'));
 }
 
@@ -468,6 +529,11 @@ if ('serviceWorker' in navigator && isSecureContext) navigator.serviceWorker.reg
       return render();
     }
     S.me = r.user;
+    // La cache locale è di un workspace: se nel frattempo è cambiato (altra scheda, altro dispositivo) non vale.
+    if (S.data && S.data.workspace?.id !== r.workspace?.id) {
+      clearLocal();
+      S.data = null;
+    }
     start();
   } catch {
     if (S.me) {

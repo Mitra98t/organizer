@@ -44,6 +44,11 @@ export const ui = {
   docOnlyNotes: false,
   docGroup: load('org.docGroup', 'item'),
   docSel: new Set(),
+  catPicker: null,
+  itemStatusF: null,
+  hideDiscarded: load('org.hideDiscarded', false),
+  contactGroup: load('org.contactGroup', 'none'),
+  contactTab: null,
 };
 
 // ---------- render ----------
@@ -184,6 +189,9 @@ function indexData(d) {
   d.projectItems ||= [];
   d.docNotes ||= [];
   d.entryProjects ||= [];
+  d.categoryColors ||= [];
+  d.members = d.users.filter(u => u.member !== 0); // membri attuali del workspace (gli altri sono ex, per i nomi)
+  d.catHueOf = new Map(d.categoryColors.map(c => [c.name.toLowerCase(), c.hue]));
   d.entryById = new Map(d.entries.map(e => [e.id, e]));
   d.projectById = new Map(d.projects.map(p => [p.id, p]));
   d.projectByTag = new Map(d.projects.map(p => [p.tag.toLowerCase(), p]));
@@ -207,6 +215,27 @@ function indexData(d) {
   d.projectsOfItem = group(d.projectItems, 'item_id');
   d.subprojects = group(d.projects.filter(p => p.parent_id && d.projectById.has(p.parent_id)), 'parent_id');
   return d;
+}
+
+// Cambio di workspace: i dati in memoria e in cache sono dell'altro, quindi si riparte da capo.
+export async function switchWorkspace(id) {
+  await api('POST', `/workspaces/${id}/switch`);
+  clearLocal();
+  location.hash = '#/agenda';
+  location.reload();
+}
+
+export async function newWorkspace() {
+  const name = prompt('Nome del nuovo workspace (ne sarai admin):');
+  if (!name?.trim()) return;
+  try {
+    await api('POST', '/workspaces', { name: name.trim() });
+    clearLocal();
+    location.hash = '#/agenda';
+    location.reload();
+  } catch (e) {
+    toast(e.message, { err: true });
+  }
 }
 
 export function loadCache() {
@@ -238,11 +267,17 @@ export function sync() {
         save('org.cache', d);
         S.data = indexData(d);
         S.me = d.me;
+        S.noWorkspace = false;
         render();
         updateBadge();
       } while (again);
     } catch (e) {
-      if (!e.offline && e.status !== 401) console.warn('sync', e);
+      // 409: l'account non fa parte di nessun workspace (tolto da tutti): si propone di crearne uno.
+      if (e.status === 409) {
+        S.noWorkspace = true;
+        S.data = null;
+        render();
+      } else if (!e.offline && e.status !== 401) console.warn('sync', e);
     } finally {
       syncing = null;
     }
@@ -407,7 +442,25 @@ export const DOC_KINDS = ['firmware', 'datasheet', 'schema', 'manuale', 'foto', 
 export const docFileUrl = (d, { inline = false } = {}) =>
   `api/docs/${d.id}/file?v=${(d.sha256 || '').slice(0, 12)}${inline ? '&inline=1' : ''}`;
 
-export const catStyle = cat => (cat ? `--h:${hue(String(cat).toLowerCase())}` : null);
+// Colore scelto a mano se c'è, altrimenti quello automatico.
+export const projHue = p => p?.hue ?? hue(p?.tag ?? '');
+// Per un @tag scritto a mano: il colore del progetto se esiste, altrimenti quello che avrà.
+export const tagStyle = tag => {
+  const p = S.data?.projectByTag.get(String(tag).toLowerCase());
+  return `--h:${p ? projHue(p) : hue(String(tag).toLowerCase())}`;
+};
+export const catHue = cat => S.data?.catHueOf?.get(String(cat).toLowerCase()) ?? hue(String(cat).toLowerCase());
+export const catStyle = cat => (cat ? `--h:${catHue(cat)}` : null);
+
+// Tinte proposte nel selettore di colore (stesse luminosità dei colori automatici, in chiaro e in scuro).
+export const HUES = [0, 25, 45, 85, 130, 160, 190, 210, 235, 265, 290, 320];
+
+// Selettore di colore: tinte fisse + "automatico". onPick(hue | null).
+export function huePicker(current, auto, onPick) {
+  return h('div.hues',
+    HUES.map(x => h('button.hue', { class: current === x ? 'on' : null, style: `--h:${x}`, title: `Tinta ${x}`, onclick: () => onPick(x) })),
+    h('button.hue.auto', { class: current == null ? 'on' : null, style: `--h:${auto}`, title: 'Colore automatico', onclick: () => onPick(null) }, 'A'));
+}
 export const itemAttrs = it => (it?.category ? { class: 'cat', style: catStyle(it.category) } : {});
 
 // Progetti di una voce: prima il principale, poi gli altri (solo quelli visibili e non nel cestino).

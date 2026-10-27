@@ -510,7 +510,7 @@ a.code, .item-row .code, .item-chip .code, .cat-item .code, .ac-l.code, .pv.code
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; flex: none; }
 .seg button { border: 0; background: var(--panel); color: var(--muted); padding: 6px 9px; display: inline-flex; }
 .seg button.on { background: var(--accent-soft); color: var(--text); }
-.cat-cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px; align-items: start; }
+.cat-cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 540px), 1fr)); gap: 12px; align-items: start; }
 .cat-col { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
 .cat-col.cat { border-top: 3px solid hsl(var(--h) 60% 52%); }
 .cat-h { display: flex; align-items: center; gap: 8px; padding: 9px 12px; font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--line); }
@@ -625,8 +625,6 @@ body.doc-focus .side, body.doc-focus .top, body.doc-focus .quick, body.doc-focus
 body.doc-focus .main { padding-bottom: 0; }
 body.doc-focus #view { padding: 8px 10px 0; }
 body.doc-focus .docview .head { margin: 0 0 8px; }
-body.doc-focus .dv-scroll { height: calc(100dvh - 100px); }
-body.doc-focus .dv-notes { top: 8px; max-height: calc(100dvh - 60px); }
 @media (max-width: 900px) {
   .only-desktop { display: none !important; }
   .dv { grid-template-columns: 1fr; }
@@ -670,12 +668,8 @@ body.doc-focus .dv-notes { top: 8px; max-height: calc(100dvh - 60px); }
 .rv-title:hover { text-decoration: underline; }
 .rv .dv { grid-template-columns: minmax(0, 1fr) 270px; gap: 8px; }
 .rv .dv.no-notes { grid-template-columns: minmax(0, 1fr); }
-.rv .dv-scroll { height: calc(100dvh - 230px); }
 .rv .dv-hint { display: none; }
-.rv .dv-notes { top: 130px; max-height: calc(100dvh - 230px); }
 body.doc-focus .review .head { margin: 0 0 6px; }
-body.doc-focus .rv .dv-scroll { height: calc(100dvh - 130px); }
-body.doc-focus .rv .dv-notes { top: 8px; max-height: calc(100dvh - 130px); }
 @media (max-width: 1100px) {
   .doc-groups { grid-template-columns: 1fr; }
 }
@@ -692,3 +686,67 @@ body.doc-focus .rv .dv-notes { top: 8px; max-height: calc(100dvh - 130px); }
 /* ---------- progetti di una voce (editor) ---------- */
 .projs-b { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 13px; }
 .projs-b .sub-in { font-size: 13px; padding: 3px 7px; }
+
+/* ---------- selettore di colore ---------- */
+.hues { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.hue { width: 20px; height: 20px; border-radius: 50%; padding: 0; border: 2px solid transparent; background: hsl(var(--h) 60% 52%); cursor: pointer; }
+.hue.on { border-color: var(--text); box-shadow: 0 0 0 2px var(--panel); }
+.hue.auto { background: none; border: 1.5px dashed hsl(var(--h) 60% 52%); color: var(--muted); font-size: 10px; font-weight: 700; line-height: 1; }
+.hue.auto.on { border-style: solid; color: var(--text); }
+button.cdot.pick { border: 0; padding: 0; cursor: pointer; }
+button.cdot.pick:hover { box-shadow: 0 0 0 3px color-mix(in srgb, var(--text) 25%, transparent); }
+.cat-pick { padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
+.view > .cat-pick { border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 10px; background: var(--panel); }
+
+/* ---------- contatti raggruppati ---------- */
+.group-seg { align-items: center; }
+.group-seg > span { padding: 0 8px; font-size: 12px; }
+.group-seg button { font-size: 13px; }
+.cgroup { margin-top: 12px; }
+.slot { color: var(--today); }
+
+/* ---------- workspace ---------- */
+.ws-switch { position: relative; margin: -6px 0 10px; }
+.ws-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); font-weight: 600; font-size: 13.5px; text-align: left; }
+.ws-btn .ws-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-btn .caret { color: var(--muted); font-size: 11px; }
+.ws-menu { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 40; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 28px rgb(0 0 0 / 22%); padding: 4px; display: flex; flex-direction: column; }
+.ws-item { display: flex; align-items: center; gap: 8px; justify-content: space-between; border: 0; background: none; padding: 7px 9px; border-radius: 7px; text-align: left; font-size: 13.5px; }
+.ws-item:hover { background: var(--panel-2); }
+.ws-item.on { background: var(--accent-soft); font-weight: 600; }
+.ws-item.new { justify-content: flex-start; color: var(--muted); border-top: 1px solid var(--line); border-radius: 0 0 7px 7px; margin-top: 2px; }
+.ws-item .ic { width: 14px; height: 14px; }
+.ws-list { margin: 6px 0 10px; }
+.no-ws { padding-top: 60px; }
+
+/* ---------- stato degli articoli ---------- */
+.sdot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; }
+.sdot.s-outdated { background: var(--today); }
+.sdot.s-discarded { background: var(--danger); }
+.st-discarded .code, .st-discarded .name { opacity: 0.55; }
+.st-discarded .name { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--muted) 60%, transparent); }
+.status-seg { margin-left: 8px; }
+.status-seg button { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; }
+.peek-status { display: flex; align-items: center; gap: 6px; margin: -4px 0 8px; font-size: 12px; color: var(--muted); }
+.item-row .sdot, .cat-item .sdot { align-self: center; }
+
+/* Pagina documento e revisione su schermo largo: alta quanto la finestra, la pagina non scorre;
+   scorrono solo il documento (e la colonna delle note). Su telefono resta lo scorrimento normale. */
+@media (min-width: 901px) {
+  body.doc-page .main { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
+  body.doc-page #view { flex: 1; min-height: 0; display: flex; flex-direction: column; padding-bottom: 10px; }
+  body.doc-page .docview, body.doc-page .review { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  body.doc-page .docview > .dv, body.doc-page .rv, body.doc-page .rv-pane > .dv { flex: 1; min-height: 0; }
+  body.doc-page .dv, body.doc-page .rv { grid-template-rows: minmax(0, 1fr); align-items: stretch; }
+  body.doc-page .rv-pane { min-height: 0; }
+  body.doc-page .dv-main { min-height: 0; }
+  body.doc-page .dv-main > .empty { margin: auto; }
+  body.doc-page .dv-scroll { flex: 1; height: auto; min-height: 0; }
+  body.doc-page .dv-notes { position: static; max-height: none; min-height: 0; }
+}
+
+/* Gli esempi nei messaggi (code.k) possono andare a capo: su telefono una riga lunga allargava la pagina
+   e spingeva fuori dallo schermo la barra in basso. E nessun contenuto deve allargare la pagina. */
+.empty code.k, .qhelp code.k, .syntax code.k { white-space: normal; overflow-wrap: anywhere; }
+.main { min-width: 0; }
+html, body { overflow-x: clip; }

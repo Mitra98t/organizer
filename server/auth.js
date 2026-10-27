@@ -1,6 +1,6 @@
+// Password, cookie di sessione e validazioni. Le sessioni stanno in accounts.js.
 import crypto from 'node:crypto';
-import { db } from './db.js';
-import { now, isHttps } from './util.js';
+import { isHttps } from './util.js';
 
 const SESSION_MAX_AGE = 400 * 24 * 3600; // limite massimo dei browser: sul telefono non si vuole rifare il login
 
@@ -19,25 +19,6 @@ export async function verifyPassword(pw, stored) {
   const key = await scrypt(pw, Buffer.from(salt, 'hex'));
   const expected = Buffer.from(hash, 'hex');
   return expected.length === key.length && crypto.timingSafeEqual(key, expected);
-}
-
-const sha = t => crypto.createHash('sha256').update(t).digest('hex');
-
-export function createSession(userId) {
-  const token = crypto.randomBytes(32).toString('base64url');
-  db.prepare('INSERT INTO sessions (token_hash, user_id, created_at, last_seen) VALUES (?, ?, ?, ?)')
-    .run(sha(token), userId, now(), now());
-  return token;
-}
-
-export function userFromToken(token) {
-  if (!token) return null;
-  return db.prepare(`SELECT u.id, u.username, u.name, u.is_admin FROM sessions s
-    JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?`).get(sha(token)) || null;
-}
-
-export function destroySession(token) {
-  if (token) db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(sha(token));
 }
 
 export function sessionCookie(req, token) {

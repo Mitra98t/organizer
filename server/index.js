@@ -6,11 +6,13 @@ import { routes } from './api.js';
 import './contacts.js';
 import './mail.js';
 import './backup.js';
+import './workspaces.js';
+import './remote.js';
 import { purgeExpired } from './trash.js';
-import { userFromToken } from './auth.js';
+import { resolveAuth, workspaceById, acc } from './accounts.js';
 import { bump } from './events.js';
 import { HttpError, sendJson, parseCookies, readJson } from './util.js';
-import { DATA_DIR, db } from './db.js';
+import { DATA_DIR, withWorkspace, closeAll } from './db.js';
 
 const PORT = +process.env.PORT || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -46,9 +48,19 @@ async function handleApi(req, res, url) {
   if (req.method !== 'GET' && req.headers['x-requested-with'] !== 'organizer') throw new HttpError(403, 'Richiesta non valida');
 
   const token = parseCookies(req.headers.cookie).sid;
-  const user = userFromToken(token);
+  const auth = resolveAuth(token);
+  // user.is_admin = admin del workspace attivo; workspace_id = workspace attivo della sessione (o null).
+  const user = auth && {
+    id: auth.account.id, username: auth.account.username, name: auth.account.name,
+    is_admin: auth.role === 'admin' ? 1 : 0, workspace_id: auth.ws?.id ?? null,
+  };
   if (r.auth !== 'none' && !user) throw new HttpError(401, 'Accesso richiesto');
-  if (r.auth === 'admin' && !user.is_admin) throw new HttpError(403, 'Solo per amministratori');
+  if (r.auth === 'admin' && !user.is_admin) throw new HttpError(403, 'Solo per gli admin del workspace');
+  if (r.ws && !user?.workspace_id) throw new HttpError(409, 'Non fai parte di nessun workspace');
+
+  // I link per l'helper delle mail non hanno sessione: il workspace è scritto nel token (<id>x<casuale>).
+  let ws = auth?.ws ?? null;
+  if (url.pathname.startsWith('/api/mailpkg/')) ws = workspaceById(url.pathname.split('/')[3].match(/^(\d+)x/)?.[1]) || null;
 
   let bodyPromise;
   const ctx = {
@@ -57,8 +69,8 @@ async function handleApi(req, res, url) {
     params: Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(match[i + 1])])),
     body: () => (bodyPromise ??= readJson(req)),
   };
-  const out = await r.handler(ctx);
-  if (req.method !== 'GET') bump(user?.id);
+  const out = ws ? await withWorkspace(ws, () => r.handler(ctx)) : await r.handler(ctx);
+  if (req.method !== 'GET') bump(user?.id, r.ws ? ws?.id : null);
   if (res.headersSent) return;
   if (out === undefined) {
     res.writeHead(204);
@@ -121,8 +133,10 @@ const server = http.createServer(async (req, res) => {
 
 // Il cestino si svuota da solo degli elementi più vecchi di TRASH_DAYS: all'avvio e poi ogni 6 ore.
 const cleanTrash = () => {
+  // Ogni workspace ha il suo cestino.
   try {
-    const n = purgeExpired();
+    let n = 0;
+    for (const w of acc.prepare('SELECT id, file FROM workspaces WHERE deleted_at IS NULL').all()) n += withWorkspace(w, purgeExpired);
     if (n) console.log(`Cestino: eliminati ${n} file scaduti`);
   } catch (e) {
     console.error('Pulizia cestino fallita', e);
@@ -137,4 +151,4 @@ server.listen(PORT, HOST, () => {
 });
 
 // Chiudere SQLite integra il WAL nel file principale: i backup del volume restano un singolo .db.
-for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { server.close(); db.close(); process.exit(0); });
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { server.close(); closeAll(); acc.close(); process.exit(0); });

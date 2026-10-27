@@ -1,7 +1,8 @@
 import {
   h, icon, S, ui, RS, api, act, render, richText, dueInfo, dayDiff, fmtDay, fmtLongDay, fmtTime, fmtSize,
   userName, toast, save, patchEntry, addEntry, isMine, localDay, autosize, stop, copy, hue, trashIt, contactLabel,
-  descendants, ancestors, catStyle, itemAttrs, docFileUrl, projectsOf, DOC_KINDS,
+  descendants, ancestors, catStyle, itemAttrs, docFileUrl, projectsOf, DOC_KINDS, projHue, catHue, huePicker,
+  switchWorkspace, newWorkspace,
 } from './core.js';
 import { docMeta } from './docview.js';
 import { today, addDays } from './parse.js';
@@ -10,7 +11,7 @@ import { draggable } from './dnd.js';
 
 const KIND_LABEL = { todo: 'Todo', mail: 'Mail', note: 'Nota' };
 const KIND_PILL = { todo: 'todo', mail: 'mail', note: 'nota' };
-const projTag = p => h('a.tag', { href: `#/p/${p.id}`, onclick: stop, style: `--h:${hue(p.tag)}` }, `@${p.tag}`);
+const projTag = p => h('a.tag', { href: `#/p/${p.id}`, onclick: stop, style: `--h:${projHue(p)}` }, `@${p.tag}`);
 const STATUS_LABEL = { open: 'Aperti', paused: 'In pausa', closed: 'Chiusi' };
 export { DOC_KINDS } from './core.js';
 
@@ -154,8 +155,8 @@ function entryEditor(e) {
               act(() => api('POST', `/entries/${e.id}/projects`, { project_id: p.id }));
             }),
           }))),
-      D.users.length > 1 && h('label.f', h('span', 'Assegnata'),
-        selectOf(e.assignee_id ? String(e.assignee_id) : '', [['', '— nessuno —'], ...D.users.map(u => [String(u.id), u.name || u.username])],
+      D.members.length > 1 && h('label.f', h('span', 'Assegnata'),
+        selectOf(e.assignee_id ? String(e.assignee_id) : '', [['', '— nessuno —'], ...D.members.map(u => [String(u.id), u.name || u.username])],
           v => patchEntry(e, { assignee_id: v ? +v : null }))),
       h('button.chip', { class: e.pinned && 'on', onclick: () => patchEntry(e, { pinned: !e.pinned }) }, icon('star'), 'evidenza'),
       e.created_by === me.id && h('button.chip', { class: e.private && 'on', onclick: () => patchEntry(e, { private: !e.private }) }, icon('lock'), 'privata'),
@@ -222,8 +223,8 @@ export function viewAgenda() {
       [['all', 'Tutto'], ['todo', 'Todo'], ['mail', 'Mail']].map(([k, label]) =>
         h('button.chip', { class: ui.agendaKind === k && 'on', onclick: () => setKind(k) },
           k !== 'all' && h('span.kdot', { class: `k-${k}` }), label, h('span.n', kindCount[k]))),
-      D.users.length > 1 && h('span.tsep'),
-      D.users.length > 1 && h('button.chip', { class: ui.mine && 'on', onclick: () => { ui.mine = !ui.mine; save('org.mine', ui.mine); render(); } }, icon('user'), 'solo mie')),
+      D.members.length > 1 && h('span.tsep'),
+      D.members.length > 1 && h('button.chip', { class: ui.mine && 'on', onclick: () => { ui.mine = !ui.mine; save('org.mine', ui.mine); render(); } }, icon('user'), 'solo mie')),
     pendingRows(),
     !list.length && ui.agendaKind !== 'all' && kindCount.all > 0 && empty(h('p', 'Niente di questo tipo. ', h('a', { href: '#/agenda', onclick: ev => { ev.preventDefault(); setKind('all'); } }, 'Mostra tutto'))),
     !kindCount.all && !S.outbox.length && empty(
@@ -283,7 +284,7 @@ function projectCard(p, stats, { compact = false, dnd = false } = {}) {
   const subs = descendants(p.id).length;
   return h('a.card', { href: `#/p/${p.id}`, class: compact ? 'compact' : null, 'data-pid': dnd ? p.id : null, draggable: 'false' },
     h('div.card-h', h('span.card-t', p.name), p.private ? icon('lock') : null, p.status !== 'open' && h('span.muted', STATUS_LABEL[p.status].toLowerCase().replace(/i$/, 'o'))),
-    h('div.card-tag', { style: `--h:${hue(p.tag)}` }, `@${p.tag}`),
+    h('div.card-tag', { style: `--h:${projHue(p)}` }, `@${p.tag}`),
     h('div.card-m',
       h('span', subs && s.open !== own.open ? `${s.open} aperte (${own.open} qui)` : `${s.open} aperte`),
       s.over > 0 && h('span.over', `${s.over} scadute`),
@@ -333,7 +334,7 @@ draggable({
   data: el => +el.dataset.pid,
   ghost: id => {
     const p = S.data.projectById.get(id);
-    return [h('span', p.name), h('span.tag', { style: `--h:${hue(p.tag)}` }, `@${p.tag}`)];
+    return [h('span', p.name), h('span.tag', { style: `--h:${projHue(p)}` }, `@${p.tag}`)];
   },
   target: (el, id) => {
     const card = el.closest('.pforest .card[data-pid]');
@@ -424,6 +425,7 @@ export function viewProject(id) {
       h('label.f', h('span', 'Tag @'), h('input.mono', { value: p.tag, size: 14, 'data-fk': `ptag-${p.id}`, onchange: ev => patch({ tag: ev.target.value }) })),
       h('label.f', h('span', 'Stato'), selectOf(p.status, [['open', 'Aperto'], ['paused', 'In pausa'], ['closed', 'Chiuso']], v => patch({ status: v }))),
       h('label.f', h('span', 'Dentro'), selectOf(p.parent_id ? String(p.parent_id) : '', parentOptions, v => patch({ parent_id: v ? +v : null }))),
+      h('div.f', h('span', 'Colore'), huePicker(p.hue ?? null, hue(p.tag), x => patch({ hue: x }))),
       p.created_by === me.id && h('button.chip', { class: p.private && 'on', onclick: () => patch({ private: !p.private }) }, icon('lock'), 'privato'),
       h('span.grow'),
       (p.created_by === me.id || me.is_admin) && h('button.btn.sm.danger', {
@@ -499,9 +501,13 @@ export function viewDiary() {
 }
 
 // ---------- magazzino ----------
+// Stato dell'articolo: pallino visibile negli elenchi (nessun pallino = attivo).
+const ITEM_STATUS = { outdated: 'outdated', discarded: 'scartato' };
+const statusDot = it => it?.status && h('span.sdot', { class: `s-${it.status}`, title: ITEM_STATUS[it.status] });
+
 function itemChip(it) {
   if (!it) return null;
-  return h('a.item-chip', { href: `#/i/${it.id}` }, h('span.code', itemAttrs(it), it.code), it.name && h('span', it.name), it.firmware && h('span.fw', `fw ${it.firmware}`));
+  return h('a.item-chip', { href: `#/i/${it.id}`, class: it.status ? `st-${it.status}` : null }, statusDot(it), h('span.code', itemAttrs(it), it.code), it.name && h('span', it.name), it.firmware && h('span.fw', `fw ${it.firmware}`));
 }
 
 function openCountOf(itemId) {
@@ -513,6 +519,14 @@ function openCountOf(itemId) {
 }
 
 const NO_CAT = 'Senza categoria';
+
+function catColorPicker(cat) {
+  const custom = S.data.catHueOf.get(cat.toLowerCase());
+  return huePicker(custom ?? null, hue(cat.toLowerCase()), x => {
+    ui.catPicker = null;
+    act(() => api('PUT', '/categories/color', { name: cat, hue: x }));
+  });
+}
 
 // ---------- scheda rapida al passaggio del mouse (solo con il mouse: su touch si apre la pagina) ----------
 const peekBox = h('div.peek', { hidden: true });
@@ -543,13 +557,14 @@ function peekContent(it) {
   return [
     h('div.peek-h', h('span.code', itemAttrs(it), it.code), it.category && h('span.peek-cat', h('span.cdot.cat', { style: catStyle(it.category) }), it.category)),
     h('div.peek-name', it.name || h('span.muted', 'senza descrizione')),
+    it.status && h('div.peek-status', statusDot(it), ITEM_STATUS[it.status]),
     h('div.peek-grid',
       it.firmware && row('Firmware', h('span.mono', it.firmware), fw && h('span.muted', ` · ${fw.filename}`)),
       it.location && row('Posizione', it.location),
       it.url && row('Link', it.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 40)),
       it.qty != null && row('Quantità', String(it.qty)),
       docs.length > 0 && row('Documenti', `${docs.length}`, h('span.muted', ` · ${[...new Set(docs.map(d => d.kind))].join(', ')}`)),
-      projects.length > 0 && row('Progetti', projects.map(p => h('span.tag', { style: `--h:${hue(p.tag)}` }, `@${p.tag}`))),
+      projects.length > 0 && row('Progetti', projects.map(p => h('span.tag', { style: `--h:${projHue(p)}` }, `@${p.tag}`))),
       children.length > 0 && row('Contiene', codes(children)),
       parents.length > 0 && row('Usato in', codes(parents)),
       open.length > 0 && row('Da fare', `${open.length}`, h('span.muted', ` · ${open[0].title.replace(/(^|\s)#/g, '$1').slice(0, 48)}`))),
@@ -600,7 +615,8 @@ function itemRow(i) {
   const D = S.data;
   const n = openCountOf(i.id);
   const docs = (D.docsOf.get(i.id) || []).length;
-  return peekable(h('a.item-row', { href: `#/i/${i.id}` },
+  return peekable(h('a.item-row', { href: `#/i/${i.id}`, class: i.status ? `st-${i.status}` : null },
+    statusDot(i),
     h('span.code', itemAttrs(i), i.code),
     h('span.name', i.name || h('span.muted', 'senza descrizione')),
     h('span.item-meta',
@@ -618,7 +634,11 @@ export function viewItems() {
   const cats = new Map();
   for (const i of D.items) cats.set(i.category || '', (cats.get(i.category || '') || 0) + 1);
   if (ui.itemCat != null && !cats.has(ui.itemCat)) ui.itemCat = null;
+  const statusCount = { outdated: 0, discarded: 0 };
+  for (const i of D.items) if (statusCount[i.status] != null) statusCount[i.status]++;
+  if (ui.itemStatusF && !statusCount[ui.itemStatusF]) ui.itemStatusF = null;
   const items = D.items
+    .filter(i => (ui.itemStatusF ? i.status === ui.itemStatusF : !(ui.hideDiscarded && i.status === 'discarded')))
     .filter(i => ui.itemCat == null || (i.category || '') === ui.itemCat)
     .filter(i => !f || [i.code, i.name, i.category, i.firmware, i.location, i.notes, docNames(i.id)].join(' ').toLowerCase().includes(f));
   const setView = v => { ui.itemView = v; save('org.itemView', v); render(); };
@@ -642,11 +662,19 @@ export function viewItems() {
         h('button', { class: ui.itemView === 'list' && 'on', onclick: () => setView('list'), title: 'Elenco' }, icon('log')),
         h('button', { class: ui.itemView === 'groups' && 'on', onclick: () => setView('groups'), title: 'Per categoria' }, icon('cols'))),
       h('a.btn.ghost', { href: '#/documenti', title: 'Tutti i documenti, per la revisione' }, icon('file'), h('span.only-wide', 'Documenti'))),
-    ui.itemView === 'groups' && D.items.length > 1 && h('p.muted.dnd-hint', 'Trascina un articolo in un\'altra colonna per cambiargli categoria.'),
+    ui.itemView === 'groups' && D.items.length > 1 && h('p.muted.dnd-hint', 'Trascina un articolo in un\'altra colonna per cambiargli categoria; clicca il pallino colorato per cambiarne il colore.'),
     cats.size > 1 && h('div.toolbar.cats',
       [...cats].sort(([a], [b]) => (!a) - (!b) || a.localeCompare(b)).map(([c, n]) =>
         h('button.chip', { class: ui.itemCat === c && 'on', onclick: () => { ui.itemCat = ui.itemCat === c ? null : c; render(); } },
           h('span.cdot', { class: c ? 'cat' : null, style: catStyle(c) }), c || NO_CAT, h('span.n', n)))),
+    (statusCount.outdated > 0 || statusCount.discarded > 0) && h('div.toolbar.cats',
+      Object.entries(ITEM_STATUS).filter(([k]) => statusCount[k]).map(([k, label]) =>
+        h('button.chip', { class: ui.itemStatusF === k && 'on', title: `Solo gli articoli ${label}`, onclick: () => { ui.itemStatusF = ui.itemStatusF === k ? null : k; render(); } },
+          h('span.sdot', { class: `s-${k}` }), label, h('span.n', statusCount[k]))),
+      statusCount.discarded > 0 && h('button.chip', {
+        class: ui.hideDiscarded && 'on',
+        onclick: () => { ui.hideDiscarded = !ui.hideDiscarded; save('org.hideDiscarded', ui.hideDiscarded); render(); },
+      }, 'nascondi scartati')),
     !D.items.length && empty(
       h('p', 'Il magazzino è vuoto.'),
       h('p', 'Aggiungi articoli dalla barra in alto: ', kbd('SCH-042 scheda motori /scheda'), '.'),
@@ -654,8 +682,13 @@ export function viewItems() {
     D.items.length > 0 && !items.length && empty(h('p', 'Nessun articolo corrisponde al filtro.')),
     ui.itemView === 'groups'
       ? h('div.cat-cols', ordered.map(([c, list]) => h('section.cat-col', { class: c ? 'cat' : null, style: catStyle(c), 'data-cat': c },
-        h('div.cat-h', h('span.cdot', { class: c ? 'cat' : null, style: catStyle(c) }), h('span', c || NO_CAT), h('span.count', list.length)),
-        h('div.cat-items', list.map(i => peekable(h('a.cat-item', { href: `#/i/${i.id}`, 'data-iid': i.id, draggable: 'false' },
+        h('div.cat-h',
+          c ? h('button.cdot.pick', { class: 'cat', style: catStyle(c), title: 'Cambia colore della categoria', onclick: () => { ui.catPicker = ui.catPicker === c ? null : c; render(); } })
+            : h('span.cdot'),
+          h('span', c || NO_CAT), h('span.count', list.length)),
+        c && ui.catPicker === c && h('div.cat-pick', catColorPicker(c)),
+        h('div.cat-items', list.map(i => peekable(h('a.cat-item', { href: `#/i/${i.id}`, 'data-iid': i.id, draggable: 'false', class: i.status ? `st-${i.status}` : null },
+          statusDot(i),
           h('span.code', itemAttrs(i), i.code),
           h('span.name', i.name || ''),
           i.firmware && h('span.fw', i.firmware),
@@ -749,9 +782,16 @@ export function viewItem(id) {
   return h('div.view',
     h('div.head',
       h('a.icon-btn', { href: '#/magazzino', title: 'Magazzino (Esc)' }, icon('back')),
-      it.category && h('span.cdot.big', { class: 'cat', style: catStyle(it.category), title: it.category }),
+      it.category && h('button.cdot.big.pick', {
+        class: 'cat', style: catStyle(it.category), title: `Colore della categoria "${it.category}"`,
+        onclick: () => { ui.catPicker = ui.catPicker === it.category ? null : it.category; render(); },
+      }),
       h('input.h-title.mono', { value: it.code, 'data-fk': `icode-${it.id}`, onchange: ev => patch({ code: ev.target.value }) }),
-      h('button.icon-btn', { title: 'Copia codice', onclick: () => copy(it.code) }, icon('copy'))),
+      h('button.icon-btn', { title: 'Copia codice', onclick: () => copy(it.code) }, icon('copy')),
+      h('div.seg.status-seg', { title: 'Stato dell\'articolo' },
+        [['', 'attivo'], ['outdated', 'outdated'], ['discarded', 'scartato']].map(([k, label]) =>
+          h('button', { class: (it.status || '') === k && 'on', onclick: () => patch({ status: k }) }, k && h('span.sdot', { class: `s-${k}` }), label)))),
+    it.category && ui.catPicker === it.category && h('div.cat-pick', h('span.muted', `Colore della categoria "${it.category}" (vale per tutti i suoi articoli): `), catColorPicker(it.category)),
     h('div.grid',
       field('name', 'Descrizione', { placeholder: 'es. scheda controllo motori' }),
       field('category', 'Categoria', { placeholder: 'scheda, prodotto, cavo…', list: 'item-cats' }),
@@ -881,8 +921,10 @@ export function viewSettings() {
       h('p.muted', 'Senza helper (per esempio dal telefono) "Manda" usa l\'app mail predefinita, ma senza allegati: per quelli c\'è il pulsante ".eml".'),
     ], { count: '', collapsed: true }),
 
-    section('set-users', 'Persone', [
-      D.users.map(u => h('div.user-row',
+    workspaceSection(D),
+
+    section('set-users', `Persone in "${D.workspace.name}"`, [
+      D.members.map(u => h('div.user-row',
         icon('user'),
         h('span', u.name || u.username), h('span.muted', `@${u.username}`),
         u.is_admin ? h('span.chip.on', 'admin') : null,
@@ -896,11 +938,11 @@ export function viewSettings() {
             },
           }, 'Reset password'),
           h('button.btn.sm.danger', {
-            onclick: () => { if (confirm(`Eliminare ${u.username}? Le sue voci restano.`)) act(() => api('DELETE', `/admin/users/${u.id}`)); },
-          }, icon('trash')),
+            onclick: () => { if (confirm(`Togliere ${u.username} da "${D.workspace.name}"? Le sue voci restano; il suo account e gli altri workspace no.`)) act(() => api('DELETE', `/admin/users/${u.id}`)); },
+          }, 'Togli'),
         ])),
       me.is_admin && h('div.invites',
-        h('p.muted', 'Per far entrare un amico crea un invito e mandagli il link (valido 7 giorni, una sola registrazione).'),
+        h('p.muted', `Per far entrare qualcuno in "${D.workspace.name}" crea un invito e mandagli il link (valido 7 giorni, una sola persona). Chi ha già un account entra con le sue credenziali.`),
         h('button.btn', { onclick: () => act(async () => { const r = await api('POST', '/admin/invites'); loadInvites(); share(inviteLink(r.code)); }) }, icon('plus'), 'Crea invito'),
         (ui.invites || []).map(i => h('div.invite',
           h('code', i.code),
@@ -908,7 +950,7 @@ export function viewSettings() {
           h('span.grow'),
           h('button.icon-btn', { title: 'Copia link', onclick: () => share(inviteLink(i.code)) }, icon('copy')),
           h('button.icon-btn', { title: 'Revoca', onclick: () => act(async () => { await api('DELETE', `/admin/invites/${i.code}`); loadInvites(); }) }, icon('x'))))),
-    ], { count: D.users.length }),
+    ], { count: D.members.length }),
 
     section('set-syntax', 'Sintassi della barra rapida', [
       h('table.syntax', h('tbody',
@@ -938,7 +980,7 @@ export function viewSettings() {
       h('div.toolbar',
         h('a.btn', { href: 'api/admin/backup', download: '' }, icon('download'), 'Scarica backup'),
         h('button.btn.danger', { onclick: () => restoreInput.click() }, icon('restore'), 'Ripristina da backup…')),
-      h('p.muted', 'Il ripristino sostituisce tutti i dati con quelli del file .db scelto (anche di una versione precedente dell\'app). Prima salva una copia di sicurezza del database attuale sul server. Dopo, tutti rientrano con le credenziali del backup.'),
+      h('p.muted', 'Il ripristino sostituisce tutti i dati con quelli del file .db scelto (anche di una versione precedente dell\'app). Vale solo per questo workspace; prima il server salva una copia di sicurezza dei dati attuali. Account e membri non cambiano.'),
       restoreInput,
     ], { count: '', collapsed: true }),
 
@@ -956,13 +998,46 @@ const restoreInput = h('input', {
     toast('Ripristino in corso…');
     try {
       const r = await api('POST', '/admin/restore', f);
-      alert(`Backup ripristinato: ${r.users} utenti.${r.missing ? ` ${r.missing} documenti o allegati non hanno il file sul server.` : ''}\nCopia di sicurezza: ${r.safetyCopy}\nOra accedi con le credenziali del backup.`);
+      alert(`Backup ripristinato.${r.missing ? ` ${r.missing} documenti o allegati non hanno il file sul server.` : ''}\nCopia di sicurezza: ${r.safetyCopy}`);
       location.reload();
     } catch (e) {
       toast(e.message, { err: true });
     }
   },
 });
+
+function workspaceSection(D) {
+  const ws = D.workspace;
+  const admin = ws.role === 'admin';
+  return section('set-ws', 'Workspace', [
+    h('div.grid',
+      h('label.f', h('span', 'Nome'), h('input', {
+        value: ws.name, disabled: !admin, 'data-fk': 'wsname',
+        onchange: ev => act(() => api('PATCH', `/workspaces/${ws.id}`, { name: ev.target.value })),
+      })),
+      h('label.f', h('span', 'Il tuo ruolo'), h('input', { value: admin ? 'admin' : 'membro', disabled: true }))),
+    h('div.ws-list', D.workspaces.map(w => h('div.user-row',
+      icon('folder'), h('span', w.name), h('span.muted', w.role === 'admin' ? 'admin' : 'membro'),
+      h('span.grow'),
+      w.id === ws.id ? h('span.chip.on', 'attivo') : h('button.btn.sm', { onclick: () => switchWorkspace(w.id) }, 'Apri')))),
+    h('div.toolbar',
+      h('button.btn', { onclick: newWorkspace }, icon('plus'), 'Nuovo workspace'),
+      h('span.grow'),
+      h('button.btn.sm.ghost', {
+        onclick: () => {
+          if (!confirm(`Uscire da "${ws.name}"? Per rientrare servirà un nuovo invito.`)) return;
+          act(async () => { await api('POST', `/workspaces/${ws.id}/leave`); location.hash = '#/agenda'; location.reload(); });
+        },
+      }, 'Esci dal workspace'),
+      admin && h('button.btn.sm.danger', {
+        onclick: () => {
+          const name = prompt(`Eliminare "${ws.name}" per tutti i membri? Scrivi il nome del workspace per confermare:`);
+          if (name == null) return;
+          act(async () => { await api('DELETE', `/workspaces/${ws.id}`, { confirm: name }); location.hash = '#/agenda'; location.reload(); });
+        },
+      }, icon('trash'), 'Elimina workspace')),
+  ], { count: D.workspaces.length });
+}
 
 async function share(url) {
   if (navigator.share) {

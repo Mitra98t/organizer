@@ -5,12 +5,14 @@ import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { db, tx, DATA_DIR, UPLOAD_DIR } from './db.js';
 import { parseQuick, extractCodes, isYmd, today } from '../public/js/parse.js';
+import { hashPassword, verifyPassword, sessionCookie, validUsername, validPassword, randomCode } from './auth.js';
 import {
-  hashPassword, verifyPassword, createSession, destroySession, sessionCookie,
-  validUsername, validPassword, randomCode,
-} from './auth.js';
+  acc, atx, userCount, getAccount, workspaceById, workspacesOf, membersOf, roleIn, adminCount,
+  addMember, createWorkspace, removeMember, syncMirror, createSession, destroySession, defaultWorkspace, setSessionWorkspace,
+} from './accounts.js';
 import { HttpError, fail, now, bool, str, sendJson } from './util.js';
 import { rev, openStream, dropUser } from './events.js';
+import { currentWorkspace } from './db.js';
 
 const KINDS = ['todo', 'mail', 'note'];
 const STATUSES = ['open', 'paused', 'closed'];
@@ -20,10 +22,12 @@ const MAX_UPLOAD = (+process.env.MAX_UPLOAD_MB || 200) * 1048576;
 const CODE_OK = /^[A-Za-z0-9](?:[\w.\-/]*[A-Za-z0-9_])?$/;
 
 export const routes = [];
-export function route(method, pattern, handler, { auth = 'user' } = {}) {
+// auth: 'none' | 'user' | 'admin' (admin del workspace attivo). ws: false per le route che non usano
+// i dati di un workspace (account, elenco e creazione dei workspace).
+export function route(method, pattern, handler, { auth = 'user', ws = auth !== 'none' } = {}) {
   const keys = [];
   const re = new RegExp('^' + pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)'; }) + '$');
-  routes.push({ method, re, keys, handler, auth });
+  routes.push({ method, re, keys, handler, auth, ws });
 }
 
 // ---------- visibilità ----------
@@ -41,8 +45,8 @@ const getProject = (id, uid) =>
   db.prepare(`SELECT p.* FROM projects p WHERE p.id = $id AND ${PVIS}`).get({ id: +id, uid }) || fail(404, 'Progetto non trovato');
 const getItem = id => db.prepare('SELECT * FROM items WHERE id = ? AND deleted_at IS NULL').get(+id) || fail(404, 'Articolo non trovato');
 const getUser = id => db.prepare('SELECT id, username, name, is_admin FROM users WHERE id = ?').get(+id) || fail(404, 'Utente non trovato');
-const findUser = name => db.prepare('SELECT id FROM users WHERE username = $n COLLATE NOCASE OR name = $n COLLATE NOCASE').get({ n: name });
-const userCount = () => db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
+// +utente: solo i membri attuali del workspace.
+const findUser = name => db.prepare('SELECT id FROM users WHERE member = 1 AND (username = $n COLLATE NOCASE OR name = $n COLLATE NOCASE)').get({ n: name });
 
 const fmtDate = d => (d ? `${d.slice(8)}/${d.slice(5, 7)}` : 'nessuna');
 export const insertId = r => Number(r.lastInsertRowid);
@@ -114,65 +118,101 @@ function noteFailure(key) {
   attempts.set(key, a);
 }
 
-function login(req, res, userId) {
-  res.setHeader('Set-Cookie', sessionCookie(req, createSession(userId)));
-  return { user: getUser(userId) };
+// Sessione nuova; il workspace attivo è l'ultimo usato (o quello indicato, es. dopo un invito).
+function login(req, res, userId, wsId = defaultWorkspace(userId)) {
+  res.setHeader('Set-Cookie', sessionCookie(req, createSession(userId, wsId)));
+  if (wsId) acc.prepare('UPDATE users SET last_workspace_id = ? WHERE id = ?').run(wsId, userId);
+  return { user: getAccount(userId) };
 }
 
-async function newUser(b, isAdmin) {
+async function newAccount(b) {
   const username = str(b.username, 32);
   if (!validUsername(username)) fail(400, 'Username: 2-32 caratteri tra lettere, numeri, . _ -');
   if (!validPassword(b.password)) fail(400, 'La password deve avere almeno 8 caratteri');
-  if (db.prepare('SELECT 1 FROM users WHERE username = ?').get(username)) fail(409, 'Username già in uso');
-  return { username, name: str(b.name, 60) || username, pass: await hashPassword(b.password), is_admin: bool(isAdmin) };
+  if (acc.prepare('SELECT 1 FROM users WHERE username = ?').get(username)) fail(409, 'Username già in uso');
+  return { username, name: str(b.name, 60) || username, pass: await hashPassword(b.password) };
 }
 
-const insertUser = u => insertId(db.prepare('INSERT INTO users (username, name, pass, is_admin, created_at) VALUES (?, ?, ?, ?, ?)')
-  .run(u.username, u.name, u.pass, u.is_admin, now()));
+const insertAccount = u => Number(acc.prepare('INSERT INTO users (username, name, pass, created_at) VALUES (?, ?, ?, ?)')
+  .run(u.username, u.name, u.pass, now()).lastInsertRowid);
 
-route('GET', '/api/me', ({ user }) => ({ user, setup: userCount() === 0 }), { auth: 'none' });
+const wsInfo = (wsId, userId) => ({ id: wsId, name: workspaceById(wsId)?.name, role: roleIn(wsId, userId) });
+
+const validInvite = code => acc.prepare(`SELECT i.*, w.name AS workspace_name FROM invites i JOIN workspaces w ON w.id = i.workspace_id
+  WHERE i.code = ? AND i.used_at IS NULL AND i.expires_at > ? AND w.deleted_at IS NULL`).get(String(code || '').trim().toUpperCase(), now());
+
+// Usa l'invito: l'account entra nel workspace come membro (se non c'era già).
+function acceptInvite(inv, userId) {
+  const ws = workspaceById(inv.workspace_id);
+  atx(() => {
+    if (!roleIn(ws.id, userId)) acc.prepare("INSERT INTO memberships (workspace_id, user_id, role, created_at) VALUES (?, ?, 'member', ?)").run(ws.id, userId, now());
+    acc.prepare('UPDATE invites SET used_by = ?, used_at = ? WHERE code = ?').run(userId, now(), inv.code);
+  });
+  syncMirror(ws, userId);
+  return ws;
+}
+
+route('GET', '/api/me', ({ user }) => ({
+  user: user && getAccount(user.id),
+  setup: userCount() === 0,
+  workspaces: user ? workspacesOf(user.id) : [],
+  workspace: user?.workspace_id ? wsInfo(user.workspace_id, user.id) : null,
+}), { auth: 'none' });
 
 route('POST', '/api/setup', async ({ req, res, body }) => {
-  const u = await newUser(await body(), true);
-  const id = tx(() => {
+  const b = await body();
+  if (userCount() > 0) fail(403, 'Configurazione già eseguita');
+  const u = await newAccount(b);
+  const id = atx(() => {
     if (userCount() > 0) fail(403, 'Configurazione già eseguita');
-    return insertUser(u);
+    return insertAccount(u);
   });
-  return login(req, res, id);
+  const ws = createWorkspace(str(b.workspace, 80) || 'Principale', id);
+  return login(req, res, id, ws.id);
 }, { auth: 'none' });
 
 route('POST', '/api/login', async ({ req, res, body }) => {
   const b = await body();
   const key = `${req.socket.remoteAddress}|${String(b.username).toLowerCase()}`;
   throttle(key);
-  const u = db.prepare('SELECT id, pass FROM users WHERE username = ?').get(str(b.username, 32));
+  const u = acc.prepare('SELECT id, pass FROM users WHERE username = ?').get(str(b.username, 32));
   if (!u || !(await verifyPassword(String(b.password || ''), u.pass))) {
     noteFailure(key);
     fail(401, 'Credenziali errate');
   }
   attempts.delete(key);
-  return login(req, res, u.id);
+  // Accesso con un codice invito: chi ha già un account entra anche nel nuovo workspace.
+  const inv = b.code && validInvite(b.code);
+  if (b.code && !inv) fail(400, 'Invito non valido o scaduto');
+  return login(req, res, u.id, inv ? acceptInvite(inv, u.id).id : undefined);
+}, { auth: 'none' });
+
+route('GET', '/api/invites/:code', ({ params }) => {
+  const inv = validInvite(params.code) || fail(404, 'Invito non valido o scaduto');
+  return { workspace: inv.workspace_name };
 }, { auth: 'none' });
 
 route('POST', '/api/register', async ({ req, res, body }) => {
   const b = await body();
   const key = `${req.socket.remoteAddress}|invite`;
   throttle(key);
-  const code = str(b.code, 20).toUpperCase();
-  const valid = () => db.prepare('SELECT * FROM invites WHERE code = ? AND used_at IS NULL AND expires_at > ?').get(code, now());
-  if (!valid()) {
+  if (!validInvite(b.code)) {
     noteFailure(key);
     fail(400, 'Invito non valido o scaduto');
   }
-  const u = await newUser(b, false);
-  const id = tx(() => {
-    if (!valid()) fail(400, 'Invito non valido o scaduto');
-    const id = insertUser(u);
-    db.prepare('UPDATE invites SET used_by = ?, used_at = ? WHERE code = ?').run(id, now(), code);
-    return id;
-  });
-  return login(req, res, id);
+  const u = await newAccount(b);
+  const id = atx(() => insertAccount(u));
+  const inv = validInvite(b.code) || fail(400, 'Invito non valido o scaduto');
+  return login(req, res, id, acceptInvite(inv, id).id);
 }, { auth: 'none' });
+
+// Invito aperto da chi è già dentro all'app.
+route('POST', '/api/invites/:code/accept', ({ req, params, user, token }) => {
+  const inv = validInvite(params.code) || fail(400, 'Invito non valido o scaduto');
+  const ws = acceptInvite(inv, user.id);
+  setSessionWorkspace(token, user.id, ws.id);
+  return { workspace: { id: ws.id, name: ws.name } };
+}, { ws: false });
 
 route('POST', '/api/logout', ({ req, res, token }) => {
   destroySession(token);
@@ -182,21 +222,24 @@ route('POST', '/api/logout', ({ req, res, token }) => {
 
 route('PATCH', '/api/me', async ({ user, body }) => {
   const b = await body();
-  if (b.name !== undefined) db.prepare('UPDATE users SET name = ? WHERE id = ?').run(str(b.name, 60) || user.username, user.id);
+  if (b.name !== undefined) {
+    acc.prepare('UPDATE users SET name = ? WHERE id = ?').run(str(b.name, 60) || user.username, user.id);
+    for (const w of workspacesOf(user.id)) syncMirror(workspaceById(w.id), user.id);
+  }
   if (b.password !== undefined) {
-    const row = db.prepare('SELECT pass FROM users WHERE id = ?').get(user.id);
+    const row = acc.prepare('SELECT pass FROM users WHERE id = ?').get(user.id);
     if (!(await verifyPassword(String(b.current || ''), row.pass))) fail(400, 'Password attuale errata');
     if (!validPassword(b.password)) fail(400, 'La password deve avere almeno 8 caratteri');
-    db.prepare('UPDATE users SET pass = ? WHERE id = ?').run(await hashPassword(b.password), user.id);
+    acc.prepare('UPDATE users SET pass = ? WHERE id = ?').run(await hashPassword(b.password), user.id);
   }
-  return { user: getUser(user.id) };
-});
+  return { user: getAccount(user.id) };
+}, { ws: false });
 
 route('GET', '/api/events', ({ req, res, user }) => openStream(req, res, user));
 
 // ---------- sync ----------
 route('GET', '/api/sync', ({ req, res, user }) => {
-  const etag = `"${rev()}-${user.id}"`;
+  const etag = `"${rev()}-${user.id}-${user.workspace_id}"`;
   if (req.headers['if-none-match'] === etag) {
     res.writeHead(304, { ETag: etag, 'Cache-Control': 'private, no-cache' });
     return res.end();
@@ -207,7 +250,10 @@ route('GET', '/api/sync', ({ req, res, user }) => {
   sendJson(res, 200, {
     rev: rev(),
     me: getUser(uid),
-    users: db.prepare('SELECT id, username, name, is_admin FROM users ORDER BY name COLLATE NOCASE').all(),
+    // Tutti quelli che compaiono nei dati (anche ex membri, per i nomi); member = 1 per i membri attuali.
+    users: db.prepare('SELECT id, username, name, is_admin, member FROM users ORDER BY name COLLATE NOCASE').all(),
+    workspace: wsInfo(user.workspace_id, uid),
+    workspaces: workspacesOf(uid),
     projects: db.prepare(`SELECT p.* FROM projects p WHERE ${PVIS} ORDER BY p.name COLLATE NOCASE`).all({ uid }),
     entries: db.prepare(`SELECT e.* FROM entries e WHERE ${where} ORDER BY e.id`).all(p),
     logs: db.prepare(`SELECT l.* FROM entry_log l JOIN entries e ON e.id = l.entry_id WHERE ${where} ORDER BY l.id`).all(p),
@@ -222,6 +268,7 @@ route('GET', '/api/sync', ({ req, res, user }) => {
     docs: db.prepare(`SELECT id, item_id, kind, label, version, filename, mime, size, sha256, url, created_by, created_at
       FROM documents WHERE deleted_at IS NULL ORDER BY created_at DESC`).all(),
     contacts: db.prepare('SELECT * FROM contacts WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE, email').all(),
+    categoryColors: db.prepare('SELECT name, hue FROM category_colors').all(),
     docNotes: db.prepare(`SELECT n.* FROM doc_notes n JOIN documents d ON d.id = n.doc_id
       WHERE n.deleted_at IS NULL AND d.deleted_at IS NULL ORDER BY n.id`).all(),
     attachments: db.prepare(`SELECT a.id, a.entry_id, a.doc_id, a.filename, a.mime, a.size FROM mail_attachments a
@@ -443,6 +490,22 @@ route('POST', '/api/projects', async ({ user, body }) => {
   return { id, tag };
 });
 
+// Colore scelto a mano: tinta 0..359, oppure null per tornare al colore automatico.
+function checkHue(v) {
+  if (v === null || v === '') return null;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 0 || n > 359) fail(400, 'Colore non valido');
+  return n;
+}
+
+route('PUT', '/api/categories/color', async ({ body }) => {
+  const b = await body();
+  const name = str(b.name, 60) || fail(400, 'Categoria mancante');
+  const hue = checkHue(b.hue);
+  if (hue === null) db.prepare('DELETE FROM category_colors WHERE name = ?').run(name);
+  else db.prepare('INSERT INTO category_colors (name, hue) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET hue = excluded.hue').run(name, hue);
+});
+
 // Un progetto non può finire dentro se stesso o dentro un suo discendente.
 function checkParent(p, parentId) {
   for (let id = parentId, depth = 0; id; depth++) {
@@ -465,6 +528,7 @@ route('PATCH', '/api/projects/:id', async ({ params, user, body }) => {
     f.status = b.status;
   }
   if (b.notes !== undefined) f.notes = str(b.notes, 20000);
+  if (b.hue !== undefined) f.hue = checkHue(b.hue);
   if (b.parent_id !== undefined) {
     f.parent_id = b.parent_id ? getProject(b.parent_id, user.id).id : null;
     checkParent(p, f.parent_id);
@@ -507,6 +571,10 @@ function itemFields(b) {
     if (b[k] !== undefined) f[k] = str(b[k], max);
   }
   if (f.url && !/^https?:\/\//i.test(f.url)) f.url = `https://${f.url}`;
+  if (b.status !== undefined) {
+    if (!['', 'outdated', 'discarded'].includes(b.status)) fail(400, 'Stato non valido');
+    f.status = b.status;
+  }
   if (b.qty !== undefined) {
     if (b.qty === null || b.qty === '') f.qty = null;
     else if (Number.isInteger(+b.qty)) f.qty = +b.qty;
@@ -720,43 +788,55 @@ route('DELETE', '/api/docs/:id', ({ params, user }) => {
   db.prepare('UPDATE documents SET deleted_at = ?, deleted_by = ? WHERE id = ?').run(now(), user.id, d.id);
 });
 
-// ---------- amministrazione ----------
+// ---------- amministrazione del workspace attivo ----------
+const activeWs = () => workspaceById(currentWorkspace()) || fail(404, 'Workspace non trovato');
+
 route('GET', '/api/admin/invites', () =>
-  db.prepare('SELECT code, created_at, expires_at FROM invites WHERE used_at IS NULL AND expires_at > ? ORDER BY created_at DESC').all(now()),
+  acc.prepare('SELECT code, created_at, expires_at FROM invites WHERE workspace_id = ? AND used_at IS NULL AND expires_at > ? ORDER BY created_at DESC')
+    .all(currentWorkspace(), now()),
 { auth: 'admin' });
 
 route('POST', '/api/admin/invites', ({ user }) => {
   const code = randomCode(10);
   const expires = new Date(Date.now() + 7 * 864e5).toISOString();
-  db.prepare('INSERT INTO invites (code, created_by, created_at, expires_at) VALUES (?, ?, ?, ?)').run(code, user.id, now(), expires);
+  acc.prepare('INSERT INTO invites (code, workspace_id, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?)')
+    .run(code, currentWorkspace(), user.id, now(), expires);
   return { code, expires_at: expires };
 }, { auth: 'admin' });
 
 route('DELETE', '/api/admin/invites/:code', ({ params }) => {
-  db.prepare('DELETE FROM invites WHERE code = ? AND used_at IS NULL').run(params.code);
+  acc.prepare('DELETE FROM invites WHERE code = ? AND workspace_id = ? AND used_at IS NULL').run(params.code, currentWorkspace());
 }, { auth: 'admin' });
 
 route('PATCH', '/api/admin/users/:id', async ({ params, user, body }) => {
   const b = await body();
-  const target = getUser(params.id);
+  const ws = activeWs();
+  const targetId = +params.id;
+  if (!roleIn(ws.id, targetId)) fail(404, 'Non è membro di questo workspace');
   if (b.is_admin !== undefined) {
-    if (target.id === user.id && !b.is_admin) fail(400, 'Non puoi toglierti i permessi da solo');
-    db.prepare('UPDATE users SET is_admin = ? WHERE id = ?').run(bool(b.is_admin), target.id);
+    if (targetId === user.id && !b.is_admin && adminCount(ws.id) === 1) fail(400, 'Sei l\'unico admin: prima nomina un altro admin');
+    acc.prepare('UPDATE memberships SET role = ? WHERE workspace_id = ? AND user_id = ?').run(b.is_admin ? 'admin' : 'member', ws.id, targetId);
+    syncMirror(ws, targetId);
   }
   if (b.reset_password) {
+    // La password vale per tutti i workspace della persona: la può reimpostare solo chi è admin in ognuno.
+    const others = workspacesOf(targetId).filter(w => roleIn(w.id, user.id) !== 'admin');
+    if (others.length) fail(403, 'Questa persona è anche in workspace dove non sei admin: la password la può cambiare solo lei (o il comando make reset-password)');
     const password = randomCode(12);
-    db.prepare('UPDATE users SET pass = ? WHERE id = ?').run(await hashPassword(password), target.id);
-    db.prepare('DELETE FROM sessions WHERE user_id = ?').run(target.id);
-    dropUser(target.id);
+    acc.prepare('UPDATE users SET pass = ? WHERE id = ?').run(await hashPassword(password), targetId);
+    acc.prepare('DELETE FROM sessions WHERE user_id = ?').run(targetId);
+    dropUser(targetId);
     return { password };
   }
 }, { auth: 'admin' });
 
+// Toglie la persona dal workspace (il suo account e gli altri workspace restano).
 route('DELETE', '/api/admin/users/:id', ({ params, user }) => {
-  const target = getUser(params.id);
-  if (target.id === user.id) fail(400, 'Non puoi eliminare te stesso');
-  db.prepare('DELETE FROM users WHERE id = ?').run(target.id);
-  dropUser(target.id);
+  const ws = activeWs();
+  if (+params.id === user.id) fail(400, 'Per uscire usa "Esci dal workspace"');
+  if (!roleIn(ws.id, +params.id)) fail(404, 'Non è membro di questo workspace');
+  removeMember(ws, +params.id);
+  dropUser(+params.id, ws.id);
 }, { auth: 'admin' });
 
 route('GET', '/api/admin/backup', ({ res }) => {
