@@ -1,8 +1,8 @@
 // Service worker: rete prima, cache come ripiego. Così l'app si apre anche offline
 // e mostra gli ultimi dati (salvati dall'app in localStorage). Le API non passano dalla cache.
-const CACHE = 'organizer-v1';
+const CACHE = 'organizer-v3';
 const SHELL = [
-  './', 'index.html', 'css/app.css', 'js/app.js', 'js/core.js', 'js/views.js', 'js/parse.js',
+  './', 'index.html', 'css/app.css', 'js/app.js', 'js/core.js', 'js/views.js', 'js/parse.js', 'js/autocomplete.js', 'js/mail.js', 'js/contacts.js', 'js/trash.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/apple-touch-icon.png',
 ];
 

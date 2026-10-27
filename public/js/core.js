@@ -20,6 +20,7 @@ export const ui = {
   open: new Set(),
   sections: new Set(load('org.sections', [])),
   mine: load('org.mine', false),
+  agendaKind: load('org.agendaKind', 'all'),
   q: '',
   projStatus: 'open',
   itemFilter: '',
@@ -28,6 +29,9 @@ export const ui = {
   docVer: '',
   archive: null,
   invites: null,
+  trash: null,
+  contactFilter: '',
+  mailHelper: load('org.mailHelper', false),
 };
 
 // ---------- render ----------
@@ -97,6 +101,9 @@ const ICONS = {
   send: '<path d="M4 12 20 4l-6 16-3-7z"/><path d="m11 13 9-9"/>',
   cal: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',
   log: '<path d="M5 6h14M5 12h14M5 18h9"/>',
+  clip: '<path d="m20 11.5-8.3 8.3a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"/>',
+  restore: '<path d="M4 12a8 8 0 1 0 2.3-5.6L4 8.7"/><path d="M4 4v4.7h4.7"/>',
+  contacts: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6.5 6.5 0 0 1 3.5 6"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
   logout: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 8l-4 4 4 4M6 12h10"/>',
@@ -157,6 +164,8 @@ const group = (arr, key) => {
 };
 
 function indexData(d) {
+  d.contacts ||= []; // cache salvata da una versione precedente
+  d.attachments ||= [];
   d.entryById = new Map(d.entries.map(e => [e.id, e]));
   d.projectById = new Map(d.projects.map(p => [p.id, p]));
   d.projectByTag = new Map(d.projects.map(p => [p.tag.toLowerCase(), p]));
@@ -170,6 +179,9 @@ function indexData(d) {
   d.docsOf = group(d.docs, 'item_id');
   d.childItems = group(d.itemLinks, 'parent_id');
   d.parentItems = group(d.itemLinks, 'child_id');
+  d.contactById = new Map(d.contacts.map(c => [c.id, c]));
+  d.contactByEmail = new Map(d.contacts.filter(c => c.email).map(c => [c.email.toLowerCase(), c]));
+  d.attachmentsOf = group(d.attachments, 'entry_id');
   return d;
 }
 
@@ -358,6 +370,13 @@ export const isMine = e => {
 
 export const stop = ev => ev.stopPropagation();
 
+// Tinta stabile per progetto (dal tag): lo stesso progetto ha sempre lo stesso colore ovunque.
+export function hue(s) {
+  let x = 0;
+  for (const c of String(s)) x = (x * 31 + c.codePointAt(0)) >>> 0;
+  return x % 360;
+}
+
 const RICH_RE = /(https?:\/\/[^\s<>]+[^\s<>.,;:!?)\]'"])|(^|[\s(\[,;:])#([A-Za-z0-9](?:[\w.\-/]*[A-Za-z0-9_])?)/g;
 
 // Testo con #CODICI cliccabili (portano alla scheda di magazzino) e URL attivi.
@@ -378,6 +397,20 @@ export function richText(text) {
   }
   out.push(String(text || '').slice(last));
   return out;
+}
+
+// Elimina (sposta nel cestino) e offre "Annulla" nel toast.
+export async function trashIt(type, url, label) {
+  const ok = await act(() => api('DELETE', url).then(() => true));
+  const id = url.split('/').pop();
+  if (ok) toast(`${label} nel cestino`, { action: { label: 'Annulla', fn: () => act(() => api('POST', `/trash/${type}/${id}/restore`)) } });
+  return ok;
+}
+
+// Nome leggibile dei destinatari: "Luca Bianchi" se l'email è in rubrica.
+export function contactLabel(list) {
+  return String(list || '').split(',').map(s => s.trim()).filter(Boolean)
+    .map(a => S.data?.contactByEmail.get(a.toLowerCase())?.name || a).join(', ');
 }
 
 export function toast(msg, { err = false, action } = {}) {

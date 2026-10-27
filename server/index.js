@@ -3,6 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { routes } from './api.js';
+import './contacts.js';
+import './mail.js';
+import { purgeExpired } from './trash.js';
 import { userFromToken } from './auth.js';
 import { bump } from './events.js';
 import { HttpError, sendJson, parseCookies, readJson } from './util.js';
@@ -109,6 +112,18 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, status, { error: status >= 500 ? 'Errore interno del server' : message });
   }
 });
+
+// Il cestino si svuota da solo degli elementi più vecchi di TRASH_DAYS: all'avvio e poi ogni 6 ore.
+const cleanTrash = () => {
+  try {
+    const n = purgeExpired();
+    if (n) console.log(`Cestino: eliminati ${n} file scaduti`);
+  } catch (e) {
+    console.error('Pulizia cestino fallita', e);
+  }
+};
+cleanTrash();
+setInterval(cleanTrash, 6 * 3600e3).unref();
 
 server.requestTimeout = 0; // upload grandi e stream SSE
 server.listen(PORT, HOST, () => {

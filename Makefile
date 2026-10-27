@@ -8,10 +8,10 @@ APP_PORT    ?= 8080
 
 .DEFAULT_GOAL := help
 .PHONY: help up down restart logs ps https wait reset demo seed backup restore \
-        users invite reset-password make-admin shell info test dev dev-reset dev-demo confirm
+        users invite reset-password make-admin mail-helper mail-helper-uninstall shell info test dev dev-reset dev-demo confirm
 
 help: ## Mostra questo elenco
-	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 # ---------- Docker ----------
 up: ## Costruisce e avvia l'app (http://localhost:8080)
@@ -88,6 +88,13 @@ reset-password: ## Nuova password per un utente: make reset-password UTENTE=marc
 make-admin: ## Rende amministratore un utente: make make-admin UTENTE=marco
 	@test -n "$(UTENTE)" || { echo "Uso: make make-admin UTENTE=nome"; exit 1; }
 	$(COMPOSE) exec -T app $(NODE) server/cli.js make-admin $(UTENTE)
+
+# ---------- mail ----------
+mail-helper: ## Installa l'helper che apre le mail in Thunderbird con gli allegati (macOS/Linux)
+	tools/install-mail-helper.sh
+
+mail-helper-uninstall: ## Rimuove l'helper Thunderbird
+	tools/install-mail-helper.sh --uninstall
 
 shell: ## Shell dentro il container
 	$(COMPOSE) exec app sh

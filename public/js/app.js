@@ -1,7 +1,10 @@
 import {
   h, icon, S, ui, RS, api, sync, setRenderer, render, renderStatus, connectLive, disconnectLive, liveClosed,
-  flushOutbox, addEntry, loadCache, clearLocal, dueInfo, autosize, toast, isMine, dayDiff, save,
+  flushOutbox, addEntry, loadCache, clearLocal, dueInfo, autosize, toast, isMine, dayDiff, save, hue,
 } from './core.js';
+import { initAutocomplete, acCheck } from './autocomplete.js';
+import { viewContacts } from './contacts.js';
+import { viewTrash } from './trash.js';
 import { parseQuick, extractCodes, today } from './parse.js';
 import {
   viewAgenda, viewProjects, viewProject, viewMail, viewDiary, viewItems, viewItem, viewSearch, viewSettings,
@@ -17,6 +20,8 @@ const VIEWS = {
   diario: { fn: viewDiary, title: 'Diario', nav: 'diario' },
   magazzino: { fn: viewItems, title: 'Magazzino', nav: 'magazzino' },
   i: { fn: viewItem, title: 'Articolo', nav: 'magazzino' },
+  contatti: { fn: viewContacts, title: 'Contatti', nav: 'contatti' },
+  cestino: { fn: viewTrash, title: 'Cestino', nav: 'cestino' },
   cerca: { fn: viewSearch, title: 'Cerca', nav: null },
   impostazioni: { fn: viewSettings, title: 'Impostazioni', nav: 'impostazioni' },
 };
@@ -27,6 +32,7 @@ const NAV = [
   ['mail', 'Mail', 'mail'],
   ['diario', 'Diario', 'diary'],
   ['magazzino', 'Magazzino', 'box'],
+  ['contatti', 'Contatti', 'contacts'],
 ];
 
 function route() {
@@ -50,12 +56,16 @@ function quickContext() {
     const it = D.itemById.get(+r.id);
     if (it) return { code: it.code, label: `su #${it.code}` };
   }
+  if (r.name === 'contatti' && r.id && D) {
+    const c = D.contactById.get(+r.id);
+    if (c?.email) return { kind: 'mail', email: c.email, label: `mail a ${c.name || c.email}` };
+  }
   return {};
 }
 
 const quickInput = h('input#quick', {
   placeholder: 'Scrivi… es. flash fw #SCH-042 @rover !ven',
-  autocomplete: 'off', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'done',
+  autocomplete: 'off', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'done', 'data-ac': 'auto',
   oninput: () => renderPreview(),
   onkeydown: ev => {
     if (ev.key === 'Enter' && !ev.isComposing) { ev.preventDefault(); submitQuick(); }
@@ -70,7 +80,8 @@ const quickHelp = h('div.qhelp', { hidden: true },
   h('span', h('code.k', '@progetto')),
   h('span', h('code.k', '#CODICE'), ' magazzino'),
   h('span', h('code.k', '+utente')),
-  h('span', h('code.k', '>destinatario')));
+  h('span', h('code.k', '>destinatario')),
+  h('span', 'dopo il simbolo compaiono i suggerimenti: ', h('code.k', '↑↓'), ' scegli, ', h('code.k', 'Tab'), ' o ', h('code.k', 'Invio'), ' completa'));
 
 function renderPreview() {
   const ctx = quickContext();
@@ -79,10 +90,10 @@ function renderPreview() {
   if (text.trim()) {
     const p = parseQuick(text, { today: today(), kind: ctx.kind || 'todo' });
     const D = S.data;
-    if (p.kind !== 'todo' || p.kindExplicit) chips.push(h('span.pv.kind', { class: `k-${p.kind}` }, { todo: 'todo', mail: 'mail', note: 'nota' }[p.kind]));
+    if (p.kind !== 'todo' || p.kindExplicit) chips.push(h('span.kpill', { class: `k-${p.kind}` }, { todo: 'todo', mail: 'mail', note: 'nota' }[p.kind]));
     if (p.due === null) chips.push(h('span.pv', 'senza scadenza'));
     else if (p.due) { const d = dueInfo(p.due); chips.push(h('span.pv.due', { class: d.cls || null }, icon('cal'), d.label)); }
-    if (p.project) chips.push(h('span.pv.tag', `@${p.project}`, !D?.projectByTag.has(p.project.toLowerCase()) && h('i', ' nuovo')));
+    if (p.project) chips.push(h('span.pv.tag', { style: `--h:${hue(p.project.toLowerCase())}` }, `@${p.project}`, !D?.projectByTag.has(p.project.toLowerCase()) && h('i', ' nuovo')));
     for (const c of p.codes) chips.push(h('span.pv.code', c, !D?.itemByCode.has(c.toUpperCase()) && h('i', ' nuovo')));
     if (p.assignee) {
       const known = D?.users.some(u => [u.username, u.name].some(n => n?.toLowerCase() === p.assignee.toLowerCase()));
@@ -104,6 +115,7 @@ async function submitQuick() {
   let text = quickInput.value.trim();
   if (!text) return;
   if (ctx.code && !extractCodes(text).some(c => c.toUpperCase() === ctx.code.toUpperCase())) text += ` #${ctx.code}`;
+  if (ctx.email && !/(^|\s)>\S/.test(text)) text += ` >${ctx.email}`;
   quickInput.value = '';
   renderPreview();
   const ok = await addEntry({ text, today: today(), kind: ctx.kind, project_id: ctx.project_id });
@@ -144,7 +156,8 @@ function buildShell() {
       h('aside.side',
         h('div.brand', h('img', { src: 'icons/icon.svg', alt: '' }), h('span', 'Organizer')),
         h('nav.side-nav', NAV.map(([k, l, i]) => navLink(k, l, i, navLinks, 'nav')),
-          h('span.sep'), navLink('impostazioni', 'Impostazioni', 'settings', navLinks, 'nav'))),
+          h('span.sep'), navLink('cestino', 'Cestino', 'trash', navLinks, 'nav'),
+          navLink('impostazioni', 'Impostazioni', 'settings', navLinks, 'nav'))),
       h('main.main',
         h('header.top',
           titleEl,
@@ -182,6 +195,8 @@ function updateBadges() {
     map.get('agenda').badge.textContent = urgent || '';
     map.get('mail').badge.textContent = mails || '';
   }
+  navLinks.get('cestino').badge.textContent = D.trashCount || '';
+  navLinks.get('cestino').badge.classList.add('muted-badge');
 }
 
 function renderApp() {
@@ -211,6 +226,7 @@ function renderApp() {
     RS.busy = false;
   }
   viewEl.querySelectorAll('textarea').forEach(autosize);
+  acCheck();
   if (keep) {
     const el = viewEl.querySelector(`[data-fk="${CSS.escape(keep.fk)}"]`);
     if (el) {
@@ -279,9 +295,18 @@ function start() {
 
 // ---------- avvio ----------
 setRenderer(renderApp, updateStatus);
+initAutocomplete(() => quickContext().kind);
 document.documentElement.dataset.theme = localStorage.getItem('org.theme') || 'auto';
 window.addEventListener('hashchange', () => { window.scrollTo(0, 0); render(); });
 window.addEventListener('org:logout', logout);
+// Altre viste chiedono di precompilare la barra rapida (es. "Nuova mail" da un contatto).
+window.addEventListener('org:quick', ev => {
+  quickInput.value = ev.detail;
+  renderPreview();
+  quickInput.focus();
+  quickInput.setSelectionRange(quickInput.value.length, quickInput.value.length);
+  window.scrollTo(0, 0);
+});
 window.addEventListener('online', () => { S.online = true; flushOutbox(); sync(); if (liveClosed()) connectLive(); renderStatus(); });
 window.addEventListener('offline', () => { S.online = false; S.live = false; renderStatus(); });
 document.addEventListener('visibilitychange', () => {

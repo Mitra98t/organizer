@@ -115,6 +115,50 @@ const MIGRATIONS = [
   );
   CREATE INDEX documents_item ON documents(item_id);
   `,
+  // v2: cestino (soft delete), rubrica, mail con allegati
+  `
+  ALTER TABLE entries ADD COLUMN deleted_at TEXT;
+  ALTER TABLE entries ADD COLUMN deleted_by INTEGER REFERENCES users ON DELETE SET NULL;
+  ALTER TABLE projects ADD COLUMN deleted_at TEXT;
+  ALTER TABLE projects ADD COLUMN deleted_by INTEGER REFERENCES users ON DELETE SET NULL;
+  ALTER TABLE items ADD COLUMN deleted_at TEXT;
+  ALTER TABLE items ADD COLUMN deleted_by INTEGER REFERENCES users ON DELETE SET NULL;
+  ALTER TABLE documents ADD COLUMN deleted_at TEXT;
+  ALTER TABLE documents ADD COLUMN deleted_by INTEGER REFERENCES users ON DELETE SET NULL;
+  ALTER TABLE entries ADD COLUMN mail_cc TEXT;
+  ALTER TABLE entries ADD COLUMN mail_subject TEXT;
+  CREATE TABLE contacts (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL DEFAULT '',
+    phone TEXT NOT NULL DEFAULT '',
+    company TEXT NOT NULL DEFAULT '',
+    role TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    created_by INTEGER REFERENCES users ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deleted_at TEXT,
+    deleted_by INTEGER REFERENCES users ON DELETE SET NULL
+  );
+  CREATE TABLE mail_attachments (
+    id INTEGER PRIMARY KEY,
+    entry_id INTEGER NOT NULL REFERENCES entries ON DELETE CASCADE,
+    doc_id INTEGER REFERENCES documents ON DELETE CASCADE,
+    filename TEXT NOT NULL,
+    mime TEXT,
+    size INTEGER,
+    stored TEXT,
+    created_by INTEGER REFERENCES users ON DELETE SET NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX mail_attachments_entry ON mail_attachments(entry_id);
+  CREATE TABLE mail_tokens (
+    token_hash TEXT PRIMARY KEY,
+    entry_id INTEGER NOT NULL REFERENCES entries ON DELETE CASCADE,
+    expires_at TEXT NOT NULL
+  );
+  `,
 ];
 
 const { user_version: version } = db.prepare('PRAGMA user_version').get();

@@ -32,6 +32,7 @@ e accedi con `demo` / `demo1234` (c'è anche `marco` / `demo1234` per vedere la 
 | `make backup` / `make restore FILE=...` | backup completo in `backups/` e ripristino |
 | `make users` / `invite` / `reset-password UTENTE=x` / `make-admin UTENTE=x` | utenti |
 | `make info` | indirizzi locale e LAN |
+| `make mail-helper` / `mail-helper-uninstall` | helper che apre le mail in Thunderbird con gli allegati |
 | `make dev` / `dev-demo` / `test` | sviluppo locale senza Docker (dati in `./data`) |
 
 I comandi che cancellano chiedono di scrivere "si"; per gli script: `CONFIRM=1`.
@@ -59,9 +60,35 @@ n: la rev B della SCH-042 vuole bootloader >= 2.3 #SCH-042
 
 **Aggiornare man mano**: apri una voce e scrivi un aggiornamento ("manca il cavo JTAG, slitta !lun"). Resta lo storico con data e la scadenza si sposta, lasciando traccia di quanto è slittata. Gli stessi token funzionano modificando il titolo. Le sotto-attività nascono quando scopri che una cosa ne contiene altre.
 
+**Autocompletamento**: appena scrivi `@`, `#`, `!`, `+` o `>` compare un menu con progetti, articoli (con firmware), date già calcolate ("ven 30 ott · tra 3g"), utenti e destinatari usati di recente. `↑↓` per scegliere, `Tab` o `Invio` per completare, `Esc` per chiudere; su telefono basta toccare. Funziona anche nel titolo di una voce, nelle sotto-attività e negli aggiornamenti.
+
+Nelle liste ogni voce ha un'etichetta e un bordo colorato per tipo (verde todo, blu mail, viola nota), e ogni progetto ha un suo colore fisso, così in Agenda si capisce al volo cosa si sta guardando. I filtri Tutto / Todo / Mail in cima all'Agenda mostrano anche i conteggi.
+
 La barra rapida tiene conto di dove sei: in un progetto le voci finiscono lì, nella scheda di un articolo vengono collegate al suo codice, in Mail e Diario cambia il tipo predefinito.
 
 Scorciatoie da tastiera: `n` o `/` per scrivere, `Ctrl/⌘ K` per cercare.
+
+## Mail
+
+Una voce di tipo mail è una mail vera: destinatari (A, Cc) con suggerimenti dalla rubrica, oggetto (se vuoto usa il titolo), testo e allegati. Gli allegati possono essere file caricati (anche trascinandoli) o documenti già presenti in magazzino, per esempio il firmware da mandare al cliente.
+
+**Manda** apre la mail già compilata in Thunderbird, allegati compresi. Un link `mailto:` non può portare allegati, quindi serve un piccolo helper locale da installare una volta per computer:
+
+```bash
+make mail-helper
+```
+
+Poi in Impostazioni → Mail spunta "Helper Thunderbird installato su questo computer". La prima volta il browser chiede se aprire "Organizer Mail": consenti e ricorda la scelta. Come funziona: il pulsante apre un link `organizer-mail://` con un token valido 15 minuti; l'helper scarica testo e allegati dal server e lancia `thunderbird -compose`. Su macOS è una piccola app in `~/Applications/Organizer Mail.app`, su Linux un file `.desktop`. Rimozione: `make mail-helper-uninstall`. Log: `~/.cache/organizer-mail/helper.log`. Con HTTPS self-signed (Caddy interno) imposta `ORGANIZER_INSECURE=1`.
+
+Senza helper (per esempio dal telefono) **Manda** e **App mail** aprono l'app di posta predefinita senza allegati; **.eml** scarica la mail completa di allegati.
+
+## Contatti
+
+Rubrica condivisa con nome, email, telefono, azienda, ruolo e note, tutto modificabile. I contatti vengono suggeriti nei campi A/Cc e dopo `>` nella barra rapida; `>luca` diventa l'email del contatto "Luca …". Nella scheda di un contatto ci sono le sue mail e "Nuova mail"; i destinatari usati ma non in rubrica si aggiungono con un clic.
+
+## Cestino
+
+Eliminare sposta nel cestino: voci (con le loro sotto-attività), progetti, articoli, documenti e contatti. Dopo ogni eliminazione compare "Annulla". Dal Cestino si ripristina o si elimina definitivamente; dopo 30 giorni (variabile `TRASH_DAYS`) gli elementi spariscono da soli, file compresi. Scrivere `@tag` o `#CODICE` di qualcosa che è nel cestino lo ripristina.
 
 ## Magazzino
 
@@ -113,7 +140,7 @@ make make-admin UTENTE=marco
 make invite
 ```
 
-Variabili: `APP_PORT` (porta pubblicata, predefinita 8080), `MAX_UPLOAD_MB` (predefinito 200).
+Variabili: `APP_PORT` (porta pubblicata, predefinita 8080), `MAX_UPLOAD_MB` (predefinito 200), `TRASH_DAYS` (predefinito 30).
 
 ## Struttura
 
@@ -121,10 +148,13 @@ Variabili: `APP_PORT` (porta pubblicata, predefinita 8080), `MAX_UPLOAD_MB` (pre
 server/       HTTP, API REST, autenticazione, SSE (Node, solo moduli standard)
   db.js       schema SQLite e migrazioni (PRAGMA user_version)
   demo.js     dati dimostrativi (make demo / make seed)
+  mail.js     allegati, .eml e pacchetto per l'helper Thunderbird
+  contacts.js rubrica
+  trash.js    cestino e pulizia automatica
 public/       PWA senza build: HTML, CSS, moduli ES
   js/parse.js parser della barra rapida, condiviso con il server
 test/         node --test
-tools/        generatore icone
+tools/        generatore icone, helper Thunderbird (organizer-mail.sh) e suo installer
 ```
 
 Dati: `/data/organizer.db` (SQLite, WAL) e `/data/uploads/` nel volume `organizer-data`.

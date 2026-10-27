@@ -1,10 +1,13 @@
 import {
   h, icon, S, ui, api, act, render, richText, dueInfo, dayDiff, fmtDay, fmtLongDay, fmtTime, fmtSize,
-  userName, toast, save, patchEntry, addEntry, isMine, localDay, autosize, stop, copy,
+  userName, toast, save, patchEntry, addEntry, isMine, localDay, autosize, stop, copy, hue, trashIt, contactLabel,
 } from './core.js';
 import { today, addDays } from './parse.js';
+import { mailComposer } from './mail.js';
 
 const KIND_LABEL = { todo: 'Todo', mail: 'Mail', note: 'Nota' };
+const KIND_PILL = { todo: 'todo', mail: 'mail', note: 'nota' };
+const projTag = p => h('a.tag', { href: `#/p/${p.id}`, onclick: stop, style: `--h:${hue(p.tag)}` }, `@${p.tag}`);
 const STATUS_LABEL = { open: 'Aperti', paused: 'In pausa', closed: 'Chiusi' };
 export const DOC_KINDS = ['firmware', 'datasheet', 'schema', 'manuale', 'foto', 'altro'];
 
@@ -40,12 +43,6 @@ function selectOf(value, options, onchange, attrs = {}) {
 function projectOptions(current) {
   const ps = S.data.projects.filter(p => p.status !== 'closed' || p.id === current);
   return [['', '— nessuno —'], ...ps.map(p => [String(p.id), `@${p.tag}`])];
-}
-
-function mailto(e) {
-  const to = /^[^\s@]+@[^\s@]+$/.test(e.contact || '') ? e.contact : '';
-  const subject = e.title.replace(/(^|\s)#/g, '$1');
-  return `mailto:${to}?subject=${encodeURIComponent(subject)}${e.notes ? `&body=${encodeURIComponent(e.notes)}` : ''}`;
 }
 
 function toggleOpen(id) {
@@ -85,14 +82,16 @@ export function entryRow(e, opt = {}) {
     meta.push(h('span.due', { class: e.kind === 'note' ? null : d.cls }, icon('cal'), e.kind === 'note' ? fmtDay(e.due) : d.label));
   }
   if (e.done_at && e.kind !== 'note') meta.push(h('span.muted', `${e.kind === 'mail' ? 'inviata' : 'fatta'} ${fmtTime(e.done_at)}`));
-  if (proj && opt.showProject !== false) meta.push(h('a.tag', { href: `#/p/${proj.id}`, onclick: stop }, `@${proj.tag}`));
-  if (e.kind === 'mail' && e.contact) meta.push(h('span.contact', `→ ${e.contact}`));
+  if (proj && opt.showProject !== false) meta.push(projTag(proj));
+  if (e.kind === 'mail' && e.contact) meta.push(h('span.contact', { title: e.contact }, `→ ${contactLabel(e.contact)}`));
+  const atts = S.data.attachmentsOf.get(e.id);
+  if (atts) meta.push(h('span.atts-n', { title: atts.map(a => a.filename).join(', ') }, icon('clip'), atts.length));
   if (e.assignee_id) meta.push(h('span.who', `+${userName(e.assignee_id)}`));
   if (kids.length) meta.push(h('span.kids', icon('check'), `${kids.filter(k => k.done_at).length}/${kids.length}`));
   if (logs.length) meta.push(h('span.logs', icon('log'), logs.length));
   if (e.notes) meta.push(h('span.has-notes', { title: 'Ha dettagli' }, '¶'));
   if (e.private) meta.push(h('span.priv', { title: 'Privata' }, icon('lock')));
-  if (parent) meta.push(h('span.parent', `↳ ${parent.title}`));
+  if (parent) meta.push(h('span.parent', { title: parent.title }, '↳ sotto-attività di ', h('b', parent.title)));
   if (e.pending) meta.push(h('span.pending', 'in coda offline'));
 
   const check = e.kind === 'note'
@@ -104,11 +103,13 @@ export function entryRow(e, opt = {}) {
     }, e.done_at ? icon('check') : e.kind === 'mail' ? icon('mail') : null);
 
   return h('div.entry', {
-    class: [e.done_at && 'done', open && 'open', e.pinned && 'pinned', opt.nested && 'nested'].filter(Boolean).join(' ') || null,
+    class: [`k-${e.kind}`, e.done_at && 'done', open && 'open', e.pinned && 'pinned', opt.nested && 'nested'].filter(Boolean).join(' '),
   },
   h('div.row', check,
     h('div.body', { onclick: () => toggleOpen(e.id) },
-      h('div.title', e.pinned ? icon('star', 'pin') : null, richText(e.title)),
+      h('div.title',
+        opt.showKind !== false && !opt.nested && h('span.kpill', { class: `k-${e.kind}` }, KIND_PILL[e.kind]),
+        e.pinned ? icon('star', 'pin') : null, richText(e.title)),
       meta.length > 0 && h('div.meta', meta))),
   open && entryEditor(e));
 }
@@ -125,7 +126,7 @@ function entryEditor(e) {
 
   return h('div.editor',
     h('textarea.ed-title', {
-      rows: 1, value: e.title, 'data-fk': `title-${e.id}`, spellcheck: 'false',
+      rows: 1, value: e.title, 'data-fk': `title-${e.id}`, spellcheck: 'false', 'data-ac': e.kind,
       oninput: autosize,
       onkeydown: ev => {
         if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); ev.target.blur(); }
@@ -148,12 +149,10 @@ function entryEditor(e) {
       D.users.length > 1 && h('label.f', h('span', 'Assegnata'),
         selectOf(e.assignee_id ? String(e.assignee_id) : '', [['', '— nessuno —'], ...D.users.map(u => [String(u.id), u.name || u.username])],
           v => patchEntry(e, { assignee_id: v ? +v : null }))),
-      e.kind === 'mail' && h('label.f', h('span', 'A'),
-        h('input', { value: e.contact || '', placeholder: 'destinatario', 'data-fk': `contact-${e.id}`, onchange: ev => patchEntry(e, { contact: ev.target.value }) })),
       h('button.chip', { class: e.pinned && 'on', onclick: () => patchEntry(e, { pinned: !e.pinned }) }, icon('star'), 'evidenza'),
       e.created_by === me.id && h('button.chip', { class: e.private && 'on', onclick: () => patchEntry(e, { private: !e.private }) }, icon('lock'), 'privata'),
     ),
-    h('textarea.ed-notes', {
+    e.kind === 'mail' ? mailComposer(e) : h('textarea.ed-notes', {
       rows: 1, value: e.notes, placeholder: 'Dettagli (facoltativo)…', 'data-fk': `notes-${e.id}`,
       oninput: autosize,
       onblur: ev => { if (ev.target.value !== e.notes) patchEntry(e, { notes: ev.target.value }); },
@@ -161,7 +160,7 @@ function entryEditor(e) {
     !isNote && !e.parent_id && h('div.subs',
       kids.map(k => entryRow(k, { nested: true, showProject: false })),
       h('input.sub-in', {
-        placeholder: '+ sotto-attività', 'data-fk': `sub-${e.id}`,
+        placeholder: '+ sotto-attività', 'data-fk': `sub-${e.id}`, 'data-ac': 'todo', autocomplete: 'off',
         onkeydown: enterAdd(text => addEntry({ text, today: today(), parent_id: e.id })),
       })),
     h('div.log',
@@ -172,17 +171,16 @@ function entryEditor(e) {
         (l.user_id === me.id || me.is_admin) && h('button.icon-btn.sm', { title: 'Elimina', onclick: () => act(() => api('DELETE', `/logs/${l.id}`)) }, icon('x')))),
       h('input.log-in', {
         placeholder: 'Aggiornamento: cosa hai scoperto? (anche !data +utente #CODICE)', 'data-fk': `log-${e.id}`,
+        'data-ac': e.kind, 'data-ac-only': '!#+', autocomplete: 'off',
         onkeydown: enterAdd(text => act(() => api('POST', `/entries/${e.id}/log`, { text, today: today() }))),
       })),
     h('div.ed-foot',
       h('span.muted', `${userName(e.created_by)} · ${fmtTime(e.created_at)}`),
       h('span.grow'),
-      e.kind === 'mail' && h('a.btn.sm', { href: mailto(e) }, icon('send'), 'Scrivi'),
       h('button.btn.sm.danger', {
         onclick: () => {
-          if (!confirm(`Eliminare questa voce${kids.length ? ' e le sue sotto-attività' : ''}?`)) return;
           ui.open.delete(e.id);
-          act(() => api('DELETE', `/entries/${e.id}`));
+          trashIt('entry', `/entries/${e.id}`, kids.length ? 'Voce e sotto-attività' : 'Voce');
         },
       }, icon('trash'), 'Elimina')));
 }
@@ -198,20 +196,29 @@ export function viewAgenda() {
   const D = S.data;
   let list = D.entries.filter(e => e.kind !== 'note' && !e.done_at && (!e.parent_id || e.due));
   if (ui.mine) list = list.filter(isMine);
+  const kindCount = { all: list.length, todo: list.filter(e => e.kind === 'todo').length, mail: list.filter(e => e.kind === 'mail').length };
+  if (ui.agendaKind !== 'all') list = list.filter(e => e.kind === ui.agendaKind);
   const g = { over: [], today: [], tomorrow: [], week: [], later: [], none: [] };
   for (const e of list) {
     if (!e.due) { g.none.push(e); continue; }
     const d = dayDiff(e.due);
     (d < 0 ? g.over : d === 0 ? g.today : d === 1 ? g.tomorrow : d <= 7 ? g.week : g.later).push(e);
   }
-  const done = D.entries.filter(e => e.kind !== 'note' && e.done_at && Date.now() - Date.parse(e.done_at) < 864e5 && (!ui.mine || isMine(e)));
+  const done = D.entries.filter(e => e.kind !== 'note' && e.done_at && Date.now() - Date.parse(e.done_at) < 864e5
+    && (!ui.mine || isMine(e)) && (ui.agendaKind === 'all' || e.kind === ui.agendaKind));
+  const setKind = k => { ui.agendaKind = k; save('org.agendaKind', k); render(); };
   const rows = arr => arr.map(e => entryRow(e, { showParent: true }));
 
   return h('div.view',
-    D.users.length > 1 && h('div.toolbar',
-      h('button.chip', { class: ui.mine && 'on', onclick: () => { ui.mine = !ui.mine; save('org.mine', ui.mine); render(); } }, icon('user'), 'solo mie')),
+    h('div.toolbar',
+      [['all', 'Tutto'], ['todo', 'Todo'], ['mail', 'Mail']].map(([k, label]) =>
+        h('button.chip', { class: ui.agendaKind === k && 'on', onclick: () => setKind(k) },
+          k !== 'all' && h('span.kdot', { class: `k-${k}` }), label, h('span.n', kindCount[k]))),
+      D.users.length > 1 && h('span.tsep'),
+      D.users.length > 1 && h('button.chip', { class: ui.mine && 'on', onclick: () => { ui.mine = !ui.mine; save('org.mine', ui.mine); render(); } }, icon('user'), 'solo mie')),
     pendingRows(),
-    !list.length && !S.outbox.length && empty(
+    !list.length && ui.agendaKind !== 'all' && kindCount.all > 0 && empty(h('p', 'Niente di questo tipo. ', h('a', { href: '#/agenda', onclick: ev => { ev.preventDefault(); setKind('all'); } }, 'Mostra tutto'))),
+    !kindCount.all && !S.outbox.length && empty(
       h('p', 'Niente in agenda.'),
       h('p', 'Scrivi nella barra in alto, ad esempio:'),
       h('p', kbd('flash fw nuovo #SCH-042 @rover !ven')),
@@ -272,7 +279,7 @@ export function viewProjects() {
       const next = s.next && dueInfo(s.next);
       return h('a.card', { href: `#/p/${p.id}` },
         h('div.card-h', h('span.card-t', p.name), p.private ? icon('lock') : null),
-        h('div.card-tag', `@${p.tag}`),
+        h('div.card-tag', { style: `--h:${hue(p.tag)}` }, `@${p.tag}`),
         h('div.card-m',
           h('span', `${s.open} aperte`),
           s.over > 0 && h('span.over', `${s.over} scadute`),
@@ -293,7 +300,7 @@ export function viewProject(id) {
   const done = top.filter(e => e.kind !== 'note' && e.done_at).sort(byDoneDesc);
   const itemIds = new Set(es.flatMap(e => (D.itemsOfEntry.get(e.id) || []).map(x => x.item_id)));
   const patch = f => act(() => api('PATCH', `/projects/${p.id}`, f));
-  const rows = arr => arr.map(e => entryRow(e, { showProject: false }));
+  const rows = (arr, showKind = false) => arr.map(e => entryRow(e, { showProject: false, showKind }));
 
   return h('div.view',
     h('div.head',
@@ -306,8 +313,8 @@ export function viewProject(id) {
       h('span.grow'),
       (p.created_by === me.id || me.is_admin) && h('button.btn.sm.danger', {
         onclick: () => {
-          if (!confirm(`Eliminare il progetto @${p.tag}? Le sue voci restano, senza progetto.`)) return;
-          act(async () => { await api('DELETE', `/projects/${p.id}`); location.hash = '#/progetti'; });
+          if (!confirm(`Spostare @${p.tag} nel cestino? Le sue voci restano visibili, senza progetto.`)) return;
+          trashIt('project', `/projects/${p.id}`, `@${p.tag}`).then(ok => { if (ok) location.hash = '#/progetti'; });
         },
       }, icon('trash'), 'Elimina')),
     h('textarea.proj-notes', {
@@ -318,7 +325,7 @@ export function viewProject(id) {
     mails.length > 0 && section(`p${p.id}-mail`, 'Mail da mandare', rows(mails)),
     notes.length > 0 && section(`p${p.id}-notes`, 'Diario', rows(notes)),
     itemIds.size > 0 && section(`p${p.id}-items`, 'Magazzino coinvolto', [h('div.item-chips', [...itemIds].map(i => itemChip(D.itemById.get(i))))], { count: itemIds.size }),
-    done.length > 0 && section(`p${p.id}-done`, 'Completate', rows(done), { collapsed: true }));
+    done.length > 0 && section(`p${p.id}-done`, 'Completate', rows(done, true), { collapsed: true }));
 }
 
 // ---------- mail ----------
@@ -329,8 +336,8 @@ export function viewMail() {
   return h('div.view',
     pendingRows(p => p.kind === 'mail'),
     !open.length && empty(h('p', 'Nessuna mail da mandare.'), h('p', 'Esempio: ', kbd('offerta 50 schede >acquisti@ditta.it !ven'))),
-    open.length > 0 && section('mail-open', 'Da mandare', open.map(e => entryRow(e))),
-    sent.length > 0 && section('mail-sent', 'Inviate (ultimi 30 giorni)', sent.map(e => entryRow(e)), { collapsed: true }));
+    open.length > 0 && section('mail-open', 'Da mandare', open.map(e => entryRow(e, { showKind: false }))),
+    sent.length > 0 && section('mail-sent', 'Inviate (ultimi 30 giorni)', sent.map(e => entryRow(e, { showKind: false })), { collapsed: true }));
 }
 
 // ---------- diario ----------
@@ -352,7 +359,7 @@ export function viewDiary() {
       h('p', 'Con ', kbd('!ieri'), ' o ', kbd('!12/10'), ' registri quando è successo.')),
     days.map(g => h('div.day',
       h('div.day-h', fmtLongDay(g.day)),
-      g.items.map(e => entryRow(e)))),
+      g.items.map(e => entryRow(e, { showKind: false })))),
     notes.length > shown.length && h('button.btn.ghost.more', { onclick: () => { ui.diaryLimit += 200; render(); } }, `Mostra altre ${notes.length - shown.length}`));
 }
 
@@ -459,7 +466,7 @@ function docSection(it) {
       !d.url && h('a.icon-btn', { href: `api/docs/${d.id}/file`, title: 'Scarica', download: '' }, icon('download')),
       h('button.icon-btn', {
         title: 'Elimina',
-        onclick: () => { if (confirm(`Eliminare ${d.label || d.filename || 'il link'}?`)) act(() => api('DELETE', `/docs/${d.id}`)); },
+        onclick: () => trashIt('doc', `/docs/${d.id}`, d.label || d.filename || 'Link'),
       }, icon('trash')))),
   ];
   const sec = section(`i-docs`, 'Documenti', body, { count: docs.length });
@@ -517,14 +524,14 @@ export function viewItem(id) {
       parents.length > 0 && h('div.comp', h('span.muted', 'Usato in'), h('div.item-chips', parents.map(itemChip))),
     ], { count: children.length + parents.length }),
     section('i-todo', 'Da fare', open.length ? open.map(e => entryRow(e)) : [empty(h('p', 'Scrivi nella barra in alto: le voci verranno collegate a ', kbd(`#${it.code}`), '.'))], { count: open.length }),
-    notes.length > 0 && section('i-notes', 'Diario', notes.map(e => entryRow(e))),
+    notes.length > 0 && section('i-notes', 'Diario', notes.map(e => entryRow(e, { showKind: false }))),
     done.length > 0 && section('i-done', 'Completate', done.map(e => entryRow(e)), { collapsed: true }),
     h('div.danger-zone',
       h('span.muted', `Creato ${fmtTime(it.created_at)} da ${userName(it.created_by)}`),
       h('button.btn.sm.danger', {
         onclick: () => {
-          if (!confirm(`Eliminare ${it.code} e i suoi documenti? Le voci che citano #${it.code} lo ricreeranno vuoto alla prossima modifica.`)) return;
-          act(async () => { await api('DELETE', `/items/${it.id}`); location.hash = '#/magazzino'; });
+          if (!confirm(`Spostare ${it.code} e i suoi documenti nel cestino?`)) return;
+          trashIt('item', `/items/${it.id}`, it.code).then(ok => { if (ok) location.hash = '#/magazzino'; });
         },
       }, icon('trash'), 'Elimina articolo')));
 }
@@ -533,17 +540,20 @@ export function viewItem(id) {
 export function viewSearch() {
   const D = S.data;
   const q = ui.q.trim().toLowerCase();
-  if (!q) return empty(h('p', 'Cerca tra voci, progetti, magazzino e documenti.'), h('p', kbd('Ctrl/⌘ K'), ' per arrivare qui dalla tastiera.'));
+  if (!q) return empty(h('p', 'Cerca tra voci, progetti, magazzino, documenti e contatti.'), h('p', kbd('Ctrl/⌘ K'), ' per arrivare qui dalla tastiera.'));
   const has = s => String(s || '').toLowerCase().includes(q);
   const entries = D.entries.filter(e => has(e.title) || has(e.notes) || has(e.contact) || (D.logsOf.get(e.id) || []).some(l => has(l.text)))
     .sort((a, b) => !!a.done_at - !!b.done_at || b.updated_at.localeCompare(a.updated_at));
   const projects = D.projects.filter(p => has(p.name) || has(p.tag) || has(p.notes));
+  const contacts = D.contacts.filter(c => [c.name, c.email, c.company, c.role, c.phone, c.notes].some(has));
   const items = D.items.filter(i => [i.code, i.name, i.category, i.firmware, i.location, i.notes].some(has)
     || (D.docsOf.get(i.id) || []).some(d => has(d.filename) || has(d.label) || has(d.version)));
 
   return h('div.view',
     projects.length > 0 && section('s-proj', 'Progetti', [h('div.item-chips', projects.map(p => h('a.item-chip', { href: `#/p/${p.id}` }, h('span', p.name), h('span.code', `@${p.tag}`))))], { count: projects.length }),
     items.length > 0 && section('s-items', 'Magazzino', [h('div.item-chips', items.map(itemChip))], { count: items.length }),
+    contacts.length > 0 && section('s-contacts', 'Contatti', [h('div.item-chips', contacts.map(c =>
+      h('a.item-chip', { href: `#/contatti/${c.id}` }, icon('user'), h('span', c.name || c.email), c.company && h('span.muted', c.company))))], { count: contacts.length }),
     section('s-entries', 'Voci', entries.length ? entries.slice(0, 200).map(e => entryRow(e, { showParent: true })) : [empty(h('p', 'Nessuna voce recente corrisponde.'))], { count: entries.length }),
     ui.archive?.q === q
       ? section('s-arch', 'Archivio (completate da più di 30 giorni)', ui.archive.rows.length ? ui.archive.rows.map(e => entryRow(e)) : [empty(h('p', 'Niente in archivio.'))], { count: ui.archive.rows.length })
@@ -586,6 +596,17 @@ export function viewSettings() {
       h('label.f', h('span', 'Nuova password'), h('input', { name: 'password', type: 'password', autocomplete: 'new-password', minlength: 8 })),
       h('button.btn', { type: 'submit' }, 'Cambia password')),
     ], { count: '' }),
+
+    h('a.trash-link', { href: '#/cestino' }, icon('trash'), 'Cestino', h('span.muted', D.trashCount ? `${D.trashCount} elementi` : 'vuoto')),
+
+    section('set-mail', 'Mail e Thunderbird', [
+      h('p', '"Manda" apre la mail già compilata in Thunderbird, allegati compresi. Serve un piccolo helper sul computer, da installare una volta dalla cartella del progetto:'),
+      h('p', kbd('make mail-helper')),
+      h('label.check-row',
+        h('input', { type: 'checkbox', checked: ui.mailHelper, onchange: ev => { ui.mailHelper = ev.target.checked; save('org.mailHelper', ui.mailHelper); render(); } }),
+        'Helper Thunderbird installato su questo computer'),
+      h('p.muted', 'Senza helper (per esempio dal telefono) "Manda" usa l\'app mail predefinita, ma senza allegati: per quelli c\'è il pulsante ".eml".'),
+    ], { count: '', collapsed: true }),
 
     section('set-users', 'Persone', [
       D.users.map(u => h('div.user-row',

@@ -20,7 +20,7 @@ const MAX_UPLOAD = (+process.env.MAX_UPLOAD_MB || 200) * 1048576;
 const CODE_OK = /^[A-Za-z0-9](?:[\w.\-/]*[A-Za-z0-9_])?$/;
 
 export const routes = [];
-function route(method, pattern, handler, { auth = 'user' } = {}) {
+export function route(method, pattern, handler, { auth = 'user' } = {}) {
   const keys = [];
   const re = new RegExp('^' + pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)'; }) + '$');
   routes.push({ method, re, keys, handler, auth });
@@ -28,21 +28,24 @@ function route(method, pattern, handler, { auth = 'user' } = {}) {
 
 // ---------- visibilità ----------
 // Tutto è condiviso tra gli utenti dell'istanza, tranne voci e progetti marcati privati.
-const VIS = `(e.private = 0 OR e.created_by = $uid OR e.assignee_id = $uid)
+// Le versioni *_ANY includono anche ciò che sta nel cestino (deleted_at valorizzato).
+export const VIS_ANY = `(e.private = 0 OR e.created_by = $uid OR e.assignee_id = $uid)
   AND (e.project_id IS NULL OR EXISTS (SELECT 1 FROM projects p WHERE p.id = e.project_id AND (p.private = 0 OR p.created_by = $uid)))`;
-const PVIS = '(p.private = 0 OR p.created_by = $uid)';
+export const PVIS_ANY = '(p.private = 0 OR p.created_by = $uid)';
+export const VIS = `e.deleted_at IS NULL AND ${VIS_ANY}`;
+const PVIS = `p.deleted_at IS NULL AND ${PVIS_ANY}`;
 
-const getEntry = (id, uid) =>
+export const getEntry = (id, uid) =>
   db.prepare(`SELECT e.* FROM entries e WHERE e.id = $id AND ${VIS}`).get({ id: +id, uid }) || fail(404, 'Voce non trovata');
 const getProject = (id, uid) =>
   db.prepare(`SELECT p.* FROM projects p WHERE p.id = $id AND ${PVIS}`).get({ id: +id, uid }) || fail(404, 'Progetto non trovato');
-const getItem = id => db.prepare('SELECT * FROM items WHERE id = ?').get(+id) || fail(404, 'Articolo non trovato');
+const getItem = id => db.prepare('SELECT * FROM items WHERE id = ? AND deleted_at IS NULL').get(+id) || fail(404, 'Articolo non trovato');
 const getUser = id => db.prepare('SELECT id, username, name, is_admin FROM users WHERE id = ?').get(+id) || fail(404, 'Utente non trovato');
 const findUser = name => db.prepare('SELECT id FROM users WHERE username = $n COLLATE NOCASE OR name = $n COLLATE NOCASE').get({ n: name });
 const userCount = () => db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
 
 const fmtDate = d => (d ? `${d.slice(8)}/${d.slice(5, 7)}` : 'nessuna');
-const insertId = r => Number(r.lastInsertRowid);
+export const insertId = r => Number(r.lastInsertRowid);
 
 function cleanTag(s) {
   return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
@@ -58,7 +61,9 @@ function uniqueTag(name) {
 }
 
 function resolveProject(tag, user) {
-  const p = db.prepare(`SELECT p.id FROM projects p WHERE p.tag = $tag AND ${PVIS}`).get({ tag, uid: user.id });
+  const p = db.prepare(`SELECT p.id, p.deleted_at FROM projects p WHERE p.tag = $tag AND ${PVIS_ANY}`).get({ tag, uid: user.id });
+  // Scrivere @tag di un progetto nel cestino lo ripristina: è chiaramente quello che si intende.
+  if (p?.deleted_at) db.prepare('UPDATE projects SET deleted_at = NULL, deleted_by = NULL WHERE id = ?').run(p.id);
   if (p) return p.id;
   if (db.prepare('SELECT 1 FROM projects WHERE tag = ?').get(tag)) fail(403, `@${tag} è un progetto privato di un altro utente`);
   const t = now();
@@ -67,7 +72,8 @@ function resolveProject(tag, user) {
 }
 
 function ensureItem(code, user) {
-  const it = db.prepare('SELECT id FROM items WHERE code = ?').get(code);
+  const it = db.prepare('SELECT id, deleted_at FROM items WHERE code = ?').get(code);
+  if (it?.deleted_at) db.prepare('UPDATE items SET deleted_at = NULL, deleted_by = NULL WHERE id = ?').run(it.id);
   if (it) return it.id;
   const t = now();
   return insertId(db.prepare('INSERT INTO items (code, created_by, created_at, updated_at) VALUES (?, ?, ?, ?)')
@@ -206,10 +212,21 @@ route('GET', '/api/sync', ({ req, res, user }) => {
     entries: db.prepare(`SELECT e.* FROM entries e WHERE ${where} ORDER BY e.id`).all(p),
     logs: db.prepare(`SELECT l.* FROM entry_log l JOIN entries e ON e.id = l.entry_id WHERE ${where} ORDER BY l.id`).all(p),
     entryItems: db.prepare(`SELECT ei.entry_id, ei.item_id FROM entry_items ei JOIN entries e ON e.id = ei.entry_id WHERE ${where}`).all(p),
-    items: db.prepare('SELECT * FROM items ORDER BY code COLLATE NOCASE').all(),
+    items: db.prepare('SELECT * FROM items WHERE deleted_at IS NULL ORDER BY code COLLATE NOCASE').all(),
     itemLinks: db.prepare('SELECT parent_id, child_id FROM item_links').all(),
     docs: db.prepare(`SELECT id, item_id, kind, label, version, filename, mime, size, sha256, url, created_by, created_at
-      FROM documents ORDER BY created_at DESC`).all(),
+      FROM documents WHERE deleted_at IS NULL ORDER BY created_at DESC`).all(),
+    contacts: db.prepare('SELECT * FROM contacts WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE, email').all(),
+    attachments: db.prepare(`SELECT a.id, a.entry_id, a.doc_id, a.filename, a.mime, a.size FROM mail_attachments a
+      JOIN entries e ON e.id = a.entry_id WHERE ${where} ORDER BY a.id`).all(p),
+    trashCount: db.prepare(`SELECT
+      (SELECT COUNT(*) FROM entries e WHERE e.deleted_at IS NOT NULL AND ${VIS_ANY}
+        AND (e.parent_id IS NULL OR NOT EXISTS (SELECT 1 FROM entries x WHERE x.id = e.parent_id AND x.deleted_at = e.deleted_at)))
+      + (SELECT COUNT(*) FROM projects p WHERE p.deleted_at IS NOT NULL AND ${PVIS_ANY})
+      + (SELECT COUNT(*) FROM items WHERE deleted_at IS NOT NULL)
+      + (SELECT COUNT(*) FROM documents d WHERE d.deleted_at IS NOT NULL
+        AND EXISTS (SELECT 1 FROM items i WHERE i.id = d.item_id AND i.deleted_at IS NULL))
+      + (SELECT COUNT(*) FROM contacts WHERE deleted_at IS NOT NULL) AS n`).get({ uid }).n,
   }, { ETag: etag });
 });
 
@@ -222,6 +239,17 @@ route('GET', '/api/archive', ({ user, query }) => {
 });
 
 // ---------- voci (todo / mail / note) ----------
+// ">marco" diventa l'email del contatto in rubrica che si chiama così (se è uno solo).
+function resolveContact(s) {
+  if (s.includes('@')) return s;
+  const name = s.replace(/[._]/g, ' ');
+  const exact = db.prepare(`SELECT email FROM contacts WHERE deleted_at IS NULL AND email != '' AND name = ? COLLATE NOCASE`).all(name);
+  if (exact.length === 1) return exact[0].email;
+  const prefix = db.prepare(`SELECT email FROM contacts WHERE deleted_at IS NULL AND email != '' AND name LIKE ? ESCAPE '\\'`)
+    .all(`${name.replace(/[%_\\]/g, '\\$&')}%`);
+  return prefix.length === 1 ? prefix[0].email : s;
+}
+
 export function createEntry(b, user) {
   const base = isYmd(b.today) ? b.today : today();
   const p = parseQuick(str(b.text, 1000), { today: base, kind: KINDS.includes(b.kind) ? b.kind : 'todo' });
@@ -237,6 +265,7 @@ export function createEntry(b, user) {
 
   let title = p.title;
   let assigneeId = b.assignee_id ? getUser(b.assignee_id).id : null;
+  const contact = p.contact ? resolveContact(p.contact) : null;
   if (p.assignee) {
     const u = findUser(p.assignee);
     if (u) assigneeId = u.id;
@@ -247,7 +276,7 @@ export function createEntry(b, user) {
   const id = insertId(db.prepare(`INSERT INTO entries
     (kind, title, contact, due, private, project_id, parent_id, assignee_id, created_by, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(kind, title, p.contact, p.due ?? null, bool(b.private), projectId, parent?.id ?? null, assigneeId, user.id, t, t));
+    .run(kind, title, contact, p.due ?? null, bool(b.private), projectId, parent?.id ?? null, assigneeId, user.id, t, t));
   syncEntryItems(id, user);
   return id;
 }
@@ -263,7 +292,7 @@ export function updateEntry(e, b, user) {
     if (p.kindExplicit) f.kind = p.kind;
     if (p.due !== undefined) f.due = p.due;
     if (p.project) f.project_id = resolveProject(p.project, user);
-    if (p.contact) f.contact = p.contact;
+    if (p.contact) f.contact = resolveContact(p.contact);
     if (p.assignee) {
       const u = findUser(p.assignee);
       if (u) f.assignee_id = u.id;
@@ -279,7 +308,9 @@ export function updateEntry(e, b, user) {
     if (b.due !== null && !isYmd(b.due)) fail(400, 'Data non valida');
     f.due = b.due;
   }
-  if (b.contact !== undefined) f.contact = str(b.contact, 300) || null;
+  if (b.contact !== undefined) f.contact = str(b.contact, 1000) || null;
+  if (b.mail_cc !== undefined) f.mail_cc = str(b.mail_cc, 1000) || null;
+  if (b.mail_subject !== undefined) f.mail_subject = str(b.mail_subject, 300) || null;
   if (b.project_id !== undefined) f.project_id = b.project_id ? getProject(b.project_id, user.id).id : null;
   if (b.assignee_id !== undefined) f.assignee_id = b.assignee_id ? getUser(b.assignee_id).id : null;
   if (b.done !== undefined) f.done_at = b.done ? e.done_at || now() : null;
@@ -307,9 +338,12 @@ route('PATCH', '/api/entries/:id', async ({ params, user, body }) => {
   tx(() => updateEntry(getEntry(params.id, user.id), b, user));
 });
 
+// Eliminare = spostare nel cestino. Le sotto-attività seguono la voce con lo stesso istante,
+// così il ripristino riporta indietro esattamente ciò che è stato eliminato insieme.
 route('DELETE', '/api/entries/:id', ({ params, user }) => {
   const e = getEntry(params.id, user.id);
-  db.prepare('DELETE FROM entries WHERE id = ?').run(e.id);
+  db.prepare('UPDATE entries SET deleted_at = $t, deleted_by = $u WHERE (id = $id OR parent_id = $id) AND deleted_at IS NULL')
+    .run({ t: now(), u: user.id, id: e.id });
 });
 
 // Aggiornamento: una riga che racconta cosa si è scoperto. Accetta !data e +utente per modificare la voce.
@@ -350,7 +384,8 @@ route('POST', '/api/projects', async ({ user, body }) => {
   if (!name) fail(400, 'Il nome è obbligatorio');
   const tag = b.tag ? cleanTag(b.tag) : uniqueTag(name);
   if (!tag) fail(400, 'Tag non valido');
-  if (db.prepare('SELECT 1 FROM projects WHERE tag = ?').get(tag)) fail(409, `Esiste già un progetto @${tag}`);
+  const clash = db.prepare('SELECT deleted_at FROM projects WHERE tag = ?').get(tag);
+  if (clash) fail(409, clash.deleted_at ? `@${tag} è nel cestino: ripristinalo da lì` : `Esiste già un progetto @${tag}`);
   const t = now();
   const id = insertId(db.prepare('INSERT INTO projects (name, tag, private, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
     .run(name, tag, bool(b.private), user.id, t, t));
@@ -382,7 +417,7 @@ route('PATCH', '/api/projects/:id', async ({ params, user, body }) => {
 route('DELETE', '/api/projects/:id', ({ params, user }) => {
   const p = getProject(params.id, user.id);
   if (p.created_by !== user.id && !user.is_admin) fail(403, 'Solo chi ha creato il progetto (o un admin) può eliminarlo');
-  db.prepare('DELETE FROM projects WHERE id = ?').run(p.id);
+  db.prepare('UPDATE projects SET deleted_at = ?, deleted_by = ? WHERE id = ?').run(now(), user.id, p.id);
 });
 
 // ---------- magazzino ----------
@@ -407,8 +442,8 @@ function checkCode(code) {
 route('POST', '/api/items', async ({ user, body }) => {
   const b = await body();
   const code = checkCode(str(b.code, 64));
-  const existing = db.prepare('SELECT id FROM items WHERE code = ?').get(code);
-  if (existing) fail(409, `Il codice ${code} esiste già`);
+  const existing = db.prepare('SELECT deleted_at FROM items WHERE code = ?').get(code);
+  if (existing) fail(409, existing.deleted_at ? `${code} è nel cestino: ripristinalo da lì` : `Il codice ${code} esiste già`);
   const t = now();
   const id = insertId(db.prepare('INSERT INTO items (code, created_by, created_at, updated_at) VALUES (?, ?, ?, ?)')
     .run(code, user.id, t, t));
@@ -446,11 +481,9 @@ function renameCodeInEntries(it, code) {
   }
 }
 
-route('DELETE', '/api/items/:id', ({ params }) => {
+route('DELETE', '/api/items/:id', ({ params, user }) => {
   const it = getItem(params.id);
-  const files = db.prepare('SELECT stored FROM documents WHERE item_id = ? AND stored IS NOT NULL').all(it.id);
-  db.prepare('DELETE FROM items WHERE id = ?').run(it.id);
-  for (const f of files) fs.rmSync(path.join(UPLOAD_DIR, f.stored), { force: true });
+  db.prepare('UPDATE items SET deleted_at = ?, deleted_by = ? WHERE id = ?').run(now(), user.id, it.id);
 });
 
 route('POST', '/api/items/:id/children', async ({ params, user, body }) => {
@@ -469,23 +502,8 @@ route('DELETE', '/api/items/:id/children/:child', ({ params }) => {
 });
 
 // ---------- documenti ----------
-// Upload: il corpo della richiesta è il file grezzo, i metadati stanno nella query string.
-// Con Content-Type JSON invece si registra un link esterno (repo, wiki, drive...).
-route('POST', '/api/items/:id/docs', async ({ req, params, query, user, body }) => {
-  const it = getItem(params.id);
-  const kind = DOC_KINDS.includes(query.kind) ? query.kind : 'altro';
-  const t = now();
-
-  if ((req.headers['content-type'] || '').startsWith('application/json')) {
-    const b = await body();
-    const url = str(b.url, 2000);
-    if (!/^https?:\/\//i.test(url)) fail(400, 'Il link deve iniziare con http:// o https://');
-    const k = DOC_KINDS.includes(b.kind) ? b.kind : 'altro';
-    const id = insertId(db.prepare(`INSERT INTO documents (item_id, kind, label, version, url, created_by, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(it.id, k, str(b.label, 200), str(b.version, 60), url, user.id, t));
-    return { id };
-  }
-
+// Salva il corpo della richiesta (file grezzo) in uploads/ con un nome casuale.
+export async function saveUpload(req) {
   if (+req.headers['content-length'] > MAX_UPLOAD) fail(413, `File troppo grande (max ${MAX_UPLOAD >> 20} MB)`);
   const stored = crypto.randomBytes(16).toString('hex');
   const dest = path.join(UPLOAD_DIR, stored);
@@ -506,16 +524,36 @@ route('POST', '/api/items/:id/docs', async ({ req, params, query, user, body }) 
     fs.rmSync(dest, { force: true });
     throw e;
   }
+  return { stored, size, sha256: hash.digest('hex'), mime: str(req.headers['content-type'], 100) || 'application/octet-stream' };
+}
+
+// Upload: il corpo della richiesta è il file grezzo, i metadati stanno nella query string.
+// Con Content-Type JSON invece si registra un link esterno (repo, wiki, drive...).
+route('POST', '/api/items/:id/docs', async ({ req, params, query, user, body }) => {
+  const it = getItem(params.id);
+  const kind = DOC_KINDS.includes(query.kind) ? query.kind : 'altro';
+  const t = now();
+
+  if ((req.headers['content-type'] || '').startsWith('application/json')) {
+    const b = await body();
+    const url = str(b.url, 2000);
+    if (!/^https?:\/\//i.test(url)) fail(400, 'Il link deve iniziare con http:// o https://');
+    const k = DOC_KINDS.includes(b.kind) ? b.kind : 'altro';
+    const id = insertId(db.prepare(`INSERT INTO documents (item_id, kind, label, version, url, created_by, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(it.id, k, str(b.label, 200), str(b.version, 60), url, user.id, t));
+    return { id };
+  }
+
+  const { stored, size, sha256, mime } = await saveUpload(req);
   const version = str(query.version, 60);
-  const mime = str(req.headers['content-type'], 100) || 'application/octet-stream';
   const id = insertId(db.prepare(`INSERT INTO documents (item_id, kind, label, version, filename, mime, size, sha256, stored, created_by, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(it.id, kind, str(query.label, 200), version, str(query.name, 255) || 'file', mime, size, hash.digest('hex'), stored, user.id, t));
+    .run(it.id, kind, str(query.label, 200), version, str(query.name, 255) || 'file', mime, size, sha256, stored, user.id, t));
   if (kind === 'firmware' && version) db.prepare('UPDATE items SET firmware = ?, updated_at = ? WHERE id = ?').run(version, t, it.id);
   return { id };
 });
 
-const INLINE_OK = /^(application\/pdf|image\/(png|jpeg|gif|webp)|text\/plain)$/;
+export const INLINE_OK = /^(application\/pdf|image\/(png|jpeg|gif|webp)|text\/plain)$/;
 
 route('GET', '/api/docs/:id/file', ({ res, params, query }) => {
   const d = db.prepare('SELECT * FROM documents WHERE id = ?').get(+params.id);
@@ -545,10 +583,9 @@ route('PATCH', '/api/docs/:id', async ({ params, body }) => {
   setFields('documents', d.id, f);
 });
 
-route('DELETE', '/api/docs/:id', ({ params }) => {
-  const d = db.prepare('SELECT * FROM documents WHERE id = ?').get(+params.id) || fail(404, 'Documento non trovato');
-  db.prepare('DELETE FROM documents WHERE id = ?').run(d.id);
-  if (d.stored) fs.rmSync(path.join(UPLOAD_DIR, d.stored), { force: true });
+route('DELETE', '/api/docs/:id', ({ params, user }) => {
+  const d = db.prepare('SELECT id FROM documents WHERE id = ? AND deleted_at IS NULL').get(+params.id) || fail(404, 'Documento non trovato');
+  db.prepare('UPDATE documents SET deleted_at = ?, deleted_by = ? WHERE id = ?').run(now(), user.id, d.id);
 });
 
 // ---------- amministrazione ----------

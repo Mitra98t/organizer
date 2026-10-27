@@ -1,0 +1,110 @@
+// Rubrica: elenco filtrabile, scheda modificabile, mail collegate a ogni contatto.
+import { h, icon, S, ui, api, act, render, copy, trashIt, autosize } from './core.js';
+import { entryRow } from './views.js';
+
+const lc = s => String(s || '').toLowerCase();
+const mailsOf = c => S.data.entries
+  .filter(e => e.kind === 'mail' && c.email && lc(e.contact).split(',').map(s => s.trim()).includes(lc(c.email)))
+  .sort((a, b) => !!a.done_at - !!b.done_at || b.updated_at.localeCompare(a.updated_at));
+
+// Destinatari usati nelle mail ma non ancora in rubrica: si aggiungono con un clic.
+function unknownRecipients() {
+  const D = S.data;
+  const seen = new Map();
+  for (const e of D.entries) {
+    if (e.kind !== 'mail' || !e.contact) continue;
+    for (const a of e.contact.split(',').map(s => s.trim())) {
+      if (/^[^\s@]+@[^\s@]+$/.test(a) && !D.contactByEmail.has(lc(a))) seen.set(lc(a), a);
+    }
+  }
+  return [...seen.values()].sort();
+}
+
+const newMail = c => window.dispatchEvent(new CustomEvent('org:quick', { detail: `m: >${c.email} ` }));
+
+export function viewContacts(id) {
+  if (id) return viewContact(+id);
+  const D = S.data;
+  const f = lc(ui.contactFilter.trim());
+  const list = D.contacts.filter(c => !f || [c.name, c.email, c.company, c.role, c.phone, c.notes].some(v => lc(v).includes(f)));
+  const unknown = unknownRecipients();
+
+  return h('div.view',
+    h('div.toolbar',
+      h('input.filter', {
+        type: 'search', placeholder: 'Filtra per nome, email, azienda, telefono…', value: ui.contactFilter, 'data-fk': 'contactfilter',
+        oninput: ev => { ui.contactFilter = ev.target.value; render(); },
+      })),
+    h('form.inline-add', {
+      onsubmit: ev => {
+        ev.preventDefault();
+        const els = ev.target.elements;
+        const name = els.name.value.trim();
+        const email = els.email.value.trim();
+        if (!name && !email) return;
+        act(async () => { const r = await api('POST', '/contacts', { name, email }); location.hash = `#/contatti/${r.id}`; });
+      },
+    },
+    h('input', { name: 'name', placeholder: 'Nome', 'data-fk': 'newcname', autocomplete: 'off' }),
+    h('input', { name: 'email', type: 'email', placeholder: 'email', 'data-fk': 'newcemail', autocomplete: 'off' }),
+    h('button.btn', { type: 'submit' }, icon('plus'), 'Aggiungi')),
+    !D.contacts.length && h('div.empty',
+      h('p', 'La rubrica è vuota.'),
+      h('p', 'I contatti compaiono nei suggerimenti di ', h('code.k', '>'), ' e nel campo "A" delle mail, e ', h('code.k', '>nome'), ' diventa la sua email.')),
+    D.contacts.length > 0 && !list.length && h('div.empty', h('p', 'Nessun contatto corrisponde al filtro.')),
+    h('div.items', list.map(c => {
+      const n = mailsOf(c).filter(e => !e.done_at).length;
+      return h('a.item-row.contact-row', { href: `#/contatti/${c.id}` },
+        h('span.cname', c.name || h('span.muted', 'senza nome')),
+        c.company && h('span.muted', c.company),
+        h('span.item-meta',
+          c.email && h('span.mono', c.email),
+          c.phone && h('span', c.phone),
+          n > 0 && h('span.badge', { title: 'mail da mandare' }, n)));
+    })),
+    unknown.length > 0 && h('div.unknown',
+      h('div.day-h', 'Destinatari usati, non in rubrica'),
+      h('div.item-chips', unknown.map(a => h('button.item-chip', {
+        title: 'Aggiungi alla rubrica',
+        onclick: () => act(() => api('POST', '/contacts', { email: a, name: '' })),
+      }, icon('plus'), a)))));
+}
+
+function viewContact(id) {
+  const D = S.data;
+  const c = D.contactById.get(id);
+  if (!c) return h('div.empty', h('p', 'Contatto non trovato.'), h('a', { href: '#/contatti' }, 'Torna ai contatti'));
+  const patch = f => act(() => api('PATCH', `/contacts/${c.id}`, f));
+  const field = (key, label, attrs = {}) => h('label.f', h('span', label),
+    h('input', { value: c[key], 'data-fk': `c-${key}-${c.id}`, ...attrs, onchange: ev => patch({ [key]: ev.target.value }) }));
+  const mails = mailsOf(c);
+
+  return h('div.view',
+    h('div.head',
+      h('a.icon-btn', { href: '#/contatti', title: 'Contatti' }, icon('back')),
+      h('input.h-title', { value: c.name, placeholder: 'Nome', 'data-fk': `cname-${c.id}`, onchange: ev => patch({ name: ev.target.value }) })),
+    h('div.grid',
+      field('email', 'Email', { type: 'email', class: 'mono' }),
+      field('phone', 'Telefono', { type: 'tel' }),
+      field('company', 'Azienda'),
+      field('role', 'Ruolo'),
+    ),
+    h('textarea.proj-notes', {
+      rows: 2, value: c.notes, placeholder: 'Note: orari, come preferisce essere contattato, riferimenti…', 'data-fk': `cnotes-${c.id}`,
+      oninput: autosize, onblur: ev => { if (ev.target.value !== c.notes) patch({ notes: ev.target.value }); },
+    }),
+    h('div.toolbar',
+      c.email && h('button.btn', { onclick: () => newMail(c) }, icon('mail'), 'Nuova mail'),
+      c.email && h('button.btn.ghost', { onclick: () => copy(c.email) }, icon('copy'), 'Copia email'),
+      c.phone && h('a.btn.ghost', { href: `tel:${c.phone.replace(/[^\d+]/g, '')}` }, 'Chiama')),
+    h('section.sec',
+      h('div.sec-h', h('span.sec-t', 'Mail'), h('span.count', mails.length)),
+      h('div.sec-b', mails.length
+        ? mails.map(e => entryRow(e, { showKind: false }))
+        : h('div.empty', h('p', 'Nessuna mail a questo contatto.')))),
+    h('div.danger-zone',
+      h('span.muted', `Aggiunto il ${new Date(c.created_at).toLocaleDateString('it-IT')}`),
+      h('button.btn.sm.danger', {
+        onclick: () => trashIt('contact', `/contacts/${c.id}`, c.name || c.email).then(ok => { if (ok) location.hash = '#/contatti'; }),
+      }, icon('trash'), 'Elimina')));
+}
