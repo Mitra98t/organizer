@@ -388,7 +388,6 @@ function renderApp() {
       r.name === 'registrati' && r.query.code ? viewJoin(r.query.code)
         : S.noWorkspace ? viewNoWorkspace()
           : S.data ? v.fn(r.id, r.query) : h('div.empty', 'Caricamento…'));
-    viewEl.classList.toggle('wide', r.name === 'd' || r.name === 'review');
     document.body.classList.toggle('doc-page', !!S.data && (r.name === 'd' || r.name === 'review'));
     document.body.classList.toggle('chat-page', !!S.data && r.name === 'chat');
   } catch (e) {

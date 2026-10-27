@@ -3,6 +3,10 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.7.3 — 2026-10-27
+- Tutte le pagine usano la larghezza intera della finestra (prima si fermavano a 1480 px; anche la chat).
+- Viste a colonne (magazzino per categoria, documenti raggruppati): 3 colonne su schermo grande (da 1400 px), 2 su medio, 1 su telefono.
+
 ## 0.7.2 — 2026-10-27
 - **Ricerca nel documento**: ⌘F (Ctrl+F) nella pagina di un PDF o di un file di testo apre una barra di ricerca; i risultati sono evidenziati sulla pagina (anche con lo zoom), con il conteggio, Invio / Maiusc+Invio per passare al successivo o al precedente, Esc per chiudere. Fuori dai documenti ⌘F resta la ricerca del browser.
 - CLI: `org doc notes ID` mostra le note scritte su un documento, prima le generali poi pagina per pagina con lo stesso numero del segnaposto nell'app (`--all` anche le risolte); `org doc` indica quante note aperte ha ogni documento.
