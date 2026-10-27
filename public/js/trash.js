@@ -39,7 +39,8 @@ export function viewTrash() {
     h('div.sec-h', h('span.sec-t', title), h('span.count', rows.length)),
     h('div.sec-b', rows));
 
-  const total = T.entries.length + T.projects.length + T.items.length + T.docs.length + T.contacts.length;
+  T.docNotes ||= [];
+  const total = T.entries.length + T.projects.length + T.items.length + T.docs.length + T.contacts.length + T.docNotes.length;
 
   return h('div.view',
     h('p.muted.trash-info', `Gli elementi eliminati restano qui ${T.days} giorni, poi vengono cancellati definitivamente.`),
@@ -50,6 +51,7 @@ export function viewTrash() {
     block('Progetti', T.projects.map(p => row('project', p, [p.name, ' ', h('span.muted.mono', `@${p.tag}`)]))),
     block('Magazzino', T.items.map(i => row('item', i, [h('span.code-t', i.code), ' ', i.name]))),
     block('Documenti', T.docs.map(d => row('doc', d, d.label || d.filename || d.url, h('span.mono', d.item_code)))),
+    block('Note sui documenti', T.docNotes.map(n => row('docnote', n, n.text, h('span', `${n.label || n.filename || n.url}${n.page ? ` · pag. ${n.page}` : ''}`)))),
     block('Contatti', T.contacts.map(c => row('contact', c, c.name || c.email, c.name && h('span.mono', c.email)))),
     total > 0 && me.is_admin && h('div.danger-zone',
       h('span.muted', total === 1 ? '1 elemento' : `${total} elementi`),

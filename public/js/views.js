@@ -713,12 +713,16 @@ function docSection(it) {
     docs.map(d => h('div.doc',
       h('span.dk', { class: `k-${d.kind}` }, d.kind),
       h('div.doc-main',
-        h('a', { href: d.url || `api/docs/${d.id}/file?inline=1`, target: '_blank', rel: 'noopener noreferrer' }, d.label || d.filename || d.url),
+        h('a', { href: `#/d/${d.id}`, title: 'Apri con le note' }, d.label || d.filename || d.url),
         h('div.meta',
           d.version && h('span.ver', `v${d.version}`),
           d.label && d.filename && h('span', d.filename),
           d.size != null && h('span', fmtSize(d.size)),
           d.sha256 && h('button.sha', { title: `sha256 ${d.sha256} (clic per copiare)`, onclick: () => copy(d.sha256) }, d.sha256.slice(0, 10)),
+          (() => {
+            const n = (D.docNotesOf.get(d.id) || []).filter(x => !x.resolved_at).length;
+            return n > 0 && h('a.doc-notes', { href: `#/d/${d.id}`, title: 'Note sul documento' }, icon('log'), n);
+          })(),
           h('span', fmtTime(d.created_at)))),
       !d.url && h('a.icon-btn', { href: `api/docs/${d.id}/file`, title: 'Scarica', download: '' }, icon('download')),
       h('button.icon-btn', {
@@ -823,12 +827,18 @@ export function viewSearch() {
     .sort((a, b) => !!a.done_at - !!b.done_at || b.updated_at.localeCompare(a.updated_at));
   const projects = D.projects.filter(p => has(p.name) || has(p.tag) || has(p.notes));
   const contacts = D.contacts.filter(c => [c.name, c.email, c.company, c.role, c.phone, c.notes].some(has));
+  const docNotes = D.docNotes.filter(n => has(n.text) && D.docById.has(n.doc_id));
   const items = D.items.filter(i => [i.code, i.name, i.category, i.firmware, i.location, i.notes].some(has)
     || (D.docsOf.get(i.id) || []).some(d => has(d.filename) || has(d.label) || has(d.version)));
 
   return h('div.view',
     projects.length > 0 && section('s-proj', 'Progetti', [h('div.item-chips', projects.map(p => h('a.item-chip', { href: `#/p/${p.id}` }, h('span', p.name), h('span.code', `@${p.tag}`))))], { count: projects.length }),
     items.length > 0 && section('s-items', 'Magazzino', [h('div.item-chips', items.map(itemChip))], { count: items.length }),
+    docNotes.length > 0 && section('s-docnotes', 'Note sui documenti', docNotes.slice(0, 50).map(n => {
+      const d = D.docById.get(n.doc_id);
+      return h('a.search-note', { href: `#/d/${d.id}?n=${n.id}` },
+        h('span.muted', `${d.label || d.filename}${n.page ? ` · pag. ${n.page}` : ''}`), h('span', n.text));
+    }), { count: docNotes.length }),
     contacts.length > 0 && section('s-contacts', 'Contatti', [h('div.item-chips', contacts.map(c =>
       h('a.item-chip', { href: `#/contatti/${c.id}` }, icon('user'), h('span', c.name || c.email), c.company && h('span.muted', c.company))))], { count: contacts.length }),
     section('s-entries', 'Voci', entries.length ? entries.slice(0, 200).map(e => entryRow(e, { showParent: true })) : [empty(h('p', 'Nessuna voce recente corrisponde.'))], { count: entries.length }),

@@ -8,7 +8,7 @@ APP_PORT    ?= 8080
 
 .DEFAULT_GOAL := help
 .PHONY: help up down restart logs ps https wait reset demo seed backup restore \
-        users invite reset-password make-admin mail-helper mail-helper-uninstall shell info test dev dev-reset dev-demo confirm
+        users invite reset-password make-admin mail-helper mail-helper-uninstall remote remote-off remote-status shell info test dev dev-reset dev-demo confirm
 
 help: ## Mostra questo elenco
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -88,6 +88,20 @@ reset-password: ## Nuova password per un utente: make reset-password UTENTE=marc
 make-admin: ## Rende amministratore un utente: make make-admin UTENTE=marco
 	@test -n "$(UTENTE)" || { echo "Uso: make make-admin UTENTE=nome"; exit 1; }
 	$(COMPOSE) exec -T app $(NODE) server/cli.js make-admin $(UTENTE)
+
+# ---------- accesso da fuori casa (Tailscale) ----------
+TAILSCALE ?= $(shell command -v tailscale 2>/dev/null || echo /Applications/Tailscale.app/Contents/MacOS/Tailscale)
+
+remote: ## Rende l'app raggiungibile in HTTPS dai tuoi dispositivi Tailscale (non da Internet)
+	@$(TAILSCALE) status >/dev/null 2>&1 || { echo "Tailscale non è attivo: aprilo e fai login."; exit 1; }
+	$(TAILSCALE) serve --bg $(APP_PORT)
+	@$(TAILSCALE) serve status
+
+remote-off: ## Smette di pubblicare l'app su Tailscale
+	$(TAILSCALE) serve reset
+
+remote-status: ## Mostra cosa è pubblicato su Tailscale e l'indirizzo
+	@$(TAILSCALE) serve status
 
 # ---------- mail ----------
 mail-helper: ## Installa l'helper che apre le mail in Thunderbird con gli allegati (macOS/Linux)

@@ -32,6 +32,7 @@ e accedi con `demo` / `demo1234` (c'è anche `marco` / `demo1234` per vedere la 
 | `make backup` / `make restore FILE=...` | backup completo in `backups/` e ripristino |
 | `make users` / `invite` / `reset-password UTENTE=x` / `make-admin UTENTE=x` | utenti |
 | `make info` | indirizzi locale e LAN |
+| `make remote` / `remote-off` / `remote-status` | accesso HTTPS da fuori casa tramite Tailscale (solo i tuoi dispositivi) |
 | `make mail-helper` / `mail-helper-uninstall` | helper che apre le mail in Thunderbird con gli allegati |
 | `make dev` / `dev-demo` / `test` | sviluppo locale senza Docker (dati in `./data`) |
 
@@ -76,6 +77,16 @@ Scorciatoie da tastiera: `n` o `/` per scrivere, `Ctrl/⌘ K` per cercare.
 
 Un progetto può stare dentro un altro (campo "Dentro" nella sua pagina, o `@padre` quando lo crei), a più livelli. L'elenco li mostra ad albero con le voci aperte sommate e si riorganizza **trascinando**: un progetto rilasciato su un altro ci finisce dentro, rilasciato sulla riga in cima torna principale (su telefono: tieni premuto e trascina; dopo ogni spostamento c'è "Annulla"); nella pagina di un progetto ci sono i sottoprogetti e, se attivo "includi le voci dei sottoprogetti", anche le loro voci. La sezione **Magazzino del progetto** raccoglie gli articoli collegati a mano (con autocompletamento; un codice nuovo crea l'articolo) e quelli citati con `#CODICE` nelle voci.
 
+## Documenti e note
+
+Cliccando un documento nella scheda di un articolo si apre il visualizzatore con le note a lato:
+
+- **PDF** (con PDF.js, incluso nel progetto in `public/vendor/pdfjs`, nessuna connessione esterna) e **immagini**: clicchi un punto e lasci una nota lì; il segnaposto numerato resta al suo posto a ogni zoom. Cliccando una nota il documento scorre al punto, e viceversa.
+- **File di testo**: anteprima del contenuto.
+- **Qualsiasi altro file o link** (firmware, archivi, …): niente anteprima, ma le **note generali** sul file funzionano per tutti.
+
+Ogni nota si può modificare, segnare come risolta (sparisce, si rivede con il filtro "risolte"), eliminare (va nel cestino) o trasformare in todo con **→ todo**: la voce nasce con il `#CODICE` dell'articolo e negli aggiornamenti un link che riapre il documento su quella nota. Il file originale non viene modificato: le note vivono nell'app. Nella scheda dell'articolo ogni documento mostra quante note aperte ha; la ricerca trova anche il testo delle note.
+
 ## Mail
 
 Una voce di tipo mail è una mail vera: destinatari (A, Cc) con suggerimenti dalla rubrica, oggetto (se vuoto usa il titolo), testo e allegati. Gli allegati possono essere file caricati (anche trascinandoli) o documenti già presenti in magazzino, per esempio il firmware da mandare al cliente.
@@ -92,7 +103,7 @@ Senza helper (per esempio dal telefono) **Manda** e **App mail** aprono l'app di
 
 ## Contatti
 
-Rubrica condivisa con nome, email, telefono, azienda, ruolo e note, tutto modificabile. I contatti vengono suggeriti nei campi A/Cc e dopo `>` nella barra rapida; `>luca` diventa l'email del contatto "Luca …". Nella scheda di un contatto ci sono le sue mail e "Nuova mail"; i destinatari usati ma non in rubrica si aggiungono con un clic.
+Rubrica condivisa con nome, email, telefono, azienda, ruolo e note, tutto modificabile; il campo azienda suggerisce le aziende già presenti in rubrica. I contatti vengono suggeriti nei campi A/Cc e dopo `>` nella barra rapida; `>luca` diventa l'email del contatto "Luca …". Nella scheda di un contatto ci sono le sue mail e "Nuova mail"; i destinatari usati ma non in rubrica si aggiungono con un clic.
 
 ## Cestino
 
@@ -114,7 +125,7 @@ L'app è già raggiungibile in rete locale su `http://IP-DEL-MAC:8080`. Funziona
 
 **Opzione consigliata: Tailscale** (gratis, funziona anche fuori casa, certificato valido)
 1. Installa Tailscale sul Mac e sul telefono, stesso account.
-2. Sul Mac: `tailscale serve --bg 8080`
+2. Sul Mac: `make remote` (la prima volta Tailscale chiede di abilitare Serve e i certificati HTTPS dal suo pannello)
 3. Sul telefono apri `https://nome-del-mac.tuo-tailnet.ts.net` e installa l'app.
 
 **Opzione Caddy** (HTTPS in LAN con CA interna: il telefono deve fidarsi del certificato di Caddy)
@@ -167,6 +178,7 @@ public/       PWA senza build: HTML, CSS, moduli ES
   js/parse.js parser della barra rapida, condiviso con il server
 test/         node --test
 tools/        generatore icone, helper Thunderbird (organizer-mail.sh) e suo installer
+public/vendor/pdfjs  PDF.js 6.4.299 (Apache-2.0), solo i file necessari al visualizzatore
 ```
 
 Dati: `/data/organizer.db` (SQLite, WAL) e `/data/uploads/` nel volume `organizer-data`.

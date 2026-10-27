@@ -4,6 +4,7 @@
 // data-ac="email": campo di indirizzi separati da virgola (A, Cc), suggerisce la rubrica senza simboli.
 // data-ac="code" / "project": tutto il campo è un codice di magazzino / un progetto; scegliere un
 // suggerimento conferma subito il campo (come premere Invio). data-ac-self esclude un codice.
+// data-ac="company": tutto il campo è un'azienda già usata in rubrica; scegliendola il campo si salva.
 // Nella barra in alto: modalità 'item' (/categoria, @progetto) e 'project' (@progetto padre).
 // Un solo menu flottante per tutta l'app, agganciato al campo che ha il focus: sopravvive ai re-render.
 import { h, S, fmtDay, hue, catStyle } from './core.js';
@@ -54,7 +55,7 @@ function update(el) {
   const pos = el.selectionStart;
   if (pos == null || pos !== el.selectionEnd) return close();
   if (el.dataset.ac === 'email') return updateEmail(el, pos);
-  if (el.dataset.ac === 'code' || el.dataset.ac === 'project') return updateWhole(el);
+  if (['code', 'project', 'company'].includes(el.dataset.ac)) return updateWhole(el);
   const kind = kindOf(el);
   const allowed = el.dataset.acOnly || { item: '/@', project: '@' }[kind] || '@#!+>';
   const m = el.value.slice(0, pos).match(/(?:^|\s)([@#!+>/])([^\s@#!+>/]*)$/);
@@ -75,15 +76,37 @@ function updateWhole(el) {
   if (!q) return close();
   const D = S.data;
   let items;
+  let commit = 'submit';
   if (el.dataset.ac === 'code') {
     const self = lc(el.dataset.acSelf);
     items = itemSuggestions(q, i => lc(i.code) !== self).map(i => ({ ...i, insert: i.label }));
+  } else if (el.dataset.ac === 'company') {
+    items = companySuggestions(q);
+    commit = 'change';
+    // Già scritta per intero ed è l'unica: niente menu.
+    if (items.length === 1 && lc(items[0].insert) === q) items = [];
   } else {
     items = projectSuggestions(q).map(p => ({ ...p, insert: p.label.slice(1) }));
   }
   if (!items.length) return close();
-  st = { el, start: 0, end: el.value.length, items, index: 0, token: el.value.trim(), suffix: '', submit: true };
+  st = { el, start: 0, end: el.value.length, items, index: 0, token: el.value.trim(), suffix: '', commit };
   draw();
+}
+
+function companySuggestions(ql) {
+  const counts = new Map();
+  for (const c of S.data.contacts) {
+    const name = c.company?.trim();
+    if (!name) continue;
+    const key = lc(name);
+    const cur = counts.get(key) || { name, n: 0 };
+    cur.n++;
+    counts.set(key, cur);
+  }
+  return [...counts.values()].filter(c => lc(c.name).includes(ql))
+    .sort((a, b) => rank(a.name, ql) - rank(b.name, ql) || b.n - a.n || a.name.localeCompare(b.name))
+    .slice(0, 8)
+    .map(c => ({ insert: c.name, label: c.name, extra: c.n === 1 ? '1 contatto' : `${c.n} contatti` }));
 }
 
 function itemSuggestions(ql, filter = () => true) {
@@ -228,10 +251,11 @@ function accept(i) {
   el.value = el.value.slice(0, start) + ins + after;
   const caret = start + ins.length;
   el.setSelectionRange(caret, caret);
-  const submit = st.submit;
+  const { commit } = st;
   close();
   el.dispatchEvent(new Event('input', { bubbles: true }));
-  if (submit) el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  if (commit === 'submit') el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  else if (commit === 'change') el.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 function onKey(ev) {

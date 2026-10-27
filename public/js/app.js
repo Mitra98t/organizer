@@ -5,6 +5,7 @@ import {
 import { initAutocomplete, acCheck } from './autocomplete.js';
 import { viewContacts } from './contacts.js';
 import { viewTrash } from './trash.js';
+import { viewDoc, docCancelDraft } from './docview.js';
 import { parseQuick, extractCodes, today, parseItemLine, parseProjectLine } from './parse.js';
 import {
   viewAgenda, viewProjects, viewProject, viewMail, viewDiary, viewItems, viewItem, viewSearch, viewSettings,
@@ -22,6 +23,7 @@ const VIEWS = {
   i: { fn: viewItem, title: 'Articolo', nav: 'magazzino' },
   contatti: { fn: viewContacts, title: 'Contatti', nav: 'contatti' },
   cestino: { fn: viewTrash, title: 'Cestino', nav: 'cestino' },
+  d: { fn: viewDoc, title: 'Documento', nav: 'magazzino' },
   cerca: { fn: viewSearch, title: 'Cerca', nav: null },
   impostazioni: { fn: viewSettings, title: 'Impostazioni', nav: 'impostazioni' },
 };
@@ -57,6 +59,10 @@ function quickContext() {
   }
   if (r.name === 'i' && D) {
     const it = D.itemById.get(+r.id);
+    if (it) return { code: it.code, label: `su #${it.code}` };
+  }
+  if (r.name === 'd' && D) {
+    const it = D.itemById.get(D.docById.get(+r.id)?.item_id);
     if (it) return { code: it.code, label: `su #${it.code}` };
   }
   if (r.name === 'contatti' && r.id && D) {
@@ -312,7 +318,8 @@ function renderApp() {
     ? { fk: a.dataset.fk, value: a.value, s: a.selectionStart, e: a.selectionEnd } : null;
   RS.busy = true;
   try {
-    viewEl.replaceChildren(S.data ? v.fn(r.id) : h('div.empty', 'Caricamento…'));
+    viewEl.replaceChildren(S.data ? v.fn(r.id, r.query) : h('div.empty', 'Caricamento…'));
+    viewEl.classList.toggle('wide', r.name === 'd');
   } catch (e) {
     console.error(e);
     viewEl.replaceChildren(h('div.empty', `Errore di visualizzazione: ${e.message}`));
@@ -427,12 +434,16 @@ document.addEventListener('keydown', ev => {
 function goUp(field) {
   if (field) return field.blur();
   if (document.querySelector('.ac:not([hidden])')) return;
+  if (docCancelDraft()) return;
   if (ui.open.size) {
     ui.open.clear();
     return render();
   }
   const r = route();
-  const up = { p: '#/progetti', i: '#/magazzino', cerca: '#/agenda' }[r.name] || (r.name === 'contatti' && r.id ? '#/contatti' : null);
+  const doc = r.name === 'd' && S.data?.docById.get(+r.id);
+  const up = { p: '#/progetti', i: '#/magazzino', cerca: '#/agenda' }[r.name]
+    || (r.name === 'contatti' && r.id ? '#/contatti' : null)
+    || (doc ? `#/i/${doc.item_id}` : null);
   if (up) location.hash = up;
 }
 

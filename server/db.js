@@ -170,6 +170,25 @@ const MIGRATIONS = [
   );
   CREATE INDEX project_items_item ON project_items(item_id);
   `,
+  // v4: note sui documenti. Con page/x/y è un segnaposto su un punto del file (x, y in 0..1),
+  // senza è una nota generale sul file.
+  `
+  CREATE TABLE doc_notes (
+    id INTEGER PRIMARY KEY,
+    doc_id INTEGER NOT NULL REFERENCES documents ON DELETE CASCADE,
+    page INTEGER,
+    x REAL,
+    y REAL,
+    text TEXT NOT NULL,
+    resolved_at TEXT,
+    created_by INTEGER REFERENCES users ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deleted_at TEXT,
+    deleted_by INTEGER REFERENCES users ON DELETE SET NULL
+  );
+  CREATE INDEX doc_notes_doc ON doc_notes(doc_id);
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

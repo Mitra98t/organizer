@@ -219,6 +219,8 @@ route('GET', '/api/sync', ({ req, res, user }) => {
     docs: db.prepare(`SELECT id, item_id, kind, label, version, filename, mime, size, sha256, url, created_by, created_at
       FROM documents WHERE deleted_at IS NULL ORDER BY created_at DESC`).all(),
     contacts: db.prepare('SELECT * FROM contacts WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE, email').all(),
+    docNotes: db.prepare(`SELECT n.* FROM doc_notes n JOIN documents d ON d.id = n.doc_id
+      WHERE n.deleted_at IS NULL AND d.deleted_at IS NULL ORDER BY n.id`).all(),
     attachments: db.prepare(`SELECT a.id, a.entry_id, a.doc_id, a.filename, a.mime, a.size FROM mail_attachments a
       JOIN entries e ON e.id = a.entry_id WHERE ${where} ORDER BY a.id`).all(p),
     trashCount: db.prepare(`SELECT
@@ -228,7 +230,9 @@ route('GET', '/api/sync', ({ req, res, user }) => {
       + (SELECT COUNT(*) FROM items WHERE deleted_at IS NOT NULL)
       + (SELECT COUNT(*) FROM documents d WHERE d.deleted_at IS NOT NULL
         AND EXISTS (SELECT 1 FROM items i WHERE i.id = d.item_id AND i.deleted_at IS NULL))
-      + (SELECT COUNT(*) FROM contacts WHERE deleted_at IS NOT NULL) AS n`).get({ uid }).n,
+      + (SELECT COUNT(*) FROM contacts WHERE deleted_at IS NOT NULL)
+      + (SELECT COUNT(*) FROM doc_notes n WHERE n.deleted_at IS NOT NULL
+        AND EXISTS (SELECT 1 FROM documents d WHERE d.id = n.doc_id AND d.deleted_at IS NULL)) AS n`).get({ uid }).n,
   }, { ETag: etag });
 });
 
@@ -617,6 +621,44 @@ route('PATCH', '/api/docs/:id', async ({ params, body }) => {
   if (b.version !== undefined) f.version = str(b.version, 60);
   if (b.kind !== undefined) f.kind = DOC_KINDS.includes(b.kind) ? b.kind : 'altro';
   setFields('documents', d.id, f);
+});
+
+// ---------- note sui documenti ----------
+function notePosition(b) {
+  if (b.page == null) return { page: null, x: null, y: null };
+  const page = Number(b.page);
+  const x = Number(b.x);
+  const y = Number(b.y);
+  if (!Number.isInteger(page) || page < 1 || !(x >= 0 && x <= 1) || !(y >= 0 && y <= 1)) fail(400, 'Posizione non valida');
+  return { page, x, y };
+}
+
+const getNote = id => db.prepare('SELECT * FROM doc_notes WHERE id = ? AND deleted_at IS NULL').get(+id) || fail(404, 'Nota non trovata');
+
+route('POST', '/api/docs/:id/notes', async ({ params, user, body }) => {
+  const b = await body();
+  const d = db.prepare('SELECT id FROM documents WHERE id = ? AND deleted_at IS NULL').get(+params.id) || fail(404, 'Documento non trovato');
+  const text = str(b.text, 5000) || fail(400, 'Scrivi la nota');
+  const { page, x, y } = notePosition(b);
+  const t = now();
+  return { id: insertId(db.prepare(`INSERT INTO doc_notes (doc_id, page, x, y, text, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(d.id, page, x, y, text, user.id, t, t)) };
+});
+
+route('PATCH', '/api/doc-notes/:id', async ({ params, body }) => {
+  const b = await body();
+  const n = getNote(params.id);
+  const f = {};
+  if (b.text !== undefined) f.text = str(b.text, 5000) || fail(400, 'La nota non può essere vuota');
+  if (b.resolved !== undefined) f.resolved_at = b.resolved ? n.resolved_at || now() : null;
+  if (b.page !== undefined) Object.assign(f, notePosition(b));
+  f.updated_at = now();
+  setFields('doc_notes', n.id, f);
+});
+
+route('DELETE', '/api/doc-notes/:id', ({ params, user }) => {
+  const n = getNote(params.id);
+  db.prepare('UPDATE doc_notes SET deleted_at = ?, deleted_by = ? WHERE id = ?').run(now(), user.id, n.id);
 });
 
 route('DELETE', '/api/docs/:id', ({ params, user }) => {

@@ -29,13 +29,17 @@ const TYPES = {
       db.prepare('UPDATE items SET deleted_at = NULL, deleted_by = NULL WHERE id = ?').run(d.item_id);
     },
   },
+  docnote: {
+    find: id => db.prepare('SELECT * FROM doc_notes WHERE id = ? AND deleted_at IS NOT NULL').get(id),
+    restore: n => db.prepare('UPDATE doc_notes SET deleted_at = NULL, deleted_by = NULL WHERE id = ?').run(n.id),
+  },
   contact: {
     find: id => db.prepare('SELECT * FROM contacts WHERE id = ? AND deleted_at IS NOT NULL').get(id),
     restore: c => db.prepare('UPDATE contacts SET deleted_at = NULL, deleted_by = NULL WHERE id = ?').run(c.id),
   },
 };
 
-const TABLE = { entry: 'entries', project: 'projects', item: 'items', doc: 'documents', contact: 'contacts' };
+const TABLE = { entry: 'entries', project: 'projects', item: 'items', doc: 'documents', contact: 'contacts', docnote: 'doc_notes' };
 
 function getTrashed(type, id, user) {
   const t = TYPES[type] || fail(404, 'Tipo sconosciuto');
@@ -56,6 +60,8 @@ route('GET', '/api/trash', ({ user }) => {
       i.code AS item_code FROM documents d JOIN items i ON i.id = d.item_id
       WHERE d.deleted_at IS NOT NULL AND i.deleted_at IS NULL ORDER BY d.deleted_at DESC`).all(),
     contacts: db.prepare('SELECT * FROM contacts WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC').all(),
+    docNotes: db.prepare(`SELECT n.*, d.filename, d.label, d.url FROM doc_notes n JOIN documents d ON d.id = n.doc_id
+      WHERE n.deleted_at IS NOT NULL AND d.deleted_at IS NULL ORDER BY n.deleted_at DESC`).all(),
   };
 });
 
@@ -96,6 +102,7 @@ function purge(cond, only) {
     }
     if (want('projects')) db.prepare(`DELETE FROM projects WHERE ${cond}`).run();
     if (want('contacts')) db.prepare(`DELETE FROM contacts WHERE ${cond}`).run();
+    if (want('doc_notes')) db.prepare(`DELETE FROM doc_notes WHERE ${cond}`).run();
   });
   // Gli allegati che puntano a un documento (doc_id) non hanno file propri e spariscono con lui (ON DELETE CASCADE).
   for (const f of files) fs.rmSync(path.join(UPLOAD_DIR, f), { force: true });

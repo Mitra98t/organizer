@@ -86,7 +86,7 @@ function viewContact(id) {
     h('div.grid',
       field('email', 'Email', { type: 'email', class: 'mono' }),
       field('phone', 'Telefono', { type: 'tel' }),
-      field('company', 'Azienda'),
+      field('company', 'Azienda', { 'data-ac': 'company', autocomplete: 'off' }),
       field('role', 'Ruolo'),
     ),
     h('textarea.proj-notes', {

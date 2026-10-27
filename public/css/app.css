@@ -556,3 +556,59 @@ body.pdnd, body.pdnd * { cursor: grabbing !important; }
   padding: 7px 12px; border-radius: 9px; background: var(--panel); border: 1px solid var(--accent);
   box-shadow: 0 8px 24px rgb(0 0 0 / 30%); font-weight: 600; font-size: 14px;
 }
+
+/* ---------- documenti con note ---------- */
+#view.wide { max-width: 1400px; }
+.docview .head { flex-wrap: wrap; }
+.dv-title { margin: 0; font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
+.dv { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 14px; align-items: start; }
+.dv-main { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; }
+.dv-toolbar { display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--line); background: var(--panel); font-size: 13px; }
+.dv-toolbar .icon-btn { width: 30px; height: 30px; font-size: 18px; }
+.dv-zoom { min-width: 44px; text-align: center; font-family: var(--mono); font-size: 12px; }
+.dv-pl { margin-left: 8px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.dv-hint { font-size: 12px; }
+/* position: relative → offsetTop delle pagine è misurato rispetto a questo riquadro, come scrollTop. */
+.dv-scroll { position: relative; height: calc(100dvh - 190px); min-height: 360px; overflow: auto; padding: 16px; }
+/* Margini automatici invece di align-items: center, così una pagina più larga del riquadro resta raggiungibile anche a sinistra. */
+.dv-pages { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+.dv-page { margin-inline: auto; }
+.dv-page { position: relative; background: #fff; box-shadow: 0 1px 4px rgb(0 0 0 / 25%); cursor: crosshair; flex: none; }
+.dv-page canvas, .dv-page img { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-drag: none; }
+.dv-pins { position: absolute; inset: 0; pointer-events: none; }
+.dv-pin {
+  position: absolute; transform: translate(-1px, -100%); transform-origin: 0 100%; pointer-events: auto; cursor: pointer;
+  min-width: 24px; height: 24px; padding: 0 6px; border: 2px solid #fff; border-radius: 12px 12px 12px 2px;
+  background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 700; line-height: 20px; text-align: center;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 35%);
+}
+.dv-pin.on { background: var(--today); color: #fff; transform: translate(-1px, -100%) scale(1.25); z-index: 2; }
+.dv-pin.resolved { opacity: 0.45; }
+.dv-pin.draft { background: var(--mail); color: #fff; animation: pop 0.15s ease-out; }
+.dv-pin.mini { position: static; transform: none; display: inline-block; border-width: 1px; height: 20px; min-width: 20px; line-height: 18px; font-size: 11px; box-shadow: none; }
+.dv-text { margin: 0; padding: 14px; background: var(--panel); font-family: var(--mono); font-size: 12.5px; white-space: pre-wrap; overflow-wrap: anywhere; width: 100%; }
+.dv-notes { display: flex; flex-direction: column; gap: 8px; position: sticky; top: 130px; max-height: calc(100dvh - 150px); overflow: auto; }
+.dv-nh { display: flex; align-items: center; gap: 8px; }
+.dv-sub { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-top: 6px; }
+.dv-general { font-size: 14px; }
+.dv-empty { font-size: 13px; }
+.dnote { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; cursor: pointer; }
+.dnote.on { border-color: var(--today); box-shadow: 0 0 0 1px var(--today); }
+.dnote.resolved .dnote-t { color: var(--muted); text-decoration: line-through; }
+.dnote.draft { border-color: var(--mail); cursor: default; }
+.dnote-h { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.dnote-gen { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+.dnote-gen .ic { width: 13px; height: 13px; }
+.dnote-t { font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.dnote-edit { font-size: 14px; }
+.dnote-a { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.dnote-a .chip { padding: 1px 8px; font-size: 12px; }
+.doc-notes { display: inline-flex; align-items: center; gap: 3px; color: var(--today); }
+.search-note { display: flex; flex-direction: column; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 14px; }
+.search-note:last-child { border-bottom: 0; }
+@media (max-width: 900px) {
+  .dv { grid-template-columns: 1fr; }
+  .dv-scroll { height: 62vh; padding: 10px; }
+  .dv-notes { position: static; max-height: none; }
+  .dv-hint { display: none; }
+}

@@ -35,6 +35,9 @@ export const ui = {
   itemView: load('org.itemView', 'list'),
   itemCat: null,
   projDeep: load('org.projDeep', true),
+  docNote: null,
+  docEdit: null,
+  docShowResolved: false,
 };
 
 // ---------- render ----------
@@ -172,6 +175,7 @@ function indexData(d) {
   d.contacts ||= []; // cache salvata da una versione precedente
   d.attachments ||= [];
   d.projectItems ||= [];
+  d.docNotes ||= [];
   d.entryById = new Map(d.entries.map(e => [e.id, e]));
   d.projectById = new Map(d.projects.map(p => [p.id, p]));
   d.projectByTag = new Map(d.projects.map(p => [p.tag.toLowerCase(), p]));
@@ -183,6 +187,8 @@ function indexData(d) {
   d.itemsOfEntry = group(d.entryItems, 'entry_id');
   d.entriesOfItem = group(d.entryItems, 'item_id');
   d.docsOf = group(d.docs, 'item_id');
+  d.docById = new Map(d.docs.map(x => [x.id, x]));
+  d.docNotesOf = group(d.docNotes, 'doc_id');
   d.childItems = group(d.itemLinks, 'parent_id');
   d.parentItems = group(d.itemLinks, 'child_id');
   d.contactById = new Map(d.contacts.map(c => [c.id, c]));
@@ -420,8 +426,11 @@ export function richText(text) {
   for (const m of String(text || '').matchAll(RICH_RE)) {
     if (m[1]) {
       out.push(text.slice(last, m.index));
+      const internal = m[1].startsWith(`${location.origin}${location.pathname}#/`);
       const short = m[1].replace(/^https?:\/\/(www\.)?/, '');
-      out.push(h('a.ext', { href: m[1], target: '_blank', rel: 'noopener noreferrer', onclick: stop }, short.length > 42 ? `${short.slice(0, 40)}…` : short));
+      out.push(internal
+        ? h('a.ext', { href: m[1].slice(m[1].indexOf('#')), onclick: stop }, m[1].includes('#/d/') ? 'apri la nota nel documento' : 'apri')
+        : h('a.ext', { href: m[1], target: '_blank', rel: 'noopener noreferrer', onclick: stop }, short.length > 42 ? `${short.slice(0, 40)}…` : short));
     } else {
       out.push(text.slice(last, m.index + m[2].length));
       const it = S.data?.itemByCode.get(m[3].toUpperCase());
