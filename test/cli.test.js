@@ -99,6 +99,18 @@ test('documenti: carica, rinomina, scarica', async () => {
   assert.equal(item.firmware, '1.1');
   assert.equal(item.docs[0].kind, 'firmware');
 
+  // Note sul documento: generali prima, poi per pagina con i numeri dei segnaposto; le risolte solo con --all.
+  const note = body => call('POST', `/docs/${id}/notes`, { token: config().token, body }).then(r => r.json());
+  await note({ text: 'in fondo', page: 2, x: 0.5, y: 0.9 });
+  await note({ text: 'in alto', page: 1, x: 0.5, y: 0.1 });
+  await note({ text: 'generale' });
+  const done = await note({ text: 'vecchia', page: 1, x: 0.1, y: 0.05 });
+  await call('PATCH', `/doc-notes/${done.id}`, { token: config().token, body: { resolved: true } });
+  const notes = JSON.parse(await org(['doc', 'notes', String(id), '--json']));
+  assert.deepEqual(notes.general.map(n => n.text), ['generale']);
+  assert.deepEqual(notes.pinned.map(n => [n.num, n.text]), [[1, 'in alto'], [2, 'in fondo']]);
+  assert.equal(JSON.parse(await org(['doc', 'notes', String(id), '--all', '--json'])).pinned[0].text, 'vecchia');
+
   await org(['doc', 'rename', String(id), 'firmware relè']);
   const out = path.join(dir, 'giu');
   fs.mkdirSync(out);

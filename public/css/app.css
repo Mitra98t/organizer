@@ -838,3 +838,15 @@ a.ref:hover { border-color: var(--accent); }
 .archived { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
 .arch-h { display: flex; align-items: baseline; gap: 8px; }
 .arch-notes { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* ---------- ricerca nel documento ---------- */
+.dv-search { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.dv-search[hidden] { display: none; }
+.dv-search > .ic { color: var(--muted); }
+.dv-search-in { flex: 1; min-width: 120px; max-width: 360px; padding: 4px 8px !important; font-size: 13px; }
+.dv-search-n { font-size: 12px; min-width: 90px; }
+.dv-hits { position: absolute; inset: 0; pointer-events: none; }
+.dv-hit { position: absolute; background: rgb(255 200 0 / 38%); border-radius: 2px; mix-blend-mode: multiply; }
+.dv-hit.on { background: rgb(255 120 0 / 55%); outline: 2px solid rgb(255 120 0 / 90%); }
+.dv-text mark { background: rgb(255 200 0 / 45%); color: inherit; border-radius: 2px; }
+.dv-text mark.on { background: rgb(255 120 0 / 70%); }

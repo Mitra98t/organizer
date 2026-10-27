@@ -53,8 +53,11 @@ function getViewer(d) {
         v.pageLabel,
       ],
       h('span.grow'),
-      h('span.muted.dv-hint', pinnable(v) ? 'Clicca sul documento per aggiungere una nota in quel punto' : '')),
+      h('span.muted.dv-hint', pinnable(v) ? 'Clicca sul documento per aggiungere una nota in quel punto' : ''),
+      searchable(v) && h('button.icon-btn', { title: `Cerca nel documento (${MOD}F)`, onclick: () => openSearch(v) }, icon('search'))),
+    searchBar(v),
     v.scroller);
+  v.el.addEventListener('pointerdown', () => { lastActive = v; });
   v.resize = new ResizeObserver(() => { clearTimeout(v.rt); v.rt = setTimeout(() => layout(v), 120); });
   v.resize.observe(v.scroller);
   viewers.set(d.id, v);
@@ -155,7 +158,8 @@ async function openText(v, d) {
   try {
     const r = await fetch(docFileUrl(d), { credentials: 'same-origin' });
     if (!r.ok) throw new Error(`errore ${r.status}`);
-    v.pagesEl.replaceChildren(h('pre.dv-text', await r.text()));
+    v.rawText = await r.text();
+    v.pagesEl.replaceChildren(v.textEl = h('pre.dv-text', v.rawText));
     v.status = 'ready';
   } catch (e) {
     fail(v, `Impossibile leggere il file: ${e.message}`);
@@ -164,11 +168,12 @@ async function openText(v, d) {
 
 function newPage(v, num, w, h0, extra) {
   const pins = h('div.dv-pins');
+  const hits = h('div.dv-hits');
   const wrap = h('div.dv-page', { 'data-page': num, onclick: ev => clickPage(v, num, wrap, ev) });
   if (extra.img) wrap.append(extra.img);
   else wrap.append(extra.canvas = h('canvas'));
-  wrap.append(pins);
-  v.pages.push({ num, w, h: h0, wrap, pins, ...extra });
+  wrap.append(hits, pins);
+  v.pages.push({ num, w, h: h0, wrap, pins, hits, ...extra });
   return wrap;
 }
 
@@ -224,6 +229,169 @@ function updatePageLabel(v) {
   const mid = v.scroller.scrollTop + v.scroller.clientHeight / 2;
   const p = v.pages.find(x => x.wrap.offsetTop + x.wrap.offsetHeight > mid) || v.pages.at(-1);
   v.pageLabel.textContent = `pag. ${p.num} / ${v.pages.length}`;
+}
+
+// ---------- ricerca nel documento (⌘F / Ctrl+F) ----------
+// I PDF sono disegnati su canvas: la ricerca del browser non li vede. Il testo di ogni pagina si legge con
+// PDF.js (una volta sola), i risultati sono riquadri sopra la pagina in percentuale (seguono lo zoom).
+// Nei file di testo le occorrenze si evidenziano direttamente. Maiuscole e minuscole non contano.
+const MOD = /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl+';
+const searchable = v => v.kind === 'pdf' || v.kind === 'text';
+let lastActive = null; // nella revisione affiancata: il documento toccato per ultimo
+
+function searchBar(v) {
+  if (!searchable(v)) return null;
+  const go = dir => { if (v.matches?.length) showMatch(v, (v.matchIndex + dir + v.matches.length) % v.matches.length); };
+  v.searchInput = h('input.dv-search-in', {
+    type: 'search', placeholder: 'Cerca nel documento…', autocomplete: 'off', spellcheck: 'false',
+    oninput: () => { clearTimeout(v.searchTimer); v.searchTimer = setTimeout(() => runSearch(v), 180); },
+    onkeydown: ev => {
+      if (ev.key === 'Enter') { ev.preventDefault(); go(ev.shiftKey ? -1 : 1); }
+      if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); closeSearch(v); }
+    },
+  });
+  v.searchCount = h('span.muted.dv-search-n');
+  v.searchBox = h('div.dv-search', { hidden: true },
+    icon('search'), v.searchInput, v.searchCount,
+    h('button.icon-btn.sm', { title: 'Precedente (Maiusc+Invio)', onclick: () => go(-1) }, '↑'),
+    h('button.icon-btn.sm', { title: 'Successivo (Invio)', onclick: () => go(1) }, '↓'),
+    h('button.icon-btn.sm', { title: 'Chiudi (Esc)', onclick: () => closeSearch(v) }, icon('x')));
+  return v.searchBox;
+}
+
+function openSearch(v) {
+  v.searchBox.hidden = false;
+  v.searchInput.focus();
+  v.searchInput.select();
+}
+
+function closeSearch(v) {
+  v.searchBox.hidden = true;
+  v.searchInput.value = '';
+  v.matches = null;
+  drawMatches(v);
+  v.searchCount.textContent = '';
+}
+
+// Scorciatoia dalla tastiera: true se c'è un documento in cui cercare (altrimenti resta la ricerca del browser).
+export function docSearchKey() {
+  const open = wantedDocs().map(id => viewers.get(id)).filter(v => v && searchable(v));
+  const v = open.includes(lastActive) ? lastActive : open[0];
+  if (!v) return false;
+  openSearch(v);
+  return true;
+}
+
+// Testo di una pagina PDF con la posizione di ogni pezzo (coordinate della pagina a zoom 1).
+async function pageText(p) {
+  if (p.text) return p.text;
+  const { Util } = await loadPdfjs();
+  const vt = p.page.getViewport({ scale: 1 }).transform;
+  const tc = await p.page.getTextContent();
+  let str = '';
+  const spans = [];
+  for (const it of tc.items) {
+    if (it.str) {
+      const [, , c, d, e, f] = Util.transform(vt, it.transform);
+      const size = Math.hypot(c, d) || it.height || 10;
+      spans.push({ start: str.length, end: str.length + it.str.length, x: e, y: f - size * 0.95, w: it.width, h: size * 1.2 });
+      str += it.str;
+    }
+    if (it.hasEOL) str += ' ';
+  }
+  p.text = { lower: str.toLowerCase(), spans };
+  return p.text;
+}
+
+// Riquadri di un'occorrenza [from, to): uno per ogni pezzo di testo che tocca (anche su più righe).
+function rectsOf(text, from, to) {
+  return text.spans.filter(s => s.end > from && s.start < to).map(s => {
+    const len = Math.max(1, s.end - s.start);
+    const a = Math.max(from, s.start) - s.start;
+    const b = Math.min(to, s.end) - s.start;
+    return { x: s.x + (s.w * a) / len, y: s.y, w: (s.w * (b - a)) / len, h: s.h };
+  });
+}
+
+async function runSearch(v) {
+  const q = v.searchInput.value.trim().toLowerCase();
+  const seq = (v.searchSeq = (v.searchSeq || 0) + 1);
+  v.matches = [];
+  if (!q) {
+    drawMatches(v);
+    v.searchCount.textContent = '';
+    return;
+  }
+  if (v.kind === 'text') {
+    const lower = (v.rawText || '').toLowerCase();
+    for (let i = lower.indexOf(q); i >= 0; i = lower.indexOf(q, i + q.length)) v.matches.push({ from: i, to: i + q.length });
+  } else {
+    v.searchCount.textContent = 'cerco…';
+    for (const p of v.pages) {
+      const text = await pageText(p);
+      if (seq !== v.searchSeq) return; // nel frattempo si è scritto altro
+      for (let i = text.lower.indexOf(q); i >= 0; i = text.lower.indexOf(q, i + q.length)) {
+        v.matches.push({ page: p.num, rects: rectsOf(text, i, i + q.length) });
+      }
+    }
+  }
+  if (!v.matches.length) {
+    drawMatches(v);
+    v.searchCount.textContent = 'nessun risultato';
+    return;
+  }
+  // Si parte dal primo risultato dalla pagina che si sta guardando in poi.
+  const here = v.kind === 'pdf' ? currentPage(v) : 1;
+  const first = v.matches.findIndex(m => (m.page ?? 1) >= here);
+  showMatch(v, Math.max(0, first));
+}
+
+function currentPage(v) {
+  const mid = v.scroller.scrollTop + v.scroller.clientHeight / 2;
+  return (v.pages.find(x => x.wrap.offsetTop + x.wrap.offsetHeight > mid) || v.pages.at(-1))?.num ?? 1;
+}
+
+function showMatch(v, i) {
+  v.matchIndex = i;
+  v.searchCount.textContent = `${i + 1} / ${v.matches.length}`;
+  drawMatches(v);
+  const m = v.matches[i];
+  if (v.kind === 'text') {
+    v.textEl.querySelector('mark.on')?.scrollIntoView({ block: 'center' });
+    return;
+  }
+  const p = v.pages[m.page - 1];
+  const r = m.rects[0];
+  if (!r) return;
+  const y = p.wrap.offsetTop + (r.y / p.h) * p.wrap.offsetHeight;
+  const x = p.wrap.offsetLeft + (r.x / p.w) * p.wrap.offsetWidth;
+  v.scroller.scrollTop = y - v.scroller.clientHeight * 0.35;
+  if (x < v.scroller.scrollLeft || x > v.scroller.scrollLeft + v.scroller.clientWidth - 40) v.scroller.scrollLeft = x - 40;
+}
+
+function drawMatches(v) {
+  if (v.kind === 'text') {
+    if (!v.textEl) return;
+    const parts = [];
+    let last = 0;
+    (v.matches || []).forEach((m, i) => {
+      parts.push(v.rawText.slice(last, m.from), h('mark', { class: i === v.matchIndex ? 'on' : null }, v.rawText.slice(m.from, m.to)));
+      last = m.to;
+    });
+    parts.push(v.rawText.slice(last));
+    v.textEl.replaceChildren(...parts);
+    return;
+  }
+  for (const p of v.pages) p.hits.replaceChildren();
+  (v.matches || []).forEach((m, i) => {
+    const p = v.pages[m.page - 1];
+    for (const r of m.rects) {
+      p.hits.append(h('div.dv-hit', {
+        class: i === v.matchIndex ? 'on' : null,
+        style: `left:${(r.x / p.w) * 100}%;top:${(r.y / p.h) * 100}%;width:${(r.w / p.w) * 100}%;height:${(r.h / p.h) * 100}%`,
+      }));
+    }
+  });
 }
 
 function clickPage(v, num, wrap, ev) {

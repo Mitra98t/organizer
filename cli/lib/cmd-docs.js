@@ -4,8 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { c, fail, table, fmtSize, fmtTime, openExternal } from './term.js';
-import { itemRef, numRef } from './data.js';
+import { c, fail, table, heading, rich, fmtSize, fmtTime, openExternal } from './term.js';
+import { itemRef, numRef, userName, linkRefs } from './data.js';
 
 export const DOC_KINDS = ['firmware', 'datasheet', 'schema', 'footprint', 'manuale', 'foto', 'altro'];
 
@@ -70,8 +70,9 @@ export default {
         && (!q || `${d.label} ${d.filename} ${d.url} ${d.version}`.toLowerCase().includes(q)));
       if (ctx.json) return ctx.out(list);
       if (!list.length) return console.log(c.dim('Nessun documento'));
+      const openNotes = id => D.docNotes.filter(n => n.doc_id === id && !n.resolved_at).length;
       table(list.map(d => [
-        c.dim(d.id), d.kind, d.version ? `v${d.version}` : '', docName(d),
+        c.dim(d.id), d.kind, d.version ? `v${d.version}` : '', docName(d), openNotes(d.id) ? c.yellow(`✎${openNotes(d.id)}`) : '',
         item ? '' : c.cyan(D.itemById.get(d.item_id)?.code ?? ''), c.dim(d.url ? 'link' : fmtSize(d.size)), c.dim(fmtTime(d.created_at)),
       ]));
     },
@@ -145,6 +146,45 @@ export default {
       fs.mkdirSync(dir, { recursive: true });
       for (const f of fs.readdirSync(dir)) fs.rmSync(path.join(dir, f), { force: true });
       openExternal(await download(ctx, d, dir));
+    },
+  },
+
+  notes: {
+    usage: 'doc notes ID [--all]',
+    summary: 'note scritte sul documento: prima le generali, poi pagina per pagina con il numero del segnaposto come nell\'app; --all anche le risolte',
+    options: { all: { type: 'boolean', short: 'a' } },
+    async run(ctx, [ref], o) {
+      const D = await ctx.data();
+      const d = await docRef(ctx, ref);
+      const mine = D.docNotes.filter(n => n.doc_id === d.id);
+      const shown = mine.filter(n => o.all || !n.resolved_at);
+      const general = shown.filter(n => n.page == null).sort((a, b) => a.created_at.localeCompare(b.created_at));
+      // Numeri dei segnaposto come nell'app: per pagina, dall'alto in basso.
+      const pinned = shown.filter(n => n.page != null).sort((a, b) => a.page - b.page || a.y - b.y || a.x - b.x)
+        .map((n, i) => ({ ...n, num: i + 1 }));
+      if (ctx.json) return ctx.out({ doc: d, general, pinned });
+
+      const it = D.itemById.get(d.item_id);
+      console.log(`${c.bold(docName(d))} ${c.dim(`${d.kind}${d.version ? ` v${d.version}` : ''}`)}${it ? ` ${c.cyan(it.code)}` : ''}`);
+      console.log(c.dim(`${ctx.api().base}/#/d/${d.id}`));
+      const hidden = mine.length - shown.length;
+      if (!shown.length) return console.log(c.dim(`\nNessuna nota${hidden ? ` aperta (${hidden} risolte: --all)` : ''}`));
+
+      const print = n => {
+        const done = n.resolved_at ? c.green(' ✓ risolta') : '';
+        console.log(`${n.num ? c.yellow(`[${n.num}]`) : c.dim('•')} ${c.bold(userName(D, n.created_by))} ${c.dim(fmtTime(n.updated_at || n.created_at))}${done}`);
+        const text = linkRefs(D, rich(n.text), c.blue).split('\n').map(l => `    ${l}`).join('\n');
+        console.log(n.resolved_at ? c.dim(text) : text);
+      };
+      if (general.length) {
+        heading('Generali');
+        general.forEach(print);
+      }
+      for (const page of [...new Set(pinned.map(n => n.page))]) {
+        heading(`Pagina ${page}`);
+        pinned.filter(n => n.page === page).forEach(print);
+      }
+      if (hidden) console.log(c.dim(`\n${hidden} ${hidden === 1 ? 'nota risolta nascosta' : 'note risolte nascoste'} (--all per vederle)`));
     },
   },
 

@@ -50,6 +50,7 @@ org doc link SCH-060 https://…/relay.pdf -k datasheet --label 'Datasheet relè
 org doc SCH-060                            # documenti dell'articolo
 org doc get 7 -o ~/Downloads
 org doc open 7                             # con il visualizzatore di sistema
+org doc notes 7                            # le note scritte sul PDF, per pagina (--all anche le risolte)
 org doc rename 7 G5V datasheet
 
 org mail new 'invio firmware #SCH-060 >acquisti@pcbfab.example @rover'

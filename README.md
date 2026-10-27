@@ -91,6 +91,7 @@ Cliccando un documento nella scheda di un articolo si apre il visualizzatore con
 
 - **PDF** (con PDF.js, incluso nel progetto in `public/vendor/pdfjs`, nessuna connessione esterna) e **immagini**: clicchi un punto e lasci una nota lì; il segnaposto numerato resta al suo posto a ogni zoom. Cliccando una nota il documento scorre al punto, e viceversa.
 - **File di testo**: anteprima del contenuto.
+- **Cerca nel documento**: ⌘F (Ctrl+F su Linux) apre la ricerca nel PDF o nel file di testo aperto; Invio e Maiusc+Invio passano da un risultato all'altro, Esc chiude. Nella revisione affiancata cerca nel documento toccato per ultimo. Funziona sui PDF con testo vero (non sulle scansioni).
 - **Link a un PDF** (es. un datasheet su mouser.com): il server lo scarica al momento e lo mostra come un PDF caricato, con le stesse note. Solo indirizzi internet pubblici (mai la rete locale), solo PDF, massimo 60 MB (`REMOTE_MAX_MB`); se il sito mostra una pagina o una protezione anti-bot al posto del file, compare il motivo e il link originale.
 - **Qualsiasi altro file o link** (firmware, archivi, …): niente anteprima, ma le **note generali** sul file funzionano per tutti.
 

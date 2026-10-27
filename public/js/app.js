@@ -6,7 +6,7 @@ import {
 import { initAutocomplete, acCheck } from './autocomplete.js';
 import { viewContacts } from './contacts.js';
 import { viewTrash } from './trash.js';
-import { viewDoc, viewReview, docCancelDraft, setDocFocus } from './docview.js';
+import { viewDoc, viewReview, docCancelDraft, setDocFocus, docSearchKey } from './docview.js';
 import { viewDocuments } from './documents.js';
 import { viewChat, notifyNew } from './chat.js';
 import { parseQuick, extractCodes, today, parseItemLine, parseProjectLine } from './parse.js';
@@ -496,7 +496,10 @@ document.addEventListener('visibilitychange', () => {
 });
 document.addEventListener('keydown', ev => {
   const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName);
-  if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'k') {
+  // ⌘F (Ctrl+F) in un documento cerca nel documento; altrove resta la ricerca del browser.
+  if ((/Mac|iPhone|iPad/.test(navigator.userAgent) ? ev.metaKey : ev.ctrlKey) && ev.key.toLowerCase() === 'f' && !ev.altKey && docSearchKey()) {
+    ev.preventDefault();
+  } else if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'k') {
     ev.preventDefault();
     searchInput.focus();
     searchInput.select();
