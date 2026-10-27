@@ -239,6 +239,17 @@ const MIGRATIONS = [
   );
   ALTER TABLE users ADD COLUMN chat_read_id INTEGER NOT NULL DEFAULT 0;
   `,
+  // v10: collegamenti scritti nelle voci, per i backlink: [[doc:ID]] [[voce:ID]] [[contatto:ID]] [[progetto:ID]]
+  // e, nelle mail, i codici di magazzino scritti senza # (kind 'articolo'). Ricalcolati a ogni modifica del testo.
+  `
+  CREATE TABLE entry_links (
+    entry_id INTEGER NOT NULL REFERENCES entries ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    target_id INTEGER NOT NULL,
+    PRIMARY KEY (entry_id, kind, target_id)
+  );
+  CREATE INDEX entry_links_target ON entry_links(kind, target_id);
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

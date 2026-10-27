@@ -1,13 +1,13 @@
 // Composer delle mail: destinatari, oggetto, testo, allegati e invio verso il client di posta.
-import { h, icon, S, ui, api, act, toast, patchEntry, autosize, fmtSize } from './core.js';
+import { h, icon, S, ui, api, act, toast, patchEntry, autosize, fmtSize, plainRefs, refLinks } from './core.js';
 
-const subjectOf = e => e.mail_subject || e.title.replace(/(^|\s)#/g, '$1');
+const subjectOf = e => plainRefs(e.mail_subject || e.title.replace(/(^|\s)#/g, '$1'));
 
 export function mailto(e) {
   const to = String(e.contact || '').split(',').map(s => s.trim()).filter(a => /^[^\s@]+@[^\s@]+$/.test(a)).join(',');
   const q = [`subject=${encodeURIComponent(subjectOf(e))}`];
   if (e.mail_cc) q.push(`cc=${encodeURIComponent(e.mail_cc)}`);
-  if (e.notes) q.push(`body=${encodeURIComponent(e.notes)}`);
+  if (e.notes) q.push(`body=${encodeURIComponent(plainRefs(e.notes))}`);
   return `mailto:${to}?${q.join('&')}`;
 }
 
@@ -64,11 +64,13 @@ export function mailComposer(e) {
       h('input', { value: e.mail_cc || '', 'data-fk': `cc-${e.id}`, 'data-ac': 'email', autocomplete: 'off', spellcheck: 'false', onblur: saveField('mail_cc') })),
     h('label.mf', h('span', 'Oggetto'),
       h('input', { value: e.mail_subject || '', placeholder: subjectOf({ ...e, mail_subject: null }), 'data-fk': `subj-${e.id}`, onblur: saveField('mail_subject') })),
-    // #articolo suggerisce dal magazzino e scrive il codice senza # (la mail va a chi non usa l'app).
+    // #articolo suggerisce dal magazzino e scrive il codice senza # (la mail va a chi non usa l'app);
+    // [[ collega documenti, voci, contatti e progetti: nella mail mandata diventano il loro nome.
     h('textarea.mail-body', {
-      rows: 4, value: e.notes, placeholder: 'Testo della mail… (#codice per inserire un articolo del magazzino)', 'data-fk': `body-${e.id}`,
-      'data-ac': 'mail', 'data-ac-only': '#', 'data-ac-bare': '', oninput: autosize, onblur: saveField('notes'),
+      rows: 4, value: e.notes, placeholder: 'Testo della mail… (#codice per un articolo, [[ per collegare altro)', 'data-fk': `body-${e.id}`,
+      'data-ac': 'mail', 'data-ac-only': '#', 'data-ac-bare': '', 'data-ac-entry': e.id, oninput: autosize, onblur: saveField('notes'),
     }),
+    refLinks(e.notes),
     h('div.atts',
       atts.map(a => h('span.att',
         icon('clip'),

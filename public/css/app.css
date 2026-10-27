@@ -809,3 +809,32 @@ a.ref:hover { border-color: var(--accent); }
 .ref-x { font-family: var(--mono); font-size: 0.85em; color: var(--muted); }
 .mention { color: var(--accent); font-weight: 600; }
 .mention.me { background: var(--accent-soft); border-radius: 4px; padding: 0 3px; }
+
+/* ---------- collegamenti e backlink ---------- */
+.ref-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: -4px; }
+.ref .ic + * { min-width: 0; }
+.bl-g + .bl-g { border-top: 1px solid var(--line); }
+.bl-h { display: flex; align-items: center; gap: 6px; padding: 8px 12px 4px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.bl-h .ic { width: 14px; height: 14px; }
+.bl-h .count { margin-left: 2px; font-weight: 500; }
+.bl-row { display: flex; align-items: baseline; gap: 8px; padding: 6px 12px; color: var(--text); min-width: 0; }
+.bl-row:hover { background: var(--panel-2); }
+.bl-row.done .bl-t { text-decoration: line-through; color: var(--muted); }
+.bl-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bl-to, .bl-when { flex: none; font-size: 12px; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.backlinks { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); overflow: hidden; }
+.bl-title { padding: 8px 12px 0; font-weight: 600; font-size: 13px; }
+.dv-notes .backlinks { margin-top: 12px; }
+
+/* Tipo di ciò che si collega, nel menu dei suggerimenti di [[ */
+.ac-k { flex: none; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; padding: 1px 5px; border-radius: 4px; min-width: 62px; text-align: center; align-self: center; }
+.ac-k.t-todo { color: var(--accent); background: var(--accent-soft); }
+.ac-k.t-mail { color: var(--mail); background: color-mix(in srgb, var(--mail) 15%, transparent); }
+.ac-k.t-note { color: var(--note); background: color-mix(in srgb, var(--note) 15%, transparent); }
+.ac-k.t-doc { color: var(--today); background: color-mix(in srgb, var(--today) 14%, transparent); }
+.ac-k.t-item { color: var(--code-ink); background: var(--code-bg); }
+.ac-k.t-project { color: var(--tag-ink); background: var(--tag-bg); }
+.ac-k.t-contact { color: var(--muted); background: var(--panel-2); }
+.archived { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.arch-h { display: flex; align-items: baseline; gap: 8px; }
+.arch-notes { white-space: pre-wrap; overflow-wrap: anywhere; }

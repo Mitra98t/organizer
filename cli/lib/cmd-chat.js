@@ -1,20 +1,10 @@
 // Chat del workspace dal terminale: leggere, scrivere, seguire in tempo reale (org chat -f).
 import { c, fail, ask, readStdin, rich, ymd } from './term.js';
-import { userName } from './data.js';
+import { userName, linkRefs } from './data.js';
 
-// [[doc:12]] [[voce:34]] [[contatto:5]] con il nome attuale; @progetto e +persona colorati come nell'app.
+// Collegamenti con il nome attuale; @progetto e +persona colorati come nell'app.
 function render(D, text) {
-  const name = (kind, id) => {
-    if (kind === 'doc') {
-      const d = D.docById.get(id);
-      return d ? `${d.label || d.filename || d.url} (${D.itemById.get(d.item_id)?.code ?? '?'})` : 'documento eliminato';
-    }
-    if (kind === 'voce') return D.entryById.get(id)?.title.replace(/(^|\s)#/g, '$1') ?? `voce ${id}`;
-    const ct = D.contacts.find(x => x.id === id);
-    return ct ? ct.name || ct.email : 'contatto eliminato';
-  };
-  return rich(text)
-    .replace(/\[\[(doc|voce|contatto):(\d+)\]\]/g, (_, kind, id) => c.blue(`«${name(kind, +id)}»`))
+  return linkRefs(D, rich(text), c.blue)
     .replace(/(^|[\s(,;:])@([\p{L}\d_][\p{L}\d_-]*)/gu, (m, pre, tag) => (D.projectByTag.has(tag.toLowerCase()) ? pre + c.magenta(`@${tag}`) : m))
     .replace(/(^|[\s(,;:])\+([\p{L}\d_.-]*[\p{L}\d_])/gu, (m, pre, u) => (D.users.some(x => x.username.toLowerCase() === u.toLowerCase()) ? pre + c.bold(c.blue(`+${u}`)) : m));
 }

@@ -56,6 +56,22 @@ X-Workspace: 2          (facoltativo)
 
 `/api/events` manda un evento `change` (`data: {"rev": …, "by": idUtente}`) a ogni modifica nel workspace e un commento `: ping` ogni 25 secondi. Il modo semplice per reagire: a ogni `change`, rileggere `/api/sync` (con l'ETag).
 
+## Collegamenti
+
+In qualunque testo (titoli, note, aggiornamenti, testo delle mail, appunti, chat) si collega qualcosa con un token:
+
+| token | collega |
+|---|---|
+| `[[voce:ID]]` | una voce (todo, mail o nota) |
+| `[[doc:ID]]` | un documento |
+| `[[progetto:ID]]` | un progetto (senza aggiungere la voce al progetto, come farebbe `@tag` nel titolo) |
+| `[[contatto:ID]]` | un contatto |
+| `#CODICE` | un articolo di magazzino |
+
+L'app li mostra come link con il nome attuale; nelle mail mandate (`.eml`, helper Thunderbird) diventano il nome in testo semplice. Nel testo di una mail un codice di magazzino scritto senza `#` conta come collegamento all'articolo.
+
+`GET /api/backlinks/:tipo/:id` (tipo: `voce`, `doc`, `progetto`, `contatto`, `articolo`): le voci che collegano l'elemento, anche archiviate, con `id`, `kind`, `title`, `due`, `done_at`, `contact`, `mail_subject`, `project_id`, `parent_id`, `updated_at`. Una mail con `done_at` è mandata, senza è da mandare. Oltre ai token contano: per un articolo `#CODICE` nelle voci; per un documento gli allegati delle mail; per un contatto le mail al suo indirizzo.
+
 ## Voci (todo, mail, note)
 
 Una voce ha `kind` (`todo`, `mail`, `note`), `title`, `notes`, `due`, `done_at`, `project_id` (principale), `parent_id` (sotto-attività), `assignee_id`, `contact`, `mail_cc`, `mail_subject`, `pinned`, `private`.

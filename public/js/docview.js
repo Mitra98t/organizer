@@ -4,6 +4,7 @@
 // L'app ridisegna le viste a ogni sincronizzazione: ridisegnare un PDF ogni volta sarebbe lento, quindi
 // il visualizzatore (canvas compresi) resta in memoria e viene solo riagganciato; si aggiornano i segnaposto.
 // Più visualizzatori possono essere aperti insieme (revisione affiancata, #/review?d=1,2,3).
+import { backlinksBox } from './views.js';
 import { h, icon, S, ui, api, act, render, richText, fmtTime, fmtSize, userName, toast, trashIt, autosize, itemAttrs, save, docFileUrl, DOC_KINDS, docName, renameDoc } from './core.js';
 import { today } from './parse.js';
 
@@ -374,7 +375,7 @@ function noteCard(d, n, num) {
     h('span.grow'),
     h('span.muted', `${userName(n.created_by)} · ${fmtTime(n.created_at)}`)),
   editing
-    ? h('textarea.dnote-edit', {
+    ? h('textarea.dnote-edit', { 'data-ac': 'text', 'data-ac-only': '#',
       value: n.text, rows: 2, 'data-fk': `dnedit-${n.id}`, oninput: autosize,
       onkeydown: enterSave(save, () => { ui.docEdit = null; render(); }),
       onblur: ev => save(ev.target.value.trim() || n.text),
@@ -408,14 +409,14 @@ function notesPanel(d, v) {
         `risolte ${resolved}`)),
     v.draft && h('div.dnote.draft',
       h('div.dnote-h', h('span.dv-pin.mini.draft', '+'), h('span', v.kind === 'pdf' ? `Nuova nota a pag. ${v.draft.page}` : 'Nuova nota in questo punto')),
-      h('textarea.dnote-edit', {
+      h('textarea.dnote-edit', { 'data-ac': 'text', 'data-ac-only': '#',
         rows: 3, placeholder: 'Cosa c\'è da ricordare qui? (Invio salva, Esc annulla)', 'data-fk': `draft-${d.id}`,
         oninput: autosize, onkeydown: enterSave(saveDraft, cancelDraft),
       }),
       h('div.dnote-a',
         h('button.btn.sm.primary', { onclick: ev => { const t = ev.target.closest('.dnote').querySelector('textarea').value.trim(); if (t) saveDraft(t); } }, 'Salva'),
         h('button.btn.sm.ghost', { onclick: cancelDraft }, 'Annulla'))),
-    h('textarea.dv-general', {
+    h('textarea.dv-general', { 'data-ac': 'text', 'data-ac-only': '#',
       rows: 1, placeholder: 'Nota generale sul file… (Invio salva)', 'data-fk': `gnote-${d.id}`, oninput: autosize,
       onkeydown: enterSave((text, el) => { el.value = ''; act(() => api('POST', `/docs/${d.id}/notes`, { text })); }),
     }),
@@ -424,7 +425,9 @@ function notesPanel(d, v) {
     pins.map(({ n, num }) => noteCard(d, n, num)),
     !all.length && !v.draft && h('p.muted.dv-empty', pinnable(v)
       ? 'Nessuna nota. Clicca su un punto del documento per lasciarne una lì, oppure scrivi una nota generale qui sopra.'
-      : 'Nessuna nota. Scrivi qui sopra una nota sul file.'));
+      : 'Nessuna nota. Scrivi qui sopra una nota sul file.'),
+    // Mail (da mandare e mandate) che lo allegano o lo collegano, e le altre voci che lo citano.
+    backlinksBox('doc', d.id, { title: 'Collegato in', compact: true }));
 }
 
 // ---------- vista ----------

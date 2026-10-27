@@ -1,6 +1,6 @@
 // Chat del workspace: messaggi tra i membri, con collegamenti a progetti, articoli, documenti, voci e contatti
 // (autocompletamento con @ # + e "[["). Gli ultimi 100 messaggi arrivano con /api/sync, i precedenti a richiesta.
-import { h, icon, S, ui, api, act, render, userName, chatText, fmtTime, fmtLongDay, localDay, toast, docName } from './core.js';
+import { h, icon, S, ui, api, act, render, userName, chatText, fmtTime, fmtLongDay, localDay, toast, plainRefs } from './core.js';
 
 const GROUP_MS = 5 * 60e3; // messaggi ravvicinati della stessa persona: un'intestazione sola
 let older = [];            // caricati con "Messaggi precedenti" (non stanno nei dati sincronizzati)
@@ -137,8 +137,6 @@ export function notifyNew(prevData, data, onChatPage) {
   const fresh = data.chat.filter(m => m.id > lastSeen && m.user_id !== data.me.id);
   if (!fresh.length) return;
   const m = fresh.at(-1);
-  const name = (kind, id) => (kind === 'doc' ? docName(data.docById.get(id) || {}) : kind === 'voce' ? data.entryById.get(id)?.title
-    : data.contactById.get(id)?.name) || '…';
-  const text = m.text.replace(/\[\[(doc|voce|contatto):(\d+)\]\]/g, (_, k, id) => `«${name(k, +id)}»`).slice(0, 80);
+  const text = plainRefs(m.text).slice(0, 80);
   toast(`${userName(m.user_id)}: ${text}`, { action: { label: 'Apri chat', fn: () => { location.hash = '#/chat'; } } });
 }

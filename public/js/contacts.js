@@ -1,6 +1,6 @@
 // Rubrica: elenco filtrabile, scheda modificabile, mail collegate a ogni contatto.
-import { h, icon, S, ui, api, act, render, copy, trashIt, autosize, save } from './core.js';
-import { entryRow } from './views.js';
+import { h, icon, S, ui, api, act, render, copy, trashIt, autosize, save, refLinks } from './core.js';
+import { backlinksBox } from './views.js';
 
 const lc = s => String(s || '').toLowerCase();
 const mailsOf = c => S.data.entries
@@ -108,7 +108,6 @@ function viewContact(id) {
   const patch = f => act(() => api('PATCH', `/contacts/${c.id}`, f));
   const field = (key, label, attrs = {}) => h('label.f', h('span', label),
     h('input', { value: c[key], 'data-fk': `c-${key}-${c.id}`, ...attrs, onchange: ev => patch({ [key]: ev.target.value }) }));
-  const mails = mailsOf(c);
 
   return h('div.view',
     h('div.head',
@@ -123,17 +122,17 @@ function viewContact(id) {
     ),
     h('textarea.proj-notes', {
       rows: 2, value: c.notes, placeholder: 'Note: orari, come preferisce essere contattato, riferimenti…', 'data-fk': `cnotes-${c.id}`,
+      'data-ac': 'text', 'data-ac-only': '#',
       oninput: autosize, onblur: ev => { if (ev.target.value !== c.notes) patch({ notes: ev.target.value }); },
     }),
+    refLinks(c.notes),
     h('div.toolbar',
       c.email && h('button.btn', { onclick: () => newMail(c) }, icon('mail'), 'Nuova mail'),
       c.email && h('button.btn.ghost', { onclick: () => copy(c.email) }, icon('copy'), 'Copia email'),
       c.phone && h('a.btn.ghost', { href: `tel:${c.phone.replace(/[^\d+]/g, '')}` }, 'Chiama')),
-    h('section.sec',
-      h('div.sec-h', h('span.sec-t', 'Mail'), h('span.count', mails.length)),
-      h('div.sec-b', mails.length
-        ? mails.map(e => entryRow(e, { showKind: false }))
-        : h('div.empty', h('p', 'Nessuna mail a questo contatto.')))),
+    // Mail al suo indirizzo e voci che lo collegano con [[, anche archiviate; mail da mandare e mandate separate.
+    backlinksBox('contatto', c.id, { title: 'Mail e collegamenti' })
+      || h('p.muted', c.email ? 'Nessuna mail a questo contatto.' : 'Aggiungi l\'email per scrivergli dalla barra rapida.'),
     h('div.danger-zone',
       h('span.muted', `Aggiunto il ${new Date(c.created_at).toLocaleDateString('it-IT')}`),
       h('button.btn.sm.danger', {

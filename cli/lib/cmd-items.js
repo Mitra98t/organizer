@@ -1,7 +1,7 @@
 // Magazzino: articoli per codice, categorie, composizione (cosa contiene cosa), stato.
 import { c, fail, table, heading, rich, fmtSize, fmtTime } from './term.js';
 import { itemRef, projectRef, entryProjects } from './data.js';
-import { printTree } from './cmd-entries.js';
+import { printTree, printBacklinks } from './cmd-entries.js';
 
 const STATUS_IN = { ok: '', '': '', outdated: 'outdated', superato: 'outdated', discarded: 'discarded', scartato: 'discarded' };
 const STATUS_LABEL = { outdated: c.yellow('outdated'), discarded: c.red('scartato') };
@@ -58,10 +58,11 @@ export default {
       const docs = D.docs.filter(d => d.item_id === it.id);
       const children = (D.childrenOf.get(it.id) || []).map(id => D.itemById.get(id)).filter(Boolean);
       const parents = (D.parentsOf.get(it.id) || []).map(id => D.itemById.get(id)).filter(Boolean);
-      const entries = D.entries.filter(e => !e.done_at && (D.itemsOfEntry.get(e.id) || []).includes(it.id));
+      const entries = D.entries.filter(e => e.kind !== 'mail' && !e.done_at && (D.itemsOfEntry.get(e.id) || []).includes(it.id));
+      const mails = await ctx.api().get(`/backlinks/articolo/${it.id}`);
       const projects = new Map(D.projectItems.filter(x => x.item_id === it.id).map(x => [x.project_id, D.projectById.get(x.project_id)]));
       for (const e of entries) for (const p of entryProjects(D, e)) projects.set(p.id, p);
-      if (ctx.json) return ctx.out({ ...it, docs, children, parents, entries, projects: [...projects.values()].filter(Boolean) });
+      if (ctx.json) return ctx.out({ ...it, docs, children, parents, entries, mails, projects: [...projects.values()].filter(Boolean) });
       console.log(`${c.bold(c.cyan(it.code))} ${it.name}${it.status ? ` ${STATUS_LABEL[it.status]}` : ''}`);
       console.log(c.dim(`${ctx.api().base}/#/i/${it.id}`));
       table([
@@ -89,6 +90,7 @@ export default {
         heading('Voci aperte');
         printTree(D, entries);
       }
+      printBacklinks(D, mails, 'Nelle mail', { mailsOnly: true });
     },
   },
 

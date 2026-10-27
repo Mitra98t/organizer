@@ -24,6 +24,21 @@ export async function loadData(api) {
   return D;
 }
 
+// [[doc:12]] [[voce:34]] [[contatto:5]] [[progetto:3]] → «nome attuale» (come i link nell'app).
+export function refName(D, kind, id) {
+  if (kind === 'doc') {
+    const d = D.docById.get(id);
+    return d ? `${d.label || d.filename || d.url} (${D.itemById.get(d.item_id)?.code ?? '?'})` : 'documento eliminato';
+  }
+  if (kind === 'voce') return D.entryById.get(id)?.title.replace(/(^|\s)#/g, '$1').replace(/\[\[\w+:\d+\]\]/g, '…') ?? `voce ${id}`;
+  if (kind === 'progetto') return D.projectById.get(id)?.name ?? 'progetto eliminato';
+  const ct = D.contacts.find(x => x.id === id);
+  return ct ? ct.name || ct.email : 'contatto eliminato';
+}
+
+export const linkRefs = (D, text, color = s => s) =>
+  String(text ?? '').replace(/\[\[(doc|voce|contatto|progetto):(\d+)\]\]/g, (_, kind, id) => color(`«${refName(D, kind, +id)}»`));
+
 export const userName = (D, id) => {
   const u = D.userById.get(id);
   return u ? u.username : '?';

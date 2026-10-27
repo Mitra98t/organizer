@@ -140,3 +140,29 @@ test('chat: scrivere, leggere, non letti, solo i propri messaggi', async () => {
   assert.deepEqual(s.chat.map(m => m.text), ['guarda [[doc:1]] di #SCH-042']);
   assert.deepEqual((await (await call('GET', `/chat?after=${id - 1}`, { cookie: marco })).json()).map(m => m.id), [id]);
 });
+
+test('collegamenti: backlink delle mail (da mandare / mandate) e testo della mail risolto', async () => {
+  const login = await call('POST', '/login', { body: { username: 'fede', password: 'password-di-prova' } });
+  const cookie = login.headers.get('set-cookie').split(';')[0];
+  const post = async text => (await (await call('POST', '/entries', { cookie, body: { text } })).json()).id;
+  const todo = await post('verificare saldature');
+  const mail = await post('m: invio firmware >cliente@ditta.example');
+  // Nel testo della mail: il codice senza # (come lo scrive l'autocompletamento) e un collegamento a un'altra voce.
+  await call('PATCH', `/entries/${mail}`, { cookie, body: { notes: `Vi mando il firmware di SCH-042, dopo [[voce:${todo}]].` } });
+  const item = (await (await call('GET', '/sync', { cookie })).json()).items.find(i => i.code === 'SCH-042');
+  const back = async (kind, id) => (await (await call('GET', `/backlinks/${kind}/${id}`, { cookie })).json());
+  assert.deepEqual((await back('voce', todo)).map(e => [e.id, e.done_at]), [[mail, null]]);
+  assert.ok((await back('articolo', item.id)).some(e => e.id === mail && !e.done_at));
+
+  // Mandata: resta nei backlink, con la data.
+  await call('PATCH', `/entries/${mail}`, { cookie, body: { done: true } });
+  assert.ok((await back('voce', todo))[0].done_at);
+
+  // Nel .eml il collegamento diventa il titolo; l'oggetto resta un'intestazione anche senza Cc.
+  const eml = await (await call('GET', `/entries/${mail}/eml`, { cookie })).text();
+  const head = eml.slice(0, eml.indexOf('\r\n\r\n'));
+  assert.match(head, /^Subject: invio firmware$/m);
+  const b64 = eml.split('Content-Transfer-Encoding: base64\r\n\r\n')[1].split('\r\n--')[0];
+  const body = Buffer.from(b64.replace(/\r\n/g, ''), 'base64').toString();
+  assert.equal(body, 'Vi mando il firmware di SCH-042, dopo verificare saldature.');
+});

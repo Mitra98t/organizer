@@ -2,7 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { routes } from './api.js';
+import { routes, backfillLinks } from './api.js';
 import './contacts.js';
 import './mail.js';
 import './backup.js';
@@ -150,6 +150,12 @@ const cleanTrash = () => {
 };
 cleanTrash();
 setInterval(cleanTrash, 6 * 3600e3).unref();
+
+// Collegamenti delle voci (backlink): calcolati una volta per i dati scritti prima che esistessero.
+for (const w of acc.prepare('SELECT id, file FROM workspaces WHERE deleted_at IS NULL').all()) {
+  const n = withWorkspace(w, backfillLinks);
+  if (n) console.log(`Collegamenti calcolati per ${n} voci del workspace ${w.id}`);
+}
 
 server.requestTimeout = 0; // upload grandi e stream SSE
 server.listen(PORT, HOST, () => {

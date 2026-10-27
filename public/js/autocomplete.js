@@ -6,12 +6,15 @@
 // suggerimento conferma subito il campo (come premere Invio). data-ac-self esclude un codice.
 // data-ac="cfield" + data-ac-field="company|timeslot|role": un campo dei contatti; suggerisce i valori già
 // usati in rubrica e scegliendone uno il campo si salva.
-// data-ac="chat": @ # + come sempre, e "[[" suggerisce documenti, voci (todo, mail, note) e contatti,
-// inserendo [[doc:12]], [[voce:34]], [[contatto:5]] (nel messaggio diventano link con il nome attuale).
+// "[[" in qualunque campo di testo collega qualunque cosa: voci (todo, mail, note), documenti, articoli,
+// progetti e contatti, ognuno con la sua etichetta di tipo nel menu. Inserisce [[voce:34]], [[doc:12]],
+// [[progetto:3]], [[contatto:5]] (mostrati come link con il nome attuale); per gli articoli #CODICE.
+// data-ac-entry: la voce che si sta scrivendo (non si propone di collegarla a se stessa).
+// data-ac="chat": i messaggi della chat (@ # + e [[).
 // data-ac-bare: si inserisce il valore senza simbolo (testo delle mail: "#SCH" → "SCH-042").
 // Nella barra in alto: modalità 'item' (/categoria, @progetto) e 'project' (@progetto padre).
 // Un solo menu flottante per tutta l'app, agganciato al campo che ha il focus: sopravvive ai re-render.
-import { h, S, fmtDay, hue, catStyle, projHue, docName, REF_KINDS } from './core.js';
+import { h, S, fmtDay, hue, catStyle, projHue, docName } from './core.js';
 import { parseDate, parseQuick, today, fromYmd } from './parse.js';
 
 const box = h('div.ac', { hidden: true, role: 'listbox' });
@@ -60,11 +63,12 @@ function update(el) {
   if (pos == null || pos !== el.selectionEnd) return close();
   if (el.dataset.ac === 'email') return updateEmail(el, pos);
   if (['code', 'project', 'cfield'].includes(el.dataset.ac)) return updateWhole(el);
-  if (el.dataset.ac === 'chat') {
+  const kind = kindOf(el);
+  // Le barre per creare articoli e progetti non hanno collegamenti.
+  if (kind !== 'item' && kind !== 'project') {
     const r = el.value.slice(0, pos).match(/\[\[([^\]\n]{0,40})$/);
     if (r) return updateRef(el, pos, r[1]);
   }
-  const kind = kindOf(el);
   const allowed = el.dataset.acOnly || { item: '/@', project: '@' }[kind] || '@#!+>';
   const m = el.value.slice(0, pos).match(/(?:^|\s)([@#!+>/])([^\s@#!+>/]*)$/);
   if (!m || !allowed.includes(m[1])) return close();
@@ -103,30 +107,37 @@ function updateWhole(el) {
 }
 
 function updateRef(el, pos, q) {
-  const items = refSuggestions(lc(q.trim()));
+  const items = refSuggestions(lc(q.trim()), { bare: el.dataset.acBare != null, self: +el.dataset.acEntry || null });
   if (!items.length) return close();
   st = { el, start: pos - q.length - 2, end: pos, items, index: 0, token: `[[${q}`, suffix: ' ' };
   draw();
 }
 
-// Documenti, voci e contatti insieme; senza testo: le voci aperte più recenti, poi documenti e contatti.
-function refSuggestions(ql) {
+// Etichette di tipo nel menu dei collegamenti, per distinguere al volo cosa si sta collegando.
+const PILL = { todo: 'todo', mail: 'mail', note: 'nota', doc: 'documento', item: 'articolo', project: 'progetto', contact: 'contatto' };
+
+// Tutto insieme; senza testo: le voci aperte più recenti, poi un po' di ogni altro tipo.
+function refSuggestions(ql, { bare, self }) {
   const D = S.data;
   const words = ql.split(/\s+/).filter(Boolean);
   const hit = (...v) => words.every(w => v.some(x => lc(x).includes(w)));
-  const KIND = { todo: 'todo', mail: 'mail', note: 'nota' };
-  const entries = D.entries
-    .filter(e => hit(e.title, e.contact) && (ql || !e.done_at))
-    .sort((a, b) => !!a.done_at - !!b.done_at || b.updated_at.localeCompare(a.updated_at))
-    .map(e => ({ insert: `[[voce:${e.id}]]`, label: e.title.replace(/(^|\s)#/g, '$1'), hint: e.contact || '', extra: KIND[e.kind], r: rank(e.title, ql) }));
-  const docs = D.docs
-    .filter(d => D.itemById.has(d.item_id) && hit(docName(d), d.filename, d.kind, D.itemById.get(d.item_id).code))
-    .map(d => ({ insert: `[[doc:${d.id}]]`, label: docName(d), hint: D.itemById.get(d.item_id).code, extra: d.kind, r: rank(docName(d), ql) }));
-  const contacts = D.contacts
-    .filter(c => hit(c.name, c.email, c.company))
-    .map(c => ({ insert: `[[contatto:${c.id}]]`, label: c.name || c.email, hint: c.company || (c.name ? c.email : ''), extra: REF_KINDS.contatto, r: rank(c.name, ql) }));
-  if (!ql) return [...entries.slice(0, 4), ...docs.slice(0, 3), ...contacts.slice(0, 2)];
-  return [...entries, ...docs, ...contacts].sort((a, b) => a.r - b.r).slice(0, 10);
+  const plain = t => t.replace(/(^|\s)#/g, '$1').replace(/\[\[\w+:\d+\]\]/g, '…');
+  const entryState = e => (e.done_at ? (e.kind === 'mail' ? 'mandata' : e.kind === 'todo' ? 'fatta' : '') : e.kind === 'mail' ? 'da mandare' : '');
+  const groups = [
+    D.entries.filter(e => e.id !== self && hit(e.title, e.contact) && (ql || !e.done_at))
+      .sort((a, b) => !!a.done_at - !!b.done_at || b.updated_at.localeCompare(a.updated_at))
+      .map(e => ({ insert: `[[voce:${e.id}]]`, label: plain(e.title), hint: e.kind === 'mail' ? e.contact || '' : '', extra: entryState(e), pill: e.kind, r: rank(e.title, ql) })),
+    D.docs.filter(d => D.itemById.has(d.item_id) && hit(docName(d), d.filename, d.kind, D.itemById.get(d.item_id).code))
+      .map(d => ({ insert: `[[doc:${d.id}]]`, label: docName(d), hint: D.itemById.get(d.item_id).code, extra: d.kind, pill: 'doc', r: rank(docName(d), ql) })),
+    D.items.filter(i => hit(i.code, i.name))
+      .map(i => ({ insert: bare ? i.code : `#${i.code}`, label: i.code, hint: i.name, extra: i.category, code: true, cat: i.category, pill: 'item', r: rank(i.code, ql) })),
+    D.projects.filter(p => hit(p.name, p.tag) && (ql || p.status !== 'closed'))
+      .map(p => ({ insert: `[[progetto:${p.id}]]`, label: p.name, hint: `@${p.tag}`, extra: STATUS[p.status] || '', pill: 'project', r: rank(p.name, ql) })),
+    D.contacts.filter(c => hit(c.name, c.email, c.company))
+      .map(c => ({ insert: `[[contatto:${c.id}]]`, label: c.name || c.email, hint: c.company || (c.name ? c.email : ''), pill: 'contact', r: rank(c.name, ql) })),
+  ];
+  if (!ql) return groups.flatMap((g, i) => g.slice(0, [4, 2, 2, 1, 1][i]));
+  return groups.flat().sort((a, b) => a.r - b.r).slice(0, 10);
 }
 
 function contactFieldSuggestions(field, ql) {
@@ -261,6 +272,7 @@ function draw() {
     role: 'option',
     onclick: () => accept(i),
   },
+  it.pill && h('span.ac-k', { class: `t-${it.pill}` }, PILL[it.pill]),
   h('span.ac-l', {
     class: [it.code && 'code', it.cat && 'cat', it.hue != null && 'proj'].filter(Boolean).join(' ') || null,
     style: it.hue != null ? `--h:${it.hue}` : catStyle(it.cat),

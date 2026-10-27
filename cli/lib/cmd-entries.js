@@ -1,6 +1,6 @@
 // Voci: todo, mail e note del diario. Si scrivono con la stessa sintassi della barra rapida dell'app.
 import { c, fail, ask, readStdin, table, heading, fmtDue, fmtTime, fmtSize, rich, today, editText } from './term.js';
-import { entryProjects, descendants, projectRef, itemRef, userRef, userName, isMine, numRef } from './data.js';
+import { entryProjects, descendants, projectRef, itemRef, userRef, userName, isMine, numRef, linkRefs } from './data.js';
 
 const MARK = { todo: '•', mail: '✉', note: '✎' };
 
@@ -10,7 +10,7 @@ export function entryRow(D, e, indent = '') {
   const projects = (e.projects || entryProjects(D, e)).map(p => c.magenta(`@${p.tag}`));
   const who = e.assignee_id && e.assignee_id !== D.me.id ? c.blue(`+${userName(D, e.assignee_id)}`) : null;
   const to = e.kind === 'mail' && e.contact ? c.dim(`→ ${e.contact}`) : null;
-  const title = done ? c.dim(e.title) : rich(e.title);
+  const title = done ? c.dim(linkRefs(D, e.title)) : linkRefs(D, rich(e.title), c.blue);
   return [c.dim(e.id), fmtDue(e.due, { done }), `${indent}${done ? c.green('✓') : MARK[e.kind]} ${[title, to, ...projects, who].filter(Boolean).join(' ')}`];
 }
 
@@ -19,6 +19,21 @@ export async function printEntry(ctx, id) {
   const e = await ctx.api().get(`/entries/${id}`);
   if (ctx.json) return ctx.out(e);
   table([entryRow(await ctx.data(), e)]);
+}
+
+// Le voci che collegano qualcosa: mail da mandare, mail mandate (per sapere se è già partito), todo e note.
+export function printBacklinks(D, list, title, { mailsOnly = false } = {}) {
+  const groups = [
+    ['Mail da mandare', list.filter(e => e.kind === 'mail' && !e.done_at)],
+    ['Mail mandate', list.filter(e => e.kind === 'mail' && e.done_at)],
+    ['Todo e note', mailsOnly ? [] : list.filter(e => e.kind !== 'mail')],
+  ].filter(([, rows]) => rows.length);
+  if (!groups.length) return;
+  heading(title);
+  for (const [label, rows] of groups) {
+    console.log(c.dim(`  ${label}`));
+    table(rows.map(e => [c.dim(e.id), e.done_at ? c.dim(fmtTime(e.done_at)) : fmtDue(e.due), `${MARK[e.kind]} ${linkRefs(D, e.title)}${e.kind === 'mail' && e.contact ? c.dim(` → ${e.contact}`) : ''}`]));
+  }
 }
 
 const sortEntries = (list, desc = false) => list.sort((a, b) =>
@@ -118,7 +133,7 @@ export default {
       const kind = { todo: 'todo', mail: 'mail', note: 'nota' }[e.kind];
       const state = e.done_at ? c.green(`fatta il ${fmtTime(e.done_at)}`) : e.kind === 'note' ? '' : 'aperta';
       console.log(`${c.bold(`${e.id}`)} ${c.dim('·')} ${kind}${state ? ` ${c.dim('·')} ${state}` : ''}${e.due ? ` ${c.dim('·')} ${e.kind === 'note' ? '' : 'scade '}${fmtDue(e.due, { done: !!e.done_at })}` : ''}${e.private ? c.dim(' · privata') : ''}`);
-      console.log(c.bold(rich(e.title)));
+      console.log(c.bold(linkRefs(D, rich(e.title), c.blue)));
       const meta = [
         e.projects.length && ['progetti', e.projects.map(p => c.magenta(`@${p.tag}`)).join(' ')],
         e.assignee_id && ['assegnata a', userName(D, e.assignee_id)],
@@ -131,7 +146,7 @@ export default {
       table(meta.map(([k, v]) => [c.dim(k), v]), { right: [] });
       if (e.notes) {
         heading(e.kind === 'mail' ? 'Testo' : 'Note');
-        console.log(rich(e.notes));
+        console.log(linkRefs(D, rich(e.notes), c.blue));
       }
       if (e.attachments.length) {
         heading('Allegati');
@@ -143,8 +158,9 @@ export default {
       }
       if (e.logs.length) {
         heading('Storico');
-        table(e.logs.map(l => [c.dim(fmtTime(l.created_at)), c.dim(userName(D, l.user_id)), l.system ? c.dim(l.text) : rich(l.text)]), { right: [] });
+        table(e.logs.map(l => [c.dim(fmtTime(l.created_at)), c.dim(userName(D, l.user_id)), l.system ? c.dim(l.text) : linkRefs(D, rich(l.text), c.blue)]), { right: [] });
       }
+      printBacklinks(D, await ctx.api().get(`/backlinks/voce/${e.id}`), 'Citata in');
     },
   },
 

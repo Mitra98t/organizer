@@ -514,8 +514,20 @@ export function ancestors(id) {
 
 const RICH_RE = /(https?:\/\/[^\s<>]+[^\s<>.,;:!?)\]'"])|(^|[\s(\[,;:])#([A-Za-z0-9](?:[\w.\-/]*[A-Za-z0-9_])?)/g;
 
-// Testo con #CODICI cliccabili (portano alla scheda di magazzino) e URL attivi.
+// Testo con #CODICI cliccabili (portano alla scheda di magazzino), URL attivi e collegamenti [[tipo:ID]].
 export function richText(text) {
+  const s = String(text || '');
+  const out = [];
+  let last = 0;
+  for (const m of s.matchAll(REF_RE)) {
+    out.push(...codesAndUrls(s.slice(last, m.index)), refChip(m[1], +m[2]));
+    last = m.index + m[0].length;
+  }
+  out.push(...codesAndUrls(s.slice(last)));
+  return out;
+}
+
+function codesAndUrls(text) {
   const out = [];
   let last = 0;
   for (const m of String(text || '').matchAll(RICH_RE)) {
@@ -537,12 +549,12 @@ export function richText(text) {
   return out;
 }
 
-// ---------- collegamenti nei messaggi della chat ----------
-// Nel testo: [[doc:12]], [[voce:34]], [[contatto:5]] (scritti dall'autocompletamento dopo "[["),
-// più @progetto, +persona, #CODICE e link come nel resto dell'app. Il nome mostrato è sempre quello attuale.
-export const REF_KINDS = { doc: 'documento', voce: 'voce', contatto: 'contatto' };
-const CHAT_RE = /\[\[(doc|voce|contatto):(\d+)\]\]|(^|[\s(\[,;:])([@+])([\p{L}\d_][\p{L}\d_.-]*[\p{L}\d_]|[\p{L}\d_])/gu;
+// ---------- collegamenti [[tipo:ID]] ----------
+// Si scrivono con "[[" in qualunque campo di testo (l'autocompletamento inserisce il token) e si vedono come
+// link con il nome sempre attuale. Gli articoli restano #CODICE. Le mail li mandano come testo semplice.
+const REF_RE = /\[\[(doc|voce|contatto|progetto):(\d+)\]\]/g;
 const ENTRY_ICON = { todo: 'check', mail: 'mail', note: 'diary' };
+const plainTitle = t => t.replace(/(^|\s)#/g, '$1');
 
 export function refChip(kind, id) {
   const D = S.data;
@@ -555,24 +567,61 @@ export function refChip(kind, id) {
   if (kind === 'voce') {
     const e = D.entryById.get(id);
     return h('a.ref', { href: `#/v/${id}`, onclick: stop, class: e?.done_at ? 'done' : null },
-      icon(ENTRY_ICON[e?.kind] || 'check'), e ? e.title.replace(/(^|\s)#/g, '$1') : `voce ${id}`);
+      icon(ENTRY_ICON[e?.kind] || 'check'), e ? plainTitle(e.title.replace(REF_RE, '…')) : `voce ${id}`);
+  }
+  if (kind === 'progetto') {
+    const p = D.projectById.get(id);
+    return p ? h('a.ref', { href: `#/p/${id}`, onclick: stop, style: `--h:${projHue(p)}` }, icon('folder'), p.name, h('span.ref-x', `@${p.tag}`))
+      : h('span.ref.gone', icon('folder'), 'progetto eliminato');
   }
   const c = D.contactById.get(id);
   return c ? h('a.ref', { href: `#/contatti/${id}`, onclick: stop, title: c.email }, icon('user'), c.name || c.email)
     : h('span.ref.gone', icon('user'), 'contatto eliminato');
 }
 
+// Nome semplice di un collegamento (per le mail aperte con mailto: e le notifiche).
+export function plainRefs(text) {
+  const D = S.data;
+  return String(text || '').replace(REF_RE, (m, kind, id) => {
+    const x = { doc: D.docById, voce: D.entryById, contatto: D.contactById, progetto: D.projectById }[kind].get(+id);
+    const name = x && (kind === 'doc' ? docName(x) : kind === 'voce' ? plainTitle(x.title) : x.name || x.email);
+    return name || m;
+  });
+}
+
+// Sotto un campo di testo: i collegamenti che contiene, cliccabili (nel campo si vede il token).
+export function refLinks(text) {
+  const refs = [...String(text || '').matchAll(REF_RE)];
+  if (!refs.length) return null;
+  const seen = new Set();
+  return h('div.ref-links', refs.filter(m => !seen.has(m[0]) && seen.add(m[0])).map(m => refChip(m[1], +m[2])));
+}
+
+// Backlink: le voci che collegano un elemento (dal server: comprende le voci archiviate).
+// Si rileggono quando cambiano i dati; intanto si mostra l'ultimo risultato.
+const backlinkCache = new Map();
+export function backlinks(kind, id) {
+  const key = `${kind}:${id}`;
+  const c = backlinkCache.get(key);
+  const rev = S.data.rev;
+  if (!c || (c.rev !== rev && !c.loading)) {
+    backlinkCache.set(key, { ...c, loading: true });
+    api('GET', `/backlinks/${kind}/${id}`)
+      .then(list => { backlinkCache.set(key, { rev, list }); render(); })
+      .catch(() => backlinkCache.set(key, { rev, list: c?.list || [] }));
+  }
+  return c?.list || null;
+}
+
+// Chat: oltre a ciò che fa richText, @progetto e +persona diventano link.
+const CHAT_RE = /(^|[\s(\[,;:])([@+])([\p{L}\d_][\p{L}\d_.-]*[\p{L}\d_]|[\p{L}\d_])/gu;
+
 export function chatText(text) {
   const D = S.data;
   const out = [];
   let last = 0;
   for (const m of String(text).matchAll(CHAT_RE)) {
-    if (m[1]) {
-      out.push(...richText(text.slice(last, m.index)), refChip(m[1], +m[2]));
-      last = m.index + m[0].length;
-      continue;
-    }
-    const [, , , pre, sig, name] = m;
+    const [, pre, sig, name] = m;
     const p = sig === '@' && D.projectByTag.get(name.toLowerCase());
     const u = sig === '+' && D.users.find(x => x.username.toLowerCase() === name.toLowerCase());
     if (!p && !u) continue; // non è un collegamento: resta testo

@@ -25,6 +25,21 @@ function safeNames(names) {
   });
 }
 
+// I collegamenti [[tipo:ID]] nel testo diventano il nome di ciò che collegano: la mail va a chi non usa l'app.
+const REF_NAME = {
+  doc: "SELECT COALESCE(NULLIF(label, ''), filename, url) AS n FROM documents WHERE id = ?",
+  voce: 'SELECT title AS n FROM entries WHERE id = ?',
+  contatto: "SELECT COALESCE(NULLIF(name, ''), email) AS n FROM contacts WHERE id = ?",
+  progetto: 'SELECT name AS n FROM projects WHERE id = ?',
+};
+
+function plainRefs(text) {
+  return String(text || '').replace(/\[\[(doc|voce|contatto|progetto):(\d+)\]\]/g, (m, kind, id) => {
+    const name = db.prepare(REF_NAME[kind]).get(+id)?.n;
+    return name ? name.replace(/(^|\s)#/g, '$1') : m;
+  });
+}
+
 function mailParts(e) {
   const rows = db.prepare(`SELECT a.filename, a.mime, a.stored, d.stored AS doc_stored, d.mime AS doc_mime, d.filename AS doc_filename
     FROM mail_attachments a LEFT JOIN documents d ON d.id = a.doc_id AND d.deleted_at IS NULL
@@ -35,8 +50,8 @@ function mailParts(e) {
   return {
     to: e.contact || '',
     cc: e.mail_cc || '',
-    subject: e.mail_subject || e.title.replace(/(^|\s)#/g, '$1'),
-    body: e.notes || '',
+    subject: plainRefs(e.mail_subject || e.title.replace(/(^|\s)#/g, '$1')),
+    body: plainRefs(e.notes),
     files: rows.map((r, i) => ({ name: names[i], mime: r.mime, file: path.join(UPLOAD_DIR, r.stored) })),
   };
 }
@@ -95,7 +110,7 @@ function buildEml(p) {
   const b64 = buf => buf.toString('base64').replace(/.{76}/g, '$&\r\n');
   const out = [
     `To: ${header(p.to)}`,
-    p.cc && `Cc: ${header(p.cc)}`,
+    p.cc ? `Cc: ${header(p.cc)}` : null,
     `Subject: ${header(p.subject)}`,
     'X-Unsent: 1',
     'MIME-Version: 1.0',
@@ -106,7 +121,7 @@ function buildEml(p) {
     'Content-Transfer-Encoding: base64',
     '',
     b64(Buffer.from(p.body)),
-  ].filter(l => l !== false); // niente riga Cc se vuota
+  ].filter(l => l !== null); // niente riga Cc se vuota (una riga vuota chiuderebbe le intestazioni)
   for (const f of p.files) {
     out.push(`--${boundary}`, `Content-Type: ${f.mime}; name="${f.name}"`, `Content-Disposition: attachment; filename="${f.name}"`,
       'Content-Transfer-Encoding: base64', '', b64(fs.readFileSync(f.file)));

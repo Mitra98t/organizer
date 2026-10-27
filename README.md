@@ -73,6 +73,12 @@ Nelle altre pagine la barra rapida tiene conto di dove sei: in un progetto le vo
 
 Scorciatoie da tastiera: `n` o `/` per scrivere, `Ctrl/⌘ K` per cercare.
 
+## Collegamenti e backlink
+
+In qualunque campo di testo `[[` apre i suggerimenti per collegare una voce (todo, mail, nota), un documento, un articolo, un progetto o un contatto; ogni suggerimento ha l'etichetta del suo tipo. Nel testo resta un token (`[[voce:12]]`) che l'app mostra come link con il nome sempre aggiornato; nelle mail mandate diventa il nome in chiaro.
+
+Ciò che viene collegato lo sa: articoli, documenti, progetti, contatti e voci mostrano chi li collega, con le mail divise in **da mandare** e **mandate** (anche quelle vecchie). Così si vede subito se il datasheet è già partito per il fornitore o se è in una mail ancora da mandare.
+
 ## Progetti
 
 Una voce (todo, mail, nota) può stare in più progetti: nell'editor i progetti sono chip con × e un campo per aggiungerne altri; compare nella pagina di ognuno.

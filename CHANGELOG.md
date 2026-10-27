@@ -3,6 +3,27 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.7.1 — 2026-10-27
+
+**Collegamenti ovunque**
+- `[[` funziona in ogni campo di testo: titoli e dettagli delle voci, aggiornamenti, testo delle mail, appunti di progetti, articoli e contatti, note sui documenti, barra rapida, chat. Collega voci (un todo a un altro todo, una mail, una nota), documenti, articoli, progetti e contatti.
+- Nel menu dei suggerimenti ogni riga ha l'etichetta del tipo (todo, mail, nota, documento, articolo, progetto, contatto) e lo stato (da mandare, mandata, fatta), così si distingue cosa si sta collegando.
+- I collegamenti si vedono come link con il nome attuale: nei titoli e, sotto i campi di testo, come riga di link.
+
+**Backlink**
+- Ogni elemento collegato mostra chi lo collega, con le mail divise in **da mandare** e **mandate**: articoli ("Nelle mail"), documenti, progetti, contatti e voci ("Citata in"). Comprende le mail archiviate.
+- Nel testo delle mail i codici di magazzino senza `#` contano come collegamento all'articolo; per i documenti contano anche gli allegati, per i contatti le mail al loro indirizzo.
+- Le voci fatte da più di 30 giorni si aprono in sola lettura dai backlink, con "Riapri".
+- Nella scheda articolo le mail stanno solo in "Nelle mail" (non più in "Da fare").
+
+**Mail**
+- Nelle mail mandate (Thunderbird, `.eml`, app mail) i collegamenti diventano il nome di ciò che collegano.
+- Correzione: con il Cc vuoto il `.eml` aveva una riga vuota tra le intestazioni e arrivava senza oggetto.
+
+**CLI e API**
+- `GET /api/backlinks/:tipo/:id`; la CLI mostra i collegamenti con il nome (`«…»`), `org show` le voci che citano la voce, `org item show` le mail da mandare e mandate.
+- Schema dati v10 (i collegamenti delle voci esistenti si calcolano al primo avvio).
+
 ## 0.7 — 2026-10-27
 
 **Chat del workspace**

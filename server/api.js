@@ -95,6 +95,35 @@ export function syncEntryItems(entryId, user) {
   db.prepare('DELETE FROM entry_items WHERE entry_id = ?').run(entryId);
   const ins = db.prepare('INSERT OR IGNORE INTO entry_items (entry_id, item_id) VALUES (?, ?)');
   for (const c of codes) ins.run(entryId, ensureItem(c, user));
+  syncEntryLinks(entryId);
+}
+
+export const LINK_KINDS = ['doc', 'voce', 'contatto', 'progetto'];
+const REF_RE = /\[\[(doc|voce|contatto|progetto):(\d+)\]\]/g;
+const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// Gli altri collegamenti (per i backlink): [[tipo:ID]] ovunque nel testo della voce e, nelle mail, i codici
+// di magazzino scritti senza # (l'autocompletamento del testo delle mail li inserisce così).
+export function syncEntryLinks(entryId) {
+  const e = db.prepare('SELECT kind, title, notes, mail_subject FROM entries WHERE id = ?').get(entryId);
+  const logs = db.prepare('SELECT text FROM entry_log WHERE entry_id = ?').all(entryId).map(l => l.text);
+  const text = [e.title, e.notes, e.mail_subject || '', ...logs].join('\n');
+  db.prepare('DELETE FROM entry_links WHERE entry_id = ?').run(entryId);
+  const link = db.prepare('INSERT OR IGNORE INTO entry_links (entry_id, kind, target_id) VALUES (?, ?, ?)');
+  for (const m of text.matchAll(REF_RE)) if (!(m[1] === 'voce' && +m[2] === entryId)) link.run(entryId, m[1], +m[2]);
+  if (e.kind !== 'mail') return;
+  const body = `${e.notes}\n${e.mail_subject || ''}`;
+  for (const it of db.prepare('SELECT id, code FROM items WHERE deleted_at IS NULL').all()) {
+    if (new RegExp(`(^|[^\\w#])${escRe(it.code)}(?![\\w]|[.\\-/][\\w])`, 'i').test(body)) link.run(entryId, 'articolo', it.id);
+  }
+}
+
+// Prima volta con la tabella dei collegamenti: si calcolano per le voci che ci sono già.
+export function backfillLinks() {
+  if (db.prepare('SELECT 1 FROM entry_links LIMIT 1').get()) return 0;
+  const ids = db.prepare('SELECT id FROM entries').all().map(r => r.id);
+  tx(() => { for (const id of ids) syncEntryLinks(id); });
+  return ids.length;
 }
 
 export function addLog(entryId, userId, text, system = false) {
@@ -408,6 +437,7 @@ export function updateEntry(e, b, user) {
   if (f.project_id !== undefined) db.prepare('UPDATE entries SET project_id = ? WHERE parent_id = ?').run(f.project_id, e.id);
   if (e.due && f.due !== undefined && f.due !== e.due) addLog(e.id, user.id, `scadenza ${fmtDate(e.due)} → ${fmtDate(f.due)}`, true);
   if (f.title !== undefined || f.notes !== undefined) syncEntryItems(e.id, user);
+  else if (f.mail_subject !== undefined || f.kind !== undefined) syncEntryLinks(e.id);
 }
 
 route('POST', '/api/entries', async ({ user, body }) => {
@@ -430,6 +460,27 @@ route('GET', '/api/entries/:id', ({ params, user }) => {
     subtasks: db.prepare(`SELECT e.* FROM entries e WHERE e.parent_id = $id AND ${VIS} ORDER BY e.id`).all({ id: e.id, uid: user.id }),
     attachments: db.prepare('SELECT id, doc_id, filename, mime, size FROM mail_attachments WHERE entry_id = ? ORDER BY id').all(e.id),
   };
+});
+
+// Backlink: le voci (anche archiviate) che collegano l'elemento. Per un articolo anche #CODICE e i codici
+// nelle mail, per un documento anche gli allegati, per un contatto anche le mail mandate al suo indirizzo.
+route('GET', '/api/backlinks/:kind/:id', ({ params, user }) => {
+  const { kind } = params;
+  const id = +params.id;
+  if (![...LINK_KINDS, 'articolo'].includes(kind)) fail(404, 'Tipo sconosciuto');
+  const ids = db.prepare('SELECT entry_id AS id FROM entry_links WHERE kind = ? AND target_id = ?').all(kind, id).map(r => r.id);
+  if (kind === 'articolo') ids.push(...db.prepare('SELECT entry_id AS id FROM entry_items WHERE item_id = ?').all(id).map(r => r.id));
+  if (kind === 'doc') ids.push(...db.prepare('SELECT entry_id AS id FROM mail_attachments WHERE doc_id = ?').all(id).map(r => r.id));
+  if (kind === 'contatto') {
+    const email = db.prepare("SELECT email FROM contacts WHERE id = ? AND email != ''").get(id)?.email;
+    if (email) {
+      ids.push(...db.prepare(`SELECT id FROM entries WHERE kind = 'mail' AND (',' || REPLACE(LOWER(contact), ' ', '') || ',') LIKE ?`)
+        .all(`%,${email.toLowerCase()},%`).map(r => r.id));
+    }
+  }
+  return db.prepare(`SELECT e.id, e.kind, e.title, e.due, e.done_at, e.contact, e.mail_subject, e.project_id, e.parent_id, e.updated_at
+    FROM entries e WHERE e.id IN (SELECT value FROM json_each($ids)) AND ${VIS} ORDER BY e.updated_at DESC`)
+    .all({ ids: JSON.stringify([...new Set(ids)]), uid: user.id });
 });
 
 route('PATCH', '/api/entries/:id', async ({ params, user, body }) => {
