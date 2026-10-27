@@ -32,6 +32,7 @@ export const ui = {
   tokens: null,
   chatDraft: '',
   chatEdit: null,
+  richEdit: null, // data-fk del campo di testo aperto in scrittura (vedi richField)
   trash: null,
   contactFilter: '',
   mailHelper: load('org.mailHelper', false),
@@ -515,38 +516,90 @@ export function ancestors(id) {
 const RICH_RE = /(https?:\/\/[^\s<>]+[^\s<>.,;:!?)\]'"])|(^|[\s(\[,;:])#([A-Za-z0-9](?:[\w.\-/]*[A-Za-z0-9_])?)/g;
 
 // Testo con #CODICI cliccabili (portano alla scheda di magazzino), URL attivi e collegamenti [[tipo:ID]].
-export function richText(text) {
+// bare: anche i codici di magazzino scritti senza # (testo delle mail) diventano link.
+export function richText(text, { bare = false } = {}) {
   const s = String(text || '');
   const out = [];
   let last = 0;
   for (const m of s.matchAll(REF_RE)) {
-    out.push(...codesAndUrls(s.slice(last, m.index)), refChip(m[1], +m[2]));
+    out.push(...codesAndUrls(s.slice(last, m.index), bare), refChip(m[1], +m[2]));
     last = m.index + m[0].length;
   }
-  out.push(...codesAndUrls(s.slice(last)));
+  out.push(...codesAndUrls(s.slice(last), bare));
   return out;
 }
 
-function codesAndUrls(text) {
+const codeLink = (code, it) => h('a.code', {
+  href: it ? `#/i/${it.id}` : '#/magazzino', onclick: stop, title: [it?.name, it?.category].filter(Boolean).join(' · '), ...itemAttrs(it),
+}, code);
+
+function codesAndUrls(text, bare) {
+  const plain = bare ? bareCodes : t => [t];
   const out = [];
   let last = 0;
   for (const m of String(text || '').matchAll(RICH_RE)) {
     if (m[1]) {
-      out.push(text.slice(last, m.index));
+      out.push(...plain(text.slice(last, m.index)));
       const internal = m[1].startsWith(`${location.origin}${location.pathname}#/`);
       const short = m[1].replace(/^https?:\/\/(www\.)?/, '');
       out.push(internal
         ? h('a.ext', { href: m[1].slice(m[1].indexOf('#')), onclick: stop }, m[1].includes('#/d/') ? 'apri la nota nel documento' : 'apri')
         : h('a.ext', { href: m[1], target: '_blank', rel: 'noopener noreferrer', onclick: stop }, short.length > 42 ? `${short.slice(0, 40)}…` : short));
     } else {
-      out.push(text.slice(last, m.index + m[2].length));
-      const it = S.data?.itemByCode.get(m[3].toUpperCase());
-      out.push(h('a.code', { href: it ? `#/i/${it.id}` : '#/magazzino', onclick: stop, title: [it?.name, it?.category].filter(Boolean).join(' · '), ...itemAttrs(it) }, m[3]));
+      out.push(...plain(text.slice(last, m.index + m[2].length)));
+      out.push(codeLink(m[3], S.data?.itemByCode.get(m[3].toUpperCase())));
     }
     last = m.index + m[0].length;
   }
-  out.push(String(text || '').slice(last));
+  out.push(...plain(String(text || '').slice(last)));
   return out;
+}
+
+// Codici di articoli esistenti scritti senza # (solo parole intere: "SCH-051" sì, "SCH-051B" no).
+const WORD_RE = /[A-Za-z0-9](?:[\w.\-/]*[A-Za-z0-9_])?/g;
+function bareCodes(text) {
+  const out = [];
+  let last = 0;
+  for (const m of text.matchAll(WORD_RE)) {
+    const it = S.data?.itemByCode.get(m[0].toUpperCase());
+    if (!it) continue;
+    out.push(text.slice(last, m.index), codeLink(m[0], it));
+    last = m.index + m[0].length;
+  }
+  out.push(text.slice(last));
+  return out;
+}
+
+// ---------- campi di testo che si leggono come la chat ----------
+// Il testo si mostra già colorato (#CODICI, collegamenti [[…]], link) e i link si cliccano; un clic sul testo
+// (o Invio quando ha il focus) apre il campo per scrivere, uscendo si salva e si torna alla lettura.
+export function richField({ fk, value, placeholder, cls, rows = 2, attrs = {}, onSave, bare = false }) {
+  if (ui.richEdit === fk) {
+    return h(`textarea.${cls}`, {
+      rows, value: value || '', placeholder, 'data-fk': fk, ...attrs,
+      oninput: autosize,
+      onkeydown: ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); ev.target.blur(); } },
+      onblur: ev => {
+        ui.richEdit = null;
+        if (ev.target.value !== (value || '')) onSave(ev.target.value);
+        render();
+      },
+    });
+  }
+  const edit = () => {
+    ui.richEdit = fk;
+    render();
+    const el = document.querySelector(`[data-fk="${CSS.escape(fk)}"]`);
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+    autosize(el);
+  };
+  return h(`div.${cls}.rich-view`, {
+    tabindex: 0, role: 'textbox', title: 'Clicca per modificare', style: `--rows:${rows}`,
+    onclick: ev => { if (!ev.target.closest('a, button') && !String(getSelection())) edit(); },
+    onkeydown: ev => { if (ev.key === 'Enter' && ev.target === ev.currentTarget) { ev.preventDefault(); edit(); } },
+  }, value ? richText(value, { bare }) : h('span.rich-ph', placeholder));
 }
 
 // ---------- collegamenti [[tipo:ID]] ----------
@@ -587,14 +640,6 @@ export function plainRefs(text) {
     const name = x && (kind === 'doc' ? docName(x) : kind === 'voce' ? plainTitle(x.title) : x.name || x.email);
     return name || m;
   });
-}
-
-// Sotto un campo di testo: i collegamenti che contiene, cliccabili (nel campo si vede il token).
-export function refLinks(text) {
-  const refs = [...String(text || '').matchAll(REF_RE)];
-  if (!refs.length) return null;
-  const seen = new Set();
-  return h('div.ref-links', refs.filter(m => !seen.has(m[0]) && seen.add(m[0])).map(m => refChip(m[1], +m[2])));
 }
 
 // Backlink: le voci che collegano un elemento (dal server: comprende le voci archiviate).

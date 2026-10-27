@@ -1,5 +1,5 @@
 // Rubrica: elenco filtrabile, scheda modificabile, mail collegate a ogni contatto.
-import { h, icon, S, ui, api, act, render, copy, trashIt, autosize, save, refLinks } from './core.js';
+import { h, icon, S, ui, api, act, render, copy, trashIt, save, richField } from './core.js';
 import { backlinksBox } from './views.js';
 
 const lc = s => String(s || '').toLowerCase();
@@ -120,12 +120,10 @@ function viewContact(id) {
       field('role', 'Ruolo', { 'data-ac': 'cfield', 'data-ac-field': 'role', autocomplete: 'off' }),
       field('timeslot', 'Fascia oraria', { 'data-ac': 'cfield', 'data-ac-field': 'timeslot', autocomplete: 'off', placeholder: 'es. mattina, 14-18, Shenzhen (UTC+8)' }),
     ),
-    h('textarea.proj-notes', {
-      rows: 2, value: c.notes, placeholder: 'Note: orari, come preferisce essere contattato, riferimenti…', 'data-fk': `cnotes-${c.id}`,
-      'data-ac': 'text', 'data-ac-only': '#',
-      oninput: autosize, onblur: ev => { if (ev.target.value !== c.notes) patch({ notes: ev.target.value }); },
+    richField({
+      fk: `cnotes-${c.id}`, cls: 'proj-notes', value: c.notes, placeholder: 'Note: orari, come preferisce essere contattato, riferimenti…',
+      attrs: { 'data-ac': 'text', 'data-ac-only': '#' }, onSave: notes => patch({ notes }),
     }),
-    refLinks(c.notes),
     h('div.toolbar',
       c.email && h('button.btn', { onclick: () => newMail(c) }, icon('mail'), 'Nuova mail'),
       c.email && h('button.btn.ghost', { onclick: () => copy(c.email) }, icon('copy'), 'Copia email'),

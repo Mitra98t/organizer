@@ -810,7 +810,14 @@ a.ref:hover { border-color: var(--accent); }
 .mention.me { background: var(--accent-soft); border-radius: 4px; padding: 0 3px; }
 
 /* ---------- collegamenti e backlink ---------- */
-.ref-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: -4px; }
+/* Campi di testo in lettura (richField): stesso aspetto del campo, testo colorato e link cliccabili. */
+.rich-view {
+  border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 7px 9px; cursor: text;
+  white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; min-height: calc(var(--rows, 1) * 1.5em + 16px);
+}
+.rich-view:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.rich-view:focus-visible { outline: none; border-color: var(--accent); }
+.rich-ph { color: var(--muted); }
 .ref .ic + * { min-width: 0; }
 .bl-g + .bl-g { border-top: 1px solid var(--line); }
 .bl-h { display: flex; align-items: center; gap: 6px; padding: 8px 12px 4px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }

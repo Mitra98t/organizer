@@ -2,7 +2,7 @@ import {
   h, icon, S, ui, RS, api, act, render, richText, dueInfo, dayDiff, fmtDay, fmtLongDay, fmtTime, fmtSize,
   userName, toast, save, patchEntry, addEntry, isMine, localDay, autosize, stop, copy, hue, trashIt, contactLabel,
   descendants, ancestors, catStyle, itemAttrs, docFileUrl, projectsOf, DOC_KINDS, projHue, catHue, huePicker,
-  switchWorkspace, newWorkspace, docName, renameDoc, refLinks, backlinks, plainRefs,
+  switchWorkspace, newWorkspace, docName, renameDoc, richField, backlinks, plainRefs,
 } from './core.js';
 import { docMeta } from './docview.js';
 import { today, addDays } from './parse.js';
@@ -161,12 +161,10 @@ function entryEditor(e) {
       h('button.chip', { class: e.pinned && 'on', onclick: () => patchEntry(e, { pinned: !e.pinned }) }, icon('star'), 'evidenza'),
       e.created_by === me.id && h('button.chip', { class: e.private && 'on', onclick: () => patchEntry(e, { private: !e.private }) }, icon('lock'), 'privata'),
     ),
-    e.kind === 'mail' ? mailComposer(e) : [h('textarea.ed-notes', {
-      rows: 1, value: e.notes, placeholder: 'Dettagli (facoltativo; #codice, [[ per collegare altro)…', 'data-fk': `notes-${e.id}`,
-      'data-ac': e.kind, 'data-ac-only': '#', 'data-ac-entry': e.id,
-      oninput: autosize,
-      onblur: ev => { if (ev.target.value !== e.notes) patchEntry(e, { notes: ev.target.value }); },
-    }), refLinks(e.notes)],
+    e.kind === 'mail' ? mailComposer(e) : richField({
+      fk: `notes-${e.id}`, cls: 'ed-notes', rows: 1, value: e.notes, placeholder: 'Dettagli (facoltativo; #codice, [[ per collegare altro)…',
+      attrs: { 'data-ac': e.kind, 'data-ac-only': '#', 'data-ac-entry': e.id }, onSave: notes => patchEntry(e, { notes }),
+    }),
     !isNote && !e.parent_id && h('div.subs',
       kids.map(k => entryRow(k, { nested: true, showProject: false })),
       h('input.sub-in', {
@@ -510,12 +508,10 @@ export function viewProject(id) {
           trashIt('project', `/projects/${p.id}`, `@${p.tag}`).then(ok => { if (ok) location.hash = '#/progetti'; });
         },
       }, icon('trash'), 'Elimina')),
-    h('textarea.proj-notes', {
-      rows: 2, value: p.notes, placeholder: 'Appunti di progetto: repo, IP delle schede, toolchain, riferimenti…', 'data-fk': `pnotes-${p.id}`,
-      'data-ac': 'text', 'data-ac-only': '#',
-      oninput: autosize, onblur: ev => { if (ev.target.value !== p.notes) patch({ notes: ev.target.value }); },
+    richField({
+      fk: `pnotes-${p.id}`, cls: 'proj-notes', value: p.notes, placeholder: 'Appunti di progetto: repo, IP delle schede, toolchain, riferimenti…',
+      attrs: { 'data-ac': 'text', 'data-ac-only': '#' }, onSave: notes => patch({ notes }),
     }),
-    refLinks(p.notes),
     section(`p${p.id}-subs`, 'Sottoprogetti', [
       kids.length > 0 && h('div.cards.subcards', kids.map(k => projectCard(k, stats, { compact: true }))),
       h('input.sub-in', {
@@ -885,12 +881,10 @@ export function viewItem(id) {
           h('input', { value: it.url || '', type: 'url', placeholder: 'pagina prodotto, repo, wiki…', 'data-fk': `it-url-${it.id}`, onchange: ev => patch({ url: ev.target.value.trim() }) }),
           it.url && h('a.icon-btn', { href: it.url, target: '_blank', rel: 'noopener noreferrer', title: 'Apri il link' }, icon('link')))),
       h('datalist#item-cats', [...new Set(D.items.map(i => i.category).filter(Boolean))].map(c => h('option', { value: c })))),
-    h('textarea.proj-notes', {
-      rows: 2, value: it.notes, placeholder: 'Note: pinout, jumper, procedura di flash, password di default…', 'data-fk': `inotes-${it.id}`,
-      'data-ac': 'text', 'data-ac-only': '#',
-      oninput: autosize, onblur: ev => { if (ev.target.value !== it.notes) patch({ notes: ev.target.value }); },
+    richField({
+      fk: `inotes-${it.id}`, cls: 'proj-notes', value: it.notes, placeholder: 'Note: pinout, jumper, procedura di flash, password di default…',
+      attrs: { 'data-ac': 'text', 'data-ac-only': '#' }, onSave: notes => patch({ notes }),
     }),
-    refLinks(it.notes),
     docSection(it),
     section('i-comp', 'Composizione', [
       h('div.comp',

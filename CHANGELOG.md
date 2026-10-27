@@ -3,6 +3,10 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.7.4 — 2026-10-27
+- Descrizione degli articoli, appunti di progetti e contatti, dettagli delle voci e testo delle mail si leggono come la chat: `#CODICE`, collegamenti `[[…]]` e link colorati e cliccabili dentro il testo. Un clic sul testo (o Invio) apre il campo per scrivere; uscendo si salva e si torna alla lettura.
+- Nel testo delle mail anche i codici di magazzino scritti senza `#` sono colorati e cliccabili.
+
 ## 0.7.3 — 2026-10-27
 - Tutte le pagine usano la larghezza intera della finestra (prima si fermavano a 1480 px; anche la chat).
 - Viste a colonne (magazzino per categoria, documenti raggruppati): 3 colonne su schermo grande (da 1400 px), 2 su medio, 1 su telefono.

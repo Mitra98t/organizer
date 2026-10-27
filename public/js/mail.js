@@ -1,5 +1,5 @@
 // Composer delle mail: destinatari, oggetto, testo, allegati e invio verso il client di posta.
-import { h, icon, S, ui, api, act, toast, patchEntry, autosize, fmtSize, plainRefs, refLinks } from './core.js';
+import { h, icon, S, ui, api, act, toast, patchEntry, fmtSize, plainRefs, richField } from './core.js';
 
 const subjectOf = e => plainRefs(e.mail_subject || e.title.replace(/(^|\s)#/g, '$1'));
 
@@ -66,11 +66,13 @@ export function mailComposer(e) {
       h('input', { value: e.mail_subject || '', placeholder: subjectOf({ ...e, mail_subject: null }), 'data-fk': `subj-${e.id}`, onblur: saveField('mail_subject') })),
     // #articolo suggerisce dal magazzino e scrive il codice senza # (la mail va a chi non usa l'app);
     // [[ collega documenti, voci, contatti e progetti: nella mail mandata diventano il loro nome.
-    h('textarea.mail-body', {
-      rows: 4, value: e.notes, placeholder: 'Testo della mail… (#codice per un articolo, [[ per collegare altro)', 'data-fk': `body-${e.id}`,
-      'data-ac': 'mail', 'data-ac-only': '#', 'data-ac-bare': '', 'data-ac-entry': e.id, oninput: autosize, onblur: saveField('notes'),
+    // Nel testo letto i codici senza # sono colorati come gli altri (bare).
+    richField({
+      fk: `body-${e.id}`, cls: 'mail-body', rows: 4, value: e.notes, bare: true,
+      placeholder: 'Testo della mail… (#codice per un articolo, [[ per collegare altro)',
+      attrs: { 'data-ac': 'mail', 'data-ac-only': '#', 'data-ac-bare': '', 'data-ac-entry': e.id },
+      onSave: notes => patchEntry(e, { notes }),
     }),
-    refLinks(e.notes),
     h('div.atts',
       atts.map(a => h('span.att',
         icon('clip'),
