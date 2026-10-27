@@ -214,6 +214,9 @@ route('GET', '/api/sync', ({ req, res, user }) => {
     entryItems: db.prepare(`SELECT ei.entry_id, ei.item_id FROM entry_items ei JOIN entries e ON e.id = ei.entry_id WHERE ${where}`).all(p),
     items: db.prepare('SELECT * FROM items WHERE deleted_at IS NULL ORDER BY code COLLATE NOCASE').all(),
     itemLinks: db.prepare('SELECT parent_id, child_id FROM item_links').all(),
+    entryProjects: db.prepare(`SELECT ep.entry_id, ep.project_id FROM entry_projects ep
+      JOIN entries e ON e.id = ep.entry_id JOIN projects p ON p.id = ep.project_id
+      WHERE ${where} AND p.deleted_at IS NULL AND (p.private = 0 OR p.created_by = $uid)`).all(p),
     projectItems: db.prepare(`SELECT pi.project_id, pi.item_id FROM project_items pi
       JOIN projects p ON p.id = pi.project_id WHERE ${PVIS}`).all({ uid }),
     docs: db.prepare(`SELECT id, item_id, kind, label, version, filename, mime, size, sha256, url, created_by, created_at
@@ -265,9 +268,12 @@ export function createEntry(b, user) {
   if (parent?.parent_id) parent = getEntry(parent.parent_id, user.id); // un solo livello di sotto-attività
   const kind = p.kindExplicit || !parent ? p.kind : 'todo';
 
-  let projectId = parent?.project_id ?? null;
-  if (b.project_id) projectId = getProject(b.project_id, user.id).id;
-  if (p.project) projectId = resolveProject(p.project, user);
+  // Tutti i progetti: quelli scritti con @ (il primo diventa il principale) più quello della pagina.
+  const projectIds = [...new Set([
+    ...p.projects.map(tag => resolveProject(tag, user)),
+    ...(b.project_id ? [getProject(b.project_id, user.id).id] : []),
+  ])];
+  const projectId = projectIds[0] ?? parent?.project_id ?? null;
 
   let title = p.title;
   let assigneeId = b.assignee_id ? getUser(b.assignee_id).id : null;
@@ -283,8 +289,13 @@ export function createEntry(b, user) {
     (kind, title, contact, due, private, project_id, parent_id, assignee_id, created_by, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(kind, title, contact, p.due ?? null, bool(b.private), projectId, parent?.id ?? null, assigneeId, user.id, t, t));
+  for (const pid of projectIds.slice(1)) addEntryProject(id, pid);
   syncEntryItems(id, user);
   return id;
+}
+
+function addEntryProject(entryId, projectId) {
+  db.prepare('INSERT OR IGNORE INTO entry_projects (entry_id, project_id) VALUES (?, ?)').run(entryId, projectId);
 }
 
 export function updateEntry(e, b, user) {
@@ -297,7 +308,12 @@ export function updateEntry(e, b, user) {
     f.title = p.title;
     if (p.kindExplicit) f.kind = p.kind;
     if (p.due !== undefined) f.due = p.due;
-    if (p.project) f.project_id = resolveProject(p.project, user);
+    // @progetto nel titolo aggiunge il progetto (non toglie gli altri); se non ce n'è uno principale, lo diventa.
+    for (const tag of p.projects) {
+      const pid = resolveProject(tag, user);
+      if (!e.project_id && f.project_id === undefined) f.project_id = pid;
+      else if (pid !== (f.project_id ?? e.project_id)) addEntryProject(e.id, pid);
+    }
     if (p.contact) f.contact = resolveContact(p.contact);
     if (p.assignee) {
       const u = findUser(p.assignee);
@@ -346,6 +362,34 @@ route('PATCH', '/api/entries/:id', async ({ params, user, body }) => {
 
 // Eliminare = spostare nel cestino. Le sotto-attività seguono la voce con lo stesso istante,
 // così il ripristino riporta indietro esattamente ciò che è stato eliminato insieme.
+// Progetti di una voce: il primo aggiunto diventa il principale; togliendo il principale lo diventa il successivo.
+route('POST', '/api/entries/:id/projects', async ({ params, user, body }) => {
+  const b = await body();
+  const e = getEntry(params.id, user.id);
+  const pid = getProject(b.project_id, user.id).id;
+  tx(() => {
+    if (!e.project_id) {
+      db.prepare('UPDATE entries SET project_id = ?, updated_at = ? WHERE id = ?').run(pid, now(), e.id);
+      db.prepare('UPDATE entries SET project_id = ? WHERE parent_id = ?').run(pid, e.id);
+    } else if (pid !== e.project_id) addEntryProject(e.id, pid);
+  });
+});
+
+route('DELETE', '/api/entries/:id/projects/:pid', ({ params, user }) => {
+  const e = getEntry(params.id, user.id);
+  const pid = +params.pid;
+  tx(() => {
+    if (pid === e.project_id) {
+      const next = db.prepare('SELECT project_id FROM entry_projects WHERE entry_id = ? ORDER BY rowid LIMIT 1').get(e.id)?.project_id ?? null;
+      db.prepare('UPDATE entries SET project_id = ?, updated_at = ? WHERE id = ?').run(next, now(), e.id);
+      db.prepare('UPDATE entries SET project_id = ? WHERE parent_id = ?').run(next, e.id);
+      if (next) db.prepare('DELETE FROM entry_projects WHERE entry_id = ? AND project_id = ?').run(e.id, next);
+    } else {
+      db.prepare('DELETE FROM entry_projects WHERE entry_id = ? AND project_id = ?').run(e.id, pid);
+    }
+  });
+});
+
 route('DELETE', '/api/entries/:id', ({ params, user }) => {
   const e = getEntry(params.id, user.id);
   db.prepare('UPDATE entries SET deleted_at = $t, deleted_by = $u WHERE (id = $id OR parent_id = $id) AND deleted_at IS NULL')
@@ -459,9 +503,10 @@ route('DELETE', '/api/projects/:id', ({ params, user }) => {
 // ---------- magazzino ----------
 function itemFields(b) {
   const f = {};
-  for (const [k, max] of Object.entries({ name: 200, category: 60, firmware: 100, location: 100, notes: 20000 })) {
+  for (const [k, max] of Object.entries({ name: 200, category: 60, firmware: 100, location: 100, notes: 20000, url: 2000 })) {
     if (b[k] !== undefined) f[k] = str(b[k], max);
   }
+  if (f.url && !/^https?:\/\//i.test(f.url)) f.url = `https://${f.url}`;
   if (b.qty !== undefined) {
     if (b.qty === null || b.qty === '') f.qty = null;
     else if (Number.isInteger(+b.qty)) f.qty = +b.qty;
@@ -615,12 +660,21 @@ route('GET', '/api/docs/:id/file', ({ res, params, query }) => {
 
 route('PATCH', '/api/docs/:id', async ({ params, body }) => {
   const b = await body();
-  const d = db.prepare('SELECT id FROM documents WHERE id = ?').get(+params.id) || fail(404, 'Documento non trovato');
+  const d = db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL').get(+params.id) || fail(404, 'Documento non trovato');
   const f = {};
   if (b.label !== undefined) f.label = str(b.label, 200);
   if (b.version !== undefined) f.version = str(b.version, 60);
   if (b.kind !== undefined) f.kind = DOC_KINDS.includes(b.kind) ? b.kind : 'altro';
-  setFields('documents', d.id, f);
+  tx(() => {
+    setFields('documents', d.id, f);
+    // Come al caricamento: il firmware più recente con versione dà la versione all'articolo.
+    const latest = db.prepare(`SELECT version FROM documents WHERE item_id = ? AND kind = 'firmware' AND version != ''
+      AND deleted_at IS NULL ORDER BY created_at DESC, id DESC LIMIT 1`).get(d.item_id);
+    // Vale anche se il documento smette di essere un firmware: torna la versione del firmware più recente rimasto.
+    if (((f.kind ?? d.kind) === 'firmware' || d.kind === 'firmware') && latest) {
+      db.prepare('UPDATE items SET firmware = ?, updated_at = ? WHERE id = ?').run(latest.version, now(), d.item_id);
+    }
+  });
 });
 
 // ---------- note sui documenti ----------

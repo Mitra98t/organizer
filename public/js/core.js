@@ -38,6 +38,12 @@ export const ui = {
   docNote: null,
   docEdit: null,
   docShowResolved: false,
+  docNotesHidden: load('org.docNotesHidden', false),
+  docFilter: '',
+  docKindF: null,
+  docOnlyNotes: false,
+  docGroup: load('org.docGroup', 'item'),
+  docSel: new Set(),
 };
 
 // ---------- render ----------
@@ -112,6 +118,7 @@ const ICONS = {
   cols: '<rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="16" rx="1"/><rect x="17" y="4" width="4" height="16" rx="1"/>',
   restore: '<path d="M4 12a8 8 0 1 0 2.3-5.6L4 8.7"/><path d="M4 4v4.7h4.7"/>',
   contacts: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6.5 6.5 0 0 1 3.5 6"/>',
+  file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
   logout: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 8l-4 4 4 4M6 12h10"/>',
@@ -176,6 +183,7 @@ function indexData(d) {
   d.attachments ||= [];
   d.projectItems ||= [];
   d.docNotes ||= [];
+  d.entryProjects ||= [];
   d.entryById = new Map(d.entries.map(e => [e.id, e]));
   d.projectById = new Map(d.projects.map(p => [p.id, p]));
   d.projectByTag = new Map(d.projects.map(p => [p.tag.toLowerCase(), p]));
@@ -195,6 +203,7 @@ function indexData(d) {
   d.contactByEmail = new Map(d.contacts.filter(c => c.email).map(c => [c.email.toLowerCase(), c]));
   d.attachmentsOf = group(d.attachments, 'entry_id');
   d.itemsOfProject = group(d.projectItems, 'project_id');
+  d.extraProjectsOf = group(d.entryProjects, 'entry_id');
   d.projectsOfItem = group(d.projectItems, 'item_id');
   d.subprojects = group(d.projects.filter(p => p.parent_id && d.projectById.has(p.parent_id)), 'parent_id');
   return d;
@@ -391,8 +400,22 @@ export function hue(s) {
   for (const c of String(s)) x = (x * 31 + c.codePointAt(0)) >>> 0;
   return x % 360;
 }
+export const DOC_KINDS = ['firmware', 'datasheet', 'schema', 'manuale', 'foto', 'altro'];
+
+// URL del file di un documento. L'impronta (sha256) nell'indirizzo evita che il browser mostri dalla cache
+// un file vecchio con lo stesso numero di documento (dopo un reset o il ripristino di un backup).
+export const docFileUrl = (d, { inline = false } = {}) =>
+  `api/docs/${d.id}/file?v=${(d.sha256 || '').slice(0, 12)}${inline ? '&inline=1' : ''}`;
+
 export const catStyle = cat => (cat ? `--h:${hue(String(cat).toLowerCase())}` : null);
 export const itemAttrs = it => (it?.category ? { class: 'cat', style: catStyle(it.category) } : {});
+
+// Progetti di una voce: prima il principale, poi gli altri (solo quelli visibili e non nel cestino).
+export function projectsOf(e) {
+  const D = S.data;
+  const ids = [e.project_id, ...(D.extraProjectsOf.get(e.id) || []).map(x => x.project_id)];
+  return [...new Set(ids)].map(id => id && D.projectById.get(id)).filter(Boolean);
+}
 
 // Tutti i sottoprogetti (a ogni livello) di un progetto.
 export function descendants(id) {

@@ -5,7 +5,8 @@ import {
 import { initAutocomplete, acCheck } from './autocomplete.js';
 import { viewContacts } from './contacts.js';
 import { viewTrash } from './trash.js';
-import { viewDoc, docCancelDraft } from './docview.js';
+import { viewDoc, viewReview, docCancelDraft, setDocFocus } from './docview.js';
+import { viewDocuments } from './documents.js';
 import { parseQuick, extractCodes, today, parseItemLine, parseProjectLine } from './parse.js';
 import {
   viewAgenda, viewProjects, viewProject, viewMail, viewDiary, viewItems, viewItem, viewSearch, viewSettings,
@@ -23,7 +24,9 @@ const VIEWS = {
   i: { fn: viewItem, title: 'Articolo', nav: 'magazzino' },
   contatti: { fn: viewContacts, title: 'Contatti', nav: 'contatti' },
   cestino: { fn: viewTrash, title: 'Cestino', nav: 'cestino' },
-  d: { fn: viewDoc, title: 'Documento', nav: 'magazzino' },
+  d: { fn: viewDoc, title: 'Documento', nav: 'documenti' },
+  documenti: { fn: viewDocuments, title: 'Documenti', nav: 'documenti' },
+  review: { fn: viewReview, title: 'Revisione', nav: 'documenti' },
   cerca: { fn: viewSearch, title: 'Cerca', nav: null },
   impostazioni: { fn: viewSettings, title: 'Impostazioni', nav: 'impostazioni' },
 };
@@ -251,7 +254,8 @@ function buildShell() {
     h('div.app',
       h('aside.side',
         h('div.brand', h('img', { src: 'icons/icon.svg', alt: '' }), h('span', 'Organizer')),
-        h('nav.side-nav', NAV.map(([k, l, i]) => navLink(k, l, i, navLinks, 'nav')),
+        // Documenti solo nella barra laterale (su telefono si raggiunge dal Magazzino): le tab in basso sono già 6.
+        h('nav.side-nav', [...NAV.slice(0, 5), ['documenti', 'Documenti', 'file'], ...NAV.slice(5)].map(([k, l, i]) => navLink(k, l, i, navLinks, 'nav')),
           h('span.sep'), navLink('cestino', 'Cestino', 'trash', navLinks, 'nav'),
           navLink('impostazioni', 'Impostazioni', 'settings', navLinks, 'nav'))),
       h('main.main',
@@ -304,7 +308,9 @@ function renderApp() {
   if (!shellBuilt) buildShell();
   const r = route();
   const v = VIEWS[r.name] || VIEWS.agenda;
-  for (const map of [navLinks, tabLinks]) for (const [k, { a }] of map) a.classList.toggle('on', k === v.nav);
+  for (const [k, { a }] of navLinks) a.classList.toggle('on', k === v.nav);
+  // Su telefono Documenti non ha una tab: si evidenzia Magazzino, da cui ci si arriva.
+  for (const [k, { a }] of tabLinks) a.classList.toggle('on', k === v.nav || (v.nav === 'documenti' && k === 'magazzino'));
   titleEl.textContent = v.title;
   document.title = `${v.title} · Organizer`;
   if (r.name !== 'cerca' && document.activeElement !== searchInput && searchInput.value) { searchInput.value = ''; ui.q = ''; }
@@ -319,7 +325,7 @@ function renderApp() {
   RS.busy = true;
   try {
     viewEl.replaceChildren(S.data ? v.fn(r.id, r.query) : h('div.empty', 'Caricamento…'));
-    viewEl.classList.toggle('wide', r.name === 'd');
+    viewEl.classList.toggle('wide', r.name === 'd' || r.name === 'review');
   } catch (e) {
     console.error(e);
     viewEl.replaceChildren(h('div.empty', `Errore di visualizzazione: ${e.message}`));
@@ -435,13 +441,14 @@ function goUp(field) {
   if (field) return field.blur();
   if (document.querySelector('.ac:not([hidden])')) return;
   if (docCancelDraft()) return;
+  if (document.body.classList.contains('doc-focus')) return setDocFocus(false);
   if (ui.open.size) {
     ui.open.clear();
     return render();
   }
   const r = route();
   const doc = r.name === 'd' && S.data?.docById.get(+r.id);
-  const up = { p: '#/progetti', i: '#/magazzino', cerca: '#/agenda' }[r.name]
+  const up = { p: '#/progetti', i: '#/magazzino', cerca: '#/agenda', review: '#/documenti' }[r.name]
     || (r.name === 'contatti' && r.id ? '#/contatti' : null)
     || (doc ? `#/i/${doc.item_id}` : null);
   if (up) location.hash = up;

@@ -3,13 +3,14 @@
 //
 // L'app ridisegna le viste a ogni sincronizzazione: ridisegnare un PDF ogni volta sarebbe lento, quindi
 // il visualizzatore (canvas compresi) resta in memoria e viene solo riagganciato; si aggiornano i segnaposto.
-import { h, icon, S, ui, api, act, render, richText, fmtTime, fmtSize, userName, toast, trashIt, autosize, itemAttrs } from './core.js';
+// Più visualizzatori possono essere aperti insieme (revisione affiancata, #/review?d=1,2,3).
+import { h, icon, S, ui, api, act, render, richText, fmtTime, fmtSize, userName, toast, trashIt, autosize, itemAttrs, save, docFileUrl, DOC_KINDS } from './core.js';
 import { today } from './parse.js';
 
 const PDFJS = new URL('../vendor/pdfjs/', import.meta.url).href;
 const TEXT_MAX = 512 * 1024;
 let pdfjsLib = null;
-let current = null; // visualizzatore del documento aperto
+const viewers = new Map(); // id documento → visualizzatore aperto
 
 function loadPdfjs() {
   pdfjsLib ||= import('../vendor/pdfjs/pdf.min.mjs').then(m => {
@@ -31,8 +32,7 @@ const pinnable = v => v.kind === 'pdf' || v.kind === 'image';
 
 // ---------- visualizzatore (persistente) ----------
 function getViewer(d) {
-  if (current?.id === d.id) return current;
-  destroyViewer();
+  if (viewers.has(d.id)) return viewers.get(d.id);
   const v = { id: d.id, kind: kindOf(d), zoom: 1, scroll: 0, pages: [], draft: null, status: 'loading' };
   v.scroller = h('div.dv-scroll', { onscroll: () => { v.scroll = v.scroller.scrollTop; updatePageLabel(v); } });
   v.pagesEl = h('div.dv-pages');
@@ -52,7 +52,7 @@ function getViewer(d) {
     v.scroller);
   v.resize = new ResizeObserver(() => { clearTimeout(v.rt); v.rt = setTimeout(() => layout(v), 120); });
   v.resize.observe(v.scroller);
-  current = v;
+  viewers.set(d.id, v);
   if (v.kind === 'pdf') openPdf(v, d);
   else if (v.kind === 'image') openImage(v, d);
   else if (v.kind === 'text') openText(v, d);
@@ -60,16 +60,28 @@ function getViewer(d) {
   return v;
 }
 
-function destroyViewer() {
-  if (!current) return;
-  current.resize.disconnect();
-  current.io?.disconnect();
-  current.pdf?.destroy();
-  current = null;
+// In PDF.js 6 il documento si chiude dal "loading task" (il proxy del documento non ha più destroy()).
+const closePdf = v => v.task?.destroy().catch(() => {});
+
+function destroyViewer(v) {
+  v.resize.disconnect();
+  v.io?.disconnect();
+  closePdf(v);
+  viewers.delete(v.id);
+}
+
+// Documenti richiesti dalla pagina attuale: quelli non più mostrati si chiudono.
+function wantedDocs() {
+  const single = location.hash.match(/^#\/d\/(\d+)/);
+  if (single) return [+single[1]];
+  const review = location.hash.match(/^#\/review\?d=([\d,]+)/);
+  return review ? review[1].split(',').map(Number) : [];
 }
 
 window.addEventListener('hashchange', () => {
-  if (current && !location.hash.startsWith(`#/d/${current.id}`)) destroyViewer();
+  const want = wantedDocs();
+  for (const v of [...viewers.values()]) if (!want.includes(v.id)) destroyViewer(v);
+  if (!want.length) document.body.classList.remove('doc-focus');
 });
 
 function fail(v, msg) {
@@ -82,7 +94,7 @@ async function openPdf(v, d) {
   try {
     const pdfjs = await loadPdfjs();
     v.task = pdfjs.getDocument({
-      url: `api/docs/${d.id}/file?inline=1`,
+      url: docFileUrl(d, { inline: true }),
       withCredentials: true,
       standardFontDataUrl: `${PDFJS}standard_fonts/`,
       wasmUrl: `${PDFJS}wasm/`,
@@ -90,7 +102,7 @@ async function openPdf(v, d) {
       disableStream: true,
     });
     v.pdf = await v.task.promise;
-    if (current !== v) return v.pdf.destroy();
+    if (viewers.get(v.id) !== v) return closePdf(v); // nel frattempo il documento è stato chiuso
     const wraps = [];
     for (let n = 1; n <= v.pdf.numPages; n++) {
       const page = await v.pdf.getPage(n);
@@ -114,7 +126,7 @@ async function openPdf(v, d) {
 }
 
 function openImage(v, d) {
-  const img = h('img.dv-img', { src: `api/docs/${d.id}/file?inline=1`, alt: d.filename || '', draggable: 'false' });
+  const img = h('img.dv-img', { src: docFileUrl(d, { inline: true }), alt: d.filename || '', draggable: 'false' });
   img.onload = () => {
     const wrap = newPage(v, 1, img.naturalWidth, img.naturalHeight, { img });
     v.pagesEl.replaceChildren(wrap);
@@ -126,7 +138,7 @@ function openImage(v, d) {
 async function openText(v, d) {
   if (d.size > TEXT_MAX) return fail(v, `File di testo troppo grande per l'anteprima (${fmtSize(d.size)}): scaricalo.`);
   try {
-    const r = await fetch(`api/docs/${d.id}/file`, { credentials: 'same-origin' });
+    const r = await fetch(docFileUrl(d), { credentials: 'same-origin' });
     if (!r.ok) throw new Error(`errore ${r.status}`);
     v.pagesEl.replaceChildren(h('pre.dv-text', await r.text()));
     v.status = 'ready';
@@ -155,7 +167,7 @@ function ready(v) {
 // Larghezza = spazio disponibile × zoom; l'altezza segue le proporzioni della pagina.
 function layout(v) {
   if (!v.pages.length || !v.scroller.isConnected) return;
-  const avail = Math.max(200, v.scroller.clientWidth - 32);
+  const avail = Math.max(200, v.scroller.clientWidth - 16); // 8 px di margine per lato
   for (const p of v.pages) {
     p.cssW = Math.round(avail * v.zoom);
     p.wrap.style.width = `${p.cssW}px`;
@@ -204,9 +216,48 @@ function clickPage(v, num, wrap, ev) {
   const r = wrap.getBoundingClientRect();
   const x = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width));
   const y = Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height));
+  for (const o of viewers.values()) o.draft = null; // una nota in preparazione alla volta
   v.draft = { page: num, x, y, fresh: true };
+  openNotes(v);
   ui.docNote = null;
   render();
+}
+
+// ---------- spazio per il documento ----------
+// Barra delle note nascondibile e modalità "espandi" che toglie il resto dell'app.
+// Pagina singola: preferenza ricordata (ui.docNotesHidden). Revisione: ogni pannello ha la sua (v.paneNotes).
+const inReview = () => location.hash.startsWith('#/review');
+const notesShown = v => (inReview() ? !!v.paneNotes : !ui.docNotesHidden);
+
+function openNotes(v) {
+  if (notesShown(v)) return;
+  if (inReview()) v.paneNotes = true;
+  else {
+    ui.docNotesHidden = false;
+    save('org.docNotesHidden', false);
+  }
+  relayoutSoon();
+}
+
+// Lo spazio del documento cambia: si reimpagina subito, senza aspettare il ResizeObserver.
+function relayoutSoon() {
+  setTimeout(() => { for (const v of viewers.values()) layout(v); }, 0);
+}
+
+function toggleNotes(v) {
+  if (inReview()) v.paneNotes = !v.paneNotes;
+  else {
+    ui.docNotesHidden = !ui.docNotesHidden;
+    save('org.docNotesHidden', ui.docNotesHidden);
+  }
+  render();
+  relayoutSoon();
+}
+
+export function setDocFocus(on) {
+  document.body.classList.toggle('doc-focus', on);
+  render();
+  relayoutSoon();
 }
 
 // ---------- note ----------
@@ -228,7 +279,7 @@ function updatePins(v) {
       class: [ui.docNote === n.id && 'on', n.resolved_at && 'resolved'].filter(Boolean).join(' ') || null,
       style: `left:${n.x * 100}%;top:${n.y * 100}%`,
       title: n.text,
-      onclick: ev => { ev.stopPropagation(); selectNote(n.id, false); },
+      onclick: ev => { ev.stopPropagation(); openNotes(v); selectNote(n.id, false); },
     }, num));
     if (v.draft?.page === p.num) pins.push(h('span.dv-pin.draft', { style: `left:${v.draft.x * 100}%;top:${v.draft.y * 100}%` }, '+'));
     p.pins.replaceChildren(...pins);
@@ -255,10 +306,10 @@ function applyPendingScroll(v) {
 
 function selectNote(id, scrollDoc = true) {
   ui.docNote = id;
-  if (current) {
-    current.draft = null;
-    if (scrollDoc) scrollToNote(current, id);
-  }
+  const docId = S.data.docNotes.find(n => n.id === id)?.doc_id;
+  for (const v of viewers.values()) v.draft = null;
+  const v = viewers.get(docId);
+  if (v && scrollDoc) scrollToNote(v, id);
   render();
   document.querySelector(`.dnote[data-note="${id}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
@@ -377,16 +428,56 @@ export function viewDoc(id, query = {}) {
     ui.docNote = fromLink;
     scrollToNote(v, fromLink);
   }
-  updatePins(v);
+  const focus = document.body.classList.contains('doc-focus');
+  return h('div.view.docview',
+    h('div.head',
+      h('a.icon-btn', { href: it ? `#/i/${it.id}` : '#/magazzino', title: 'Torna all\'articolo (Esc)' }, icon('back')),
+      it && h('a.code', { href: `#/i/${it.id}`, ...itemAttrs(it) }, it.code),
+      h('h2.dv-title', d.label || d.filename || d.url),
+      docMeta(d),
+      h('span.grow'),
+      fileButtons(d),
+      notesChip(d, v),
+      focusChip(focus)),
+    docBody(d, v));
+}
 
+// ---------- pezzi comuni a pagina singola e revisione ----------
+// Tipo e versione modificabili anche dopo il caricamento (qui, nella scheda articolo e in Documenti).
+export function docMeta(d) {
+  const patch = f => act(() => api('PATCH', `/docs/${d.id}`, f));
+  return h('span.docmeta',
+    h('select.dk-sel', { class: `k-${d.kind}`, value: d.kind, title: 'Tipo di documento', onchange: ev => patch({ kind: ev.target.value }) },
+      DOC_KINDS.map(k => h('option', { value: k }, k))),
+    h('input.ver-in', {
+      value: d.version || '', placeholder: 'versione', size: 7, title: 'Versione', 'data-fk': `dver-${d.id}`,
+      onchange: ev => patch({ version: ev.target.value.trim() }),
+      onkeydown: ev => { if (ev.key === 'Enter') ev.target.blur(); },
+    }));
+}
+
+const fileButtons = d => !d.url && [
+  h('a.icon-btn', { href: docFileUrl(d, { inline: true }), target: '_blank', rel: 'noopener', title: 'Apri il file originale' }, icon('link')),
+  h('a.icon-btn', { href: docFileUrl(d), download: '', title: 'Scarica' }, icon('download')),
+];
+
+const notesChip = (d, v) => h('button.chip', { class: notesShown(v) && 'on', onclick: () => toggleNotes(v), title: 'Mostra o nascondi le note' },
+  icon('log'), `note ${notesOf(d.id).filter(visible).length}`);
+
+const focusChip = focus => h('button.chip.only-desktop', {
+  class: focus && 'on', onclick: () => setDocFocus(!focus), title: focus ? 'Torna alla vista normale (Esc)' : 'Usa tutta la finestra',
+}, icon('cols'), focus ? 'riduci' : 'espandi');
+
+// Corpo: anteprima (o messaggio per file senza anteprima) + note, e ripristino dello scorrimento dopo il riaggancio.
+function docBody(d, v) {
+  updatePins(v);
   const preview = v.kind === 'link'
     ? h('div.dv-main', h('div.empty', h('p', 'Documento esterno'), h('a.btn', { href: d.url, target: '_blank', rel: 'noopener noreferrer' }, icon('link'), d.url)))
     : v.kind === 'none'
       ? h('div.dv-main', h('div.empty',
         h('p', 'Anteprima non disponibile per questo tipo di file.'),
-        h('a.btn', { href: `api/docs/${d.id}/file`, download: '' }, icon('download'), `Scarica ${d.filename}`)))
+        h('a.btn', { href: docFileUrl(d), download: '' }, icon('download'), `Scarica ${d.filename}`)))
       : v.el;
-
   // Il visualizzatore viene staccato e riattaccato: lo scorrimento va ripristinato dopo l'inserimento.
   queueMicrotask(() => {
     if (v.scroller.isConnected && Math.abs(v.scroller.scrollTop - v.scroll) > 1) {
@@ -399,26 +490,52 @@ export function viewDoc(id, query = {}) {
       document.querySelector(`[data-fk="draft-${d.id}"]`)?.focus();
     }
   });
+  const shown = notesShown(v);
+  return h('div.dv', { class: shown ? null : 'no-notes' }, preview, shown && notesPanel(d, v));
+}
 
-  return h('div.view.docview',
+// ---------- revisione affiancata ----------
+const reviewHash = ids => (ids.length ? `#/review?d=${ids.join(',')}` : '#/documenti');
+
+export function viewReview(_id, query = {}) {
+  const D = S.data;
+  const ids = [...new Set(String(query.d || '').split(',').map(Number))].filter(id => D.docById.has(id)).slice(0, 3);
+  if (!ids.length) return h('div.empty', h('p', 'Nessun documento da rivedere.'), h('a', { href: '#/documenti' }, 'Scegli i documenti'));
+  const focus = document.body.classList.contains('doc-focus');
+  const addable = D.docs.filter(d => !ids.includes(d.id) && D.itemById.has(d.item_id));
+
+  return h('div.view.review',
     h('div.head',
-      h('a.icon-btn', { href: it ? `#/i/${it.id}` : '#/magazzino', title: 'Torna all\'articolo (Esc)' }, icon('back')),
-      it && h('a.code', { href: `#/i/${it.id}`, ...itemAttrs(it) }, it.code),
-      h('h2.dv-title', d.label || d.filename || d.url),
-      h('span.dk', { class: `k-${d.kind}` }, d.kind),
-      d.version && h('span.ver', `v${d.version}`),
+      h('a.icon-btn', { href: '#/documenti', title: 'Documenti (Esc)' }, icon('back')),
+      h('h2.dv-title', 'Revisione'),
+      h('span.muted', `${ids.length} documenti affiancati`),
       h('span.grow'),
-      !d.url && h('a.icon-btn', { href: `api/docs/${d.id}/file?inline=1`, target: '_blank', rel: 'noopener', title: 'Apri il file originale' }, icon('link')),
-      !d.url && h('a.icon-btn', { href: `api/docs/${d.id}/file`, download: '', title: 'Scarica' }, icon('download'))),
-    h('div.dv', preview, notesPanel(d, v)));
+      ids.length < 3 && addable.length > 0 && h('select.sm', {
+        onchange: ev => { if (ev.target.value) location.hash = reviewHash([...ids, +ev.target.value]); },
+      }, h('option', { value: '' }, '+ affianca un documento…'),
+      addable.map(d => h('option', { value: d.id }, `${D.itemById.get(d.item_id).code} · ${d.label || d.filename || d.url}`))),
+      focusChip(focus)),
+    h('div.rv', { style: `--n:${ids.length}` }, ids.map(id => {
+      const d = D.docById.get(id);
+      const it = D.itemById.get(d.item_id);
+      const v = getViewer(d);
+      return h('section.rv-pane',
+        h('div.rv-h',
+          it && h('a.code', { href: `#/i/${it.id}`, ...itemAttrs(it) }, it.code),
+          h('a.rv-title', { href: `#/d/${d.id}`, title: 'Apri da solo' }, d.label || d.filename || d.url),
+          docMeta(d),
+          h('span.grow'),
+          notesChip(d, v),
+          h('button.icon-btn.sm', { title: 'Togli dalla revisione', onclick: () => { location.hash = reviewHash(ids.filter(x => x !== id)); } }, icon('x'))),
+        docBody(d, v));
+    })));
 }
 
 // Esc dal visualizzatore: prima chiude la nota in preparazione.
 export function docCancelDraft() {
-  if (current?.draft) {
-    current.draft = null;
-    render();
-    return true;
-  }
-  return false;
+  const v = [...viewers.values()].find(x => x.draft);
+  if (!v) return false;
+  v.draft = null;
+  render();
+  return true;
 }

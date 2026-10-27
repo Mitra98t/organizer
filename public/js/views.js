@@ -1,16 +1,18 @@
 import {
   h, icon, S, ui, RS, api, act, render, richText, dueInfo, dayDiff, fmtDay, fmtLongDay, fmtTime, fmtSize,
   userName, toast, save, patchEntry, addEntry, isMine, localDay, autosize, stop, copy, hue, trashIt, contactLabel,
-  descendants, ancestors, catStyle, itemAttrs,
+  descendants, ancestors, catStyle, itemAttrs, docFileUrl, projectsOf, DOC_KINDS,
 } from './core.js';
+import { docMeta } from './docview.js';
 import { today, addDays } from './parse.js';
 import { mailComposer } from './mail.js';
+import { draggable } from './dnd.js';
 
 const KIND_LABEL = { todo: 'Todo', mail: 'Mail', note: 'Nota' };
 const KIND_PILL = { todo: 'todo', mail: 'mail', note: 'nota' };
 const projTag = p => h('a.tag', { href: `#/p/${p.id}`, onclick: stop, style: `--h:${hue(p.tag)}` }, `@${p.tag}`);
 const STATUS_LABEL = { open: 'Aperti', paused: 'In pausa', closed: 'Chiusi' };
-export const DOC_KINDS = ['firmware', 'datasheet', 'schema', 'manuale', 'foto', 'altro'];
+export { DOC_KINDS } from './core.js';
 
 const byDue = (a, b) => (a.due || '9999').localeCompare(b.due || '9999') || b.pinned - a.pinned || a.id - b.id;
 const byRecent = (a, b) => b.pinned - a.pinned || b.updated_at.localeCompare(a.updated_at);
@@ -41,11 +43,6 @@ function selectOf(value, options, onchange, attrs = {}) {
     options.map(([v, label]) => h('option', { value: v }, label)));
 }
 
-function projectOptions(current) {
-  const ps = S.data.projects.filter(p => p.status !== 'closed' || p.id === current);
-  return [['', '— nessuno —'], ...ps.map(p => [String(p.id), `@${p.tag}`])];
-}
-
 function toggleOpen(id) {
   ui.open.has(id) ? ui.open.delete(id) : ui.open.add(id);
   render();
@@ -74,7 +71,7 @@ export function entryRow(e, opt = {}) {
   const open = ui.open.has(e.id);
   const kids = D.childrenOf.get(e.id) || [];
   const logs = D.logsOf.get(e.id) || [];
-  const proj = e.project_id && D.projectById.get(e.project_id);
+  const projs = opt.showProject === false ? [] : projectsOf(e).filter(p => p.id !== opt.hideProject);
   const parent = opt.showParent && e.parent_id && D.entryById.get(e.parent_id);
 
   const meta = [];
@@ -83,7 +80,7 @@ export function entryRow(e, opt = {}) {
     meta.push(h('span.due', { class: e.kind === 'note' ? null : d.cls }, icon('cal'), e.kind === 'note' ? fmtDay(e.due) : d.label));
   }
   if (e.done_at && e.kind !== 'note') meta.push(h('span.muted', `${e.kind === 'mail' ? 'inviata' : 'fatta'} ${fmtTime(e.done_at)}`));
-  if (proj && opt.showProject !== false) meta.push(projTag(proj));
+  for (const p of projs) meta.push(projTag(p));
   if (e.kind === 'mail' && e.contact) meta.push(h('span.contact', { title: e.contact }, `→ ${contactLabel(e.contact)}`));
   const atts = S.data.attachmentsOf.get(e.id);
   if (atts) meta.push(h('span.atts-n', { title: atts.map(a => a.filename).join(', ') }, icon('clip'), atts.length));
@@ -145,8 +142,18 @@ function entryEditor(e) {
       !isNote && h('div.chips',
         dueBtn('oggi', t), dueBtn('domani', addDays(t, 1)), dueBtn('+1 sett', addDays(t, 7)),
         e.due && h('button.chip', { onclick: () => patchEntry(e, { due: null }) }, icon('x'))),
-      !e.parent_id && h('label.f', h('span', 'Progetto'),
-        selectOf(e.project_id ? String(e.project_id) : '', projectOptions(e.project_id), v => patchEntry(e, { project_id: v ? +v : null }))),
+      !e.parent_id && h('div.f.projs', h('span', 'Progetti'),
+        h('div.projs-b',
+          projectsOf(e).map((p, i) => h('span.chip-wrap', { title: i === 0 ? 'Progetto principale' : null }, projTag(p),
+            h('button.icon-btn.sm', { title: 'Togli da questo progetto', onclick: () => act(() => api('DELETE', `/entries/${e.id}/projects/${p.id}`)) }, icon('x')))),
+          h('input.sub-in', {
+            placeholder: '+ progetto', size: 12, 'data-fk': `eproj-${e.id}`, 'data-ac': 'project', autocomplete: 'off',
+            onkeydown: enterAdd(text => {
+              const p = D.projectByTag.get(text.replace(/^@/, '').toLowerCase());
+              if (!p) return toast(`Il progetto @${text.replace(/^@/, '')} non esiste`, { err: true });
+              act(() => api('POST', `/entries/${e.id}/projects`, { project_id: p.id }));
+            }),
+          }))),
       D.users.length > 1 && h('label.f', h('span', 'Assegnata'),
         selectOf(e.assignee_id ? String(e.assignee_id) : '', [['', '— nessuno —'], ...D.users.map(u => [String(u.id), u.name || u.username])],
           v => patchEntry(e, { assignee_id: v ? +v : null }))),
@@ -238,36 +245,40 @@ export function viewAgenda() {
 function projectStats() {
   const stats = new Map();
   for (const e of S.data.entries) {
-    if (!e.project_id) continue;
-    const s = stats.get(e.project_id) || { open: 0, over: 0, next: null, last: '' };
-    if (e.kind !== 'note' && !e.done_at && !e.parent_id) {
-      s.open++;
-      if (e.due && dayDiff(e.due) < 0) s.over++;
-      if (e.due && (!s.next || e.due < s.next)) s.next = e.due;
+    for (const p of projectsOf(e)) {
+      const s = stats.get(p.id) || { open: 0, over: 0, next: null, last: '' };
+      if (e.kind !== 'note' && !e.done_at && !e.parent_id) {
+        s.open++;
+        if (e.due && dayDiff(e.due) < 0) s.over++;
+        if (e.due && (!s.next || e.due < s.next)) s.next = e.due;
+      }
+      if (e.updated_at > s.last) s.last = e.updated_at;
+      stats.set(p.id, s);
     }
-    if (e.updated_at > s.last) s.last = e.updated_at;
-    stats.set(e.project_id, s);
   }
   return stats;
 }
 
-// Statistiche di un progetto sommate a quelle di tutti i suoi sottoprogetti.
-function deepStats(stats, id) {
+// Statistiche di un progetto insieme a tutti i suoi sottoprogetti; ogni voce conta una volta sola
+// anche se sta in più progetti dell'albero.
+function deepStats(id) {
+  const ids = new Set([id, ...descendants(id)]);
   const out = { open: 0, over: 0, next: null, last: '' };
-  for (const pid of [id, ...descendants(id)]) {
-    const s = stats.get(pid);
-    if (!s) continue;
-    out.open += s.open;
-    out.over += s.over;
-    if (s.next && (!out.next || s.next < out.next)) out.next = s.next;
-    if (s.last > out.last) out.last = s.last;
+  for (const e of S.data.entries) {
+    if (!projectsOf(e).some(p => ids.has(p.id))) continue;
+    if (e.kind !== 'note' && !e.done_at && !e.parent_id) {
+      out.open++;
+      if (e.due && dayDiff(e.due) < 0) out.over++;
+      if (e.due && (!out.next || e.due < out.next)) out.next = e.due;
+    }
+    if (e.updated_at > out.last) out.last = e.updated_at;
   }
   return out;
 }
 
 function projectCard(p, stats, { compact = false, dnd = false } = {}) {
   const own = stats.get(p.id) || { open: 0 };
-  const s = deepStats(stats, p.id);
+  const s = deepStats(p.id);
   const next = s.next && dueInfo(s.next);
   const subs = descendants(p.id).length;
   return h('a.card', { href: `#/p/${p.id}`, class: compact ? 'compact' : null, 'data-pid': dnd ? p.id : null, draggable: 'false' },
@@ -285,7 +296,8 @@ export function viewProjects() {
   const stats = projectStats();
   const counts = { open: 0, paused: 0, closed: 0 };
   for (const p of D.projects) counts[p.status]++;
-  const last = p => deepStats(stats, p.id).last || p.updated_at;
+  const lastOf = new Map(D.projects.map(p => [p.id, deepStats(p.id).last || p.updated_at])); // calcolato una volta, non a ogni confronto
+  const last = p => lastOf.get(p.id);
   const inList = p => p.status === ui.projStatus;
   // Albero: radici = progetti dello stato scelto il cui padre non è anch'esso in elenco.
   const roots = D.projects.filter(p => inList(p) && !(p.parent_id && D.projectById.get(p.parent_id) && inList(D.projectById.get(p.parent_id))))
@@ -315,98 +327,64 @@ export function viewProjects() {
 }
 
 // ---------- drag and drop dell'albero progetti ----------
-// Eventi pointer (non il drag nativo HTML5) così funziona uguale con mouse e touch.
-// Mouse: si trascina dopo 5 px. Touch: pressione lunga, così lo scorrimento della pagina resta normale.
-let pdrag = null;
-
-function dragStart() {
-  pdrag.active = true;
-  RS.hold = true;
-  const p = S.data.projectById.get(pdrag.id);
-  pdrag.ghost = h('div.drag-ghost', h('span', p.name), h('span.tag', { style: `--h:${hue(p.tag)}` }, `@${p.tag}`));
-  document.body.append(pdrag.ghost);
-  document.body.classList.add('pdnd');
-  pdrag.card.classList.add('dragging');
-  navigator.vibrate?.(15);
-}
-
-function dragTarget(x, y) {
-  const el = document.elementFromPoint(x, y);
-  const card = el?.closest('.pforest .card[data-pid]');
-  if (card) {
-    const tid = +card.dataset.pid;
-    const ok = tid !== pdrag.id && !descendants(pdrag.id).includes(tid);
-    return { el: card, parent: tid, ok };
-  }
-  if (el?.closest('.proot')) return { el: el.closest('.proot'), parent: null, ok: true };
-  return null;
-}
-
-function dragEnd(drop) {
-  const d = pdrag;
-  pdrag = null;
-  clearTimeout(d.timer);
-  if (!d.active) return;
-  d.ghost.remove();
-  d.card.classList.remove('dragging');
-  d.target?.el.classList.remove('drop-ok', 'drop-no');
-  document.body.classList.remove('pdnd');
-  // Il rilascio non deve diventare anche un clic sul link della card.
-  // Se il clic non arriva (rilascio fuori dalla card) il blocco scade, così non mangia il clic successivo.
-  const swallow = ev => { ev.preventDefault(); ev.stopPropagation(); };
-  window.addEventListener('click', swallow, { capture: true, once: true });
-  setTimeout(() => window.removeEventListener('click', swallow, { capture: true }), 80);
-  RS.hold = false;
-  const p = S.data.projectById.get(d.id);
-  const t = d.target;
-  if (drop && t?.ok && p && (p.parent_id ?? null) !== t.parent) {
+draggable({
+  handle: '.pforest .card[data-pid]',
+  bodyClass: 'pdnd',
+  data: el => +el.dataset.pid,
+  ghost: id => {
+    const p = S.data.projectById.get(id);
+    return [h('span', p.name), h('span.tag', { style: `--h:${hue(p.tag)}` }, `@${p.tag}`)];
+  },
+  target: (el, id) => {
+    const card = el.closest('.pforest .card[data-pid]');
+    if (card) {
+      const tid = +card.dataset.pid;
+      return { el: card, value: tid, ok: tid !== id && !descendants(id).includes(tid) };
+    }
+    const root = el.closest('.proot');
+    return root ? { el: root, value: null, ok: true } : null;
+  },
+  drop: (id, t) => {
+    const p = S.data.projectById.get(id);
     const before = p.parent_id ?? null;
-    const where = t.parent ? `dentro @${S.data.projectById.get(t.parent).tag}` : 'tra i principali';
-    act(() => api('PATCH', `/projects/${p.id}`, { parent_id: t.parent })).then(() => {
-      toast(`@${p.tag} spostato ${where}`, { action: { label: 'Annulla', fn: () => act(() => api('PATCH', `/projects/${p.id}`, { parent_id: before })) } });
+    if (before === t.value) return;
+    const where = t.value ? `dentro @${S.data.projectById.get(t.value).tag}` : 'tra i principali';
+    act(() => api('PATCH', `/projects/${id}`, { parent_id: t.value })).then(() => {
+      toast(`@${p.tag} spostato ${where}`, { action: { label: 'Annulla', fn: () => act(() => api('PATCH', `/projects/${id}`, { parent_id: before })) } });
     });
-  }
-  if (RS.pending) {
-    RS.pending = false;
-    render();
-  }
-}
-
-document.addEventListener('pointerdown', ev => {
-  const card = ev.target.closest('.pforest .card[data-pid]');
-  if (!card || ev.button !== 0) return;
-  pdrag = { id: +card.dataset.pid, card, x: ev.clientX, y: ev.clientY, touch: ev.pointerType !== 'mouse', active: false };
-  if (pdrag.touch) pdrag.timer = setTimeout(() => pdrag && dragStart(), 380);
+  },
 });
 
-document.addEventListener('pointermove', ev => {
-  if (!pdrag) return;
-  const dist = Math.hypot(ev.clientX - pdrag.x, ev.clientY - pdrag.y);
-  if (!pdrag.active) {
-    if (pdrag.touch) { if (dist > 8) dragEnd(false); } // ha iniziato a scorrere: niente trascinamento
-    else if (dist > 5) dragStart();
-    if (!pdrag?.active) return;
-  }
-  ev.preventDefault();
-  pdrag.ghost.style.transform = `translate(${ev.clientX + 12}px, ${ev.clientY + 8}px)`;
-  const t = dragTarget(ev.clientX, ev.clientY);
-  if (pdrag.target?.el !== t?.el) {
-    pdrag.target?.el.classList.remove('drop-ok', 'drop-no');
-    t?.el.classList.add(t.ok ? 'drop-ok' : 'drop-no');
-  }
-  pdrag.target = t;
-  // Scorrimento automatico vicino ai bordi della finestra.
-  const edge = 70;
-  if (ev.clientY < edge) window.scrollBy(0, -12);
-  else if (ev.clientY > window.innerHeight - edge) window.scrollBy(0, 12);
-}, { passive: false });
-
-document.addEventListener('pointerup', () => pdrag && dragEnd(true));
-document.addEventListener('pointercancel', () => pdrag && dragEnd(false));
-document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && pdrag?.active) { ev.preventDefault(); dragEnd(false); } }, true);
-// Su touch, dopo la pressione lunga, il dito non deve far scorrere la pagina né aprire il menu del link.
-document.addEventListener('touchmove', ev => { if (pdrag?.active) ev.preventDefault(); }, { passive: false });
-document.addEventListener('contextmenu', ev => { if (pdrag) ev.preventDefault(); });
+// ---------- drag and drop degli articoli tra le categorie (vista per categoria) ----------
+draggable({
+  handle: '.cat-cols .cat-item[data-iid]',
+  bodyClass: 'idnd',
+  data: el => +el.dataset.iid,
+  onStart: () => hidePeek(),
+  ghost: id => {
+    const it = S.data.itemById.get(id);
+    return [h('span.code', itemAttrs(it), it.code), h('span', it.name || '')];
+  },
+  target: (el, id) => {
+    const col = el.closest('.cat-col[data-cat]');
+    if (!col) return null;
+    const it = S.data.itemById.get(id);
+    return { el: col, value: col.dataset.cat, ok: col.dataset.new != null || col.dataset.cat !== (it.category || '') };
+  },
+  drop: (id, t) => {
+    const it = S.data.itemById.get(id);
+    const before = it.category || '';
+    let category = t.value;
+    if (t.el.dataset.new != null) {
+      category = (prompt(`Nuova categoria per ${it.code}:`) || '').trim();
+      if (!category) return;
+    }
+    if (category === before) return;
+    act(() => api('PATCH', `/items/${id}`, { category })).then(() => {
+      toast(`${it.code} → ${category || 'senza categoria'}`, { action: { label: 'Annulla', fn: () => act(() => api('PATCH', `/items/${id}`, { category: before })) } });
+    });
+  },
+});
 
 export function viewProject(id) {
   const D = S.data;
@@ -415,14 +393,14 @@ export function viewProject(id) {
   const me = D.me;
   const subIds = descendants(p.id);
   const ids = new Set(ui.projDeep ? [p.id, ...subIds] : [p.id]);
-  const es = D.entries.filter(e => ids.has(e.project_id));
+  const es = D.entries.filter(e => projectsOf(e).some(x => ids.has(x.id)));
   const top = es.filter(e => !e.parent_id);
   const todos = top.filter(e => e.kind === 'todo' && !e.done_at).sort(byDue);
   const mails = top.filter(e => e.kind === 'mail' && !e.done_at).sort(byDue);
   const notes = top.filter(e => e.kind === 'note').sort(byNoteDesc);
   const done = top.filter(e => e.kind !== 'note' && e.done_at).sort(byDoneDesc);
   const patch = f => act(() => api('PATCH', `/projects/${p.id}`, f));
-  const rows = (arr, showKind = false) => arr.map(e => entryRow(e, { showProject: e.project_id !== p.id, showKind }));
+  const rows = (arr, showKind = false) => arr.map(e => entryRow(e, { hideProject: p.id, showKind }));
 
   // Magazzino: collegati a mano (rimovibili) + citati con #CODICE nelle voci o collegati ai sottoprogetti.
   const manual = (D.itemsOfProject.get(p.id) || []).map(x => D.itemById.get(x.item_id)).filter(Boolean);
@@ -568,6 +546,7 @@ function peekContent(it) {
     h('div.peek-grid',
       it.firmware && row('Firmware', h('span.mono', it.firmware), fw && h('span.muted', ` · ${fw.filename}`)),
       it.location && row('Posizione', it.location),
+      it.url && row('Link', it.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 40)),
       it.qty != null && row('Quantità', String(it.qty)),
       docs.length > 0 && row('Documenti', `${docs.length}`, h('span.muted', ` · ${[...new Set(docs.map(d => d.kind))].join(', ')}`)),
       projects.length > 0 && row('Progetti', projects.map(p => h('span.tag', { style: `--h:${hue(p.tag)}` }, `@${p.tag}`))),
@@ -661,7 +640,9 @@ export function viewItems() {
       }),
       h('div.seg',
         h('button', { class: ui.itemView === 'list' && 'on', onclick: () => setView('list'), title: 'Elenco' }, icon('log')),
-        h('button', { class: ui.itemView === 'groups' && 'on', onclick: () => setView('groups'), title: 'Per categoria' }, icon('cols')))),
+        h('button', { class: ui.itemView === 'groups' && 'on', onclick: () => setView('groups'), title: 'Per categoria' }, icon('cols'))),
+      h('a.btn.ghost', { href: '#/documenti', title: 'Tutti i documenti, per la revisione' }, icon('file'), h('span.only-wide', 'Documenti'))),
+    ui.itemView === 'groups' && D.items.length > 1 && h('p.muted.dnd-hint', 'Trascina un articolo in un\'altra colonna per cambiargli categoria.'),
     cats.size > 1 && h('div.toolbar.cats',
       [...cats].sort(([a], [b]) => (!a) - (!b) || a.localeCompare(b)).map(([c, n]) =>
         h('button.chip', { class: ui.itemCat === c && 'on', onclick: () => { ui.itemCat = ui.itemCat === c ? null : c; render(); } },
@@ -672,13 +653,15 @@ export function viewItems() {
       h('p', 'Ogni ', kbd('#CODICE'), ' scritto in una voce crea e collega automaticamente l\'articolo.')),
     D.items.length > 0 && !items.length && empty(h('p', 'Nessun articolo corrisponde al filtro.')),
     ui.itemView === 'groups'
-      ? h('div.cat-cols', ordered.map(([c, list]) => h('section.cat-col', { class: c ? 'cat' : null, style: catStyle(c) },
+      ? h('div.cat-cols', ordered.map(([c, list]) => h('section.cat-col', { class: c ? 'cat' : null, style: catStyle(c), 'data-cat': c },
         h('div.cat-h', h('span.cdot', { class: c ? 'cat' : null, style: catStyle(c) }), h('span', c || NO_CAT), h('span.count', list.length)),
-        h('div.cat-items', list.map(i => peekable(h('a.cat-item', { href: `#/i/${i.id}` },
+        h('div.cat-items', list.map(i => peekable(h('a.cat-item', { href: `#/i/${i.id}`, 'data-iid': i.id, draggable: 'false' },
           h('span.code', itemAttrs(i), i.code),
           h('span.name', i.name || ''),
           i.firmware && h('span.fw', i.firmware),
-          openCountOf(i.id) > 0 && h('span.badge', openCountOf(i.id))), i))))))
+          openCountOf(i.id) > 0 && h('span.badge', openCountOf(i.id))), i)))))
+        // Visibile solo durante il trascinamento: rilasciando qui si crea una categoria nuova.
+        .concat(h('section.cat-col.cat-new', { 'data-cat': '', 'data-new': '' }, h('div.cat-h', icon('plus'), 'Nuova categoria'))))
       : h('div.items', items.map(itemRow)));
 }
 
@@ -711,11 +694,10 @@ function docSection(it) {
       fileInput),
     !docs.length && h('p.muted.drop-hint', 'Trascina qui i file, oppure usa i pulsanti. Un firmware con versione aggiorna il campo "Firmware".'),
     docs.map(d => h('div.doc',
-      h('span.dk', { class: `k-${d.kind}` }, d.kind),
+      docMeta(d),
       h('div.doc-main',
         h('a', { href: `#/d/${d.id}`, title: 'Apri con le note' }, d.label || d.filename || d.url),
         h('div.meta',
-          d.version && h('span.ver', `v${d.version}`),
           d.label && d.filename && h('span', d.filename),
           d.size != null && h('span', fmtSize(d.size)),
           d.sha256 && h('button.sha', { title: `sha256 ${d.sha256} (clic per copiare)`, onclick: () => copy(d.sha256) }, d.sha256.slice(0, 10)),
@@ -724,7 +706,7 @@ function docSection(it) {
             return n > 0 && h('a.doc-notes', { href: `#/d/${d.id}`, title: 'Note sul documento' }, icon('log'), n);
           })(),
           h('span', fmtTime(d.created_at)))),
-      !d.url && h('a.icon-btn', { href: `api/docs/${d.id}/file`, title: 'Scarica', download: '' }, icon('download')),
+      !d.url && h('a.icon-btn', { href: docFileUrl(d), title: 'Scarica', download: '' }, icon('download')),
       h('button.icon-btn', {
         title: 'Elimina',
         onclick: () => trashIt('doc', `/docs/${d.id}`, d.label || d.filename || 'Link'),
@@ -776,6 +758,10 @@ export function viewItem(id) {
       field('firmware', 'Firmware', { placeholder: 'versione attuale', class: 'mono' }),
       field('location', 'Posizione', { placeholder: 'scaffale, cassetto…' }),
       field('qty', 'Quantità', { type: 'number', inputmode: 'numeric' }),
+      h('label.f', h('span', 'Link (facoltativo)'),
+        h('span.url-f',
+          h('input', { value: it.url || '', type: 'url', placeholder: 'pagina prodotto, repo, wiki…', 'data-fk': `it-url-${it.id}`, onchange: ev => patch({ url: ev.target.value.trim() }) }),
+          it.url && h('a.icon-btn', { href: it.url, target: '_blank', rel: 'noopener noreferrer', title: 'Apri il link' }, icon('link')))),
       h('datalist#item-cats', [...new Set(D.items.map(i => i.category).filter(Boolean))].map(c => h('option', { value: c })))),
     h('textarea.proj-notes', {
       rows: 2, value: it.notes, placeholder: 'Note: pinout, jumper, procedura di flash, password di default…', 'data-fk': `inotes-${it.id}`,

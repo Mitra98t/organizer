@@ -189,6 +189,17 @@ const MIGRATIONS = [
   );
   CREATE INDEX doc_notes_doc ON doc_notes(doc_id);
   `,
+  // v5: link opzionale sugli articoli; voci in più progetti (project_id resta il principale,
+  // entry_projects contiene gli altri).
+  `
+  ALTER TABLE items ADD COLUMN url TEXT NOT NULL DEFAULT '';
+  CREATE TABLE entry_projects (
+    entry_id INTEGER NOT NULL REFERENCES entries ON DELETE CASCADE,
+    project_id INTEGER NOT NULL REFERENCES projects ON DELETE CASCADE,
+    PRIMARY KEY (entry_id, project_id)
+  );
+  CREATE INDEX entry_projects_project ON entry_projects(project_id);
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

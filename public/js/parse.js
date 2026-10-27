@@ -77,7 +77,7 @@ export function extractCodes(text) {
 
 export function parseQuick(text, { today: base = today(), kind = 'todo' } = {}) {
   let s = String(text || '').trim();
-  const out = { kind, kindExplicit: false, title: '', due: undefined, project: null, assignee: null, contact: null, codes: [] };
+  const out = { kind, kindExplicit: false, title: '', due: undefined, project: null, projects: [], assignee: null, contact: null, codes: [] };
 
   const pm = s.match(/^([a-z]+)\s*:\s*/i);
   if (pm && KIND_PREFIX[pm[1].toLowerCase()]) {
@@ -93,7 +93,10 @@ export function parseQuick(text, { today: base = today(), kind = 'todo' } = {}) 
       const d = parseDate(m[1], base, { past: out.kind === 'note' });
       if (d !== undefined) { out.due = d; continue; }
     } else if ((m = w.match(/^@([\p{L}\d_][\p{L}\d_-]*)[.,;:]?$/u))) {
-      out.project = m[1]; continue;
+      // Più @progetti: il primo è il principale (out.project), tutti stanno in out.projects.
+      if (!out.projects.some(t => t.toLowerCase() === m[1].toLowerCase())) out.projects.push(m[1]);
+      out.project ||= m[1];
+      continue;
     } else if ((m = w.match(/^\+(\p{L}[\p{L}\d_.-]*)$/u))) {
       out.assignee = m[1]; continue;
     } else if ((m = w.match(/^>([\p{L}\d]\S*)$/u))) {

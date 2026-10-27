@@ -48,7 +48,7 @@ Scrivi poche parole e premi Invio. I token fanno il resto:
 |---|---|
 | `t:` `m:` `n:` | tipo: todo (predefinito), mail, nota del diario |
 | `!oggi` `!domani` `!ven` `!3g` `!2s` `!1m` `!fm` `!25/11` `!2026-12-01` `!no` | scadenza (per le note: quando è successo) |
-| `@rover` | progetto, creato al volo se non esiste |
+| `@rover` | progetto, creato al volo se non esiste; più `@` = più progetti (il primo è il principale) |
 | `#SCH-042` | articolo di magazzino: resta nel testo come link, creato se non esiste |
 | `+marco` | assegna a un utente |
 | `>acquisti@ditta.it` | destinatario della mail |
@@ -75,15 +75,19 @@ Scorciatoie da tastiera: `n` o `/` per scrivere, `Ctrl/⌘ K` per cercare.
 
 ## Progetti
 
+Una voce (todo, mail, nota) può stare in più progetti: nell'editor i progetti sono chip con × e un campo per aggiungerne altri; compare nella pagina di ognuno.
+
 Un progetto può stare dentro un altro (campo "Dentro" nella sua pagina, o `@padre` quando lo crei), a più livelli. L'elenco li mostra ad albero con le voci aperte sommate e si riorganizza **trascinando**: un progetto rilasciato su un altro ci finisce dentro, rilasciato sulla riga in cima torna principale (su telefono: tieni premuto e trascina; dopo ogni spostamento c'è "Annulla"); nella pagina di un progetto ci sono i sottoprogetti e, se attivo "includi le voci dei sottoprogetti", anche le loro voci. La sezione **Magazzino del progetto** raccoglie gli articoli collegati a mano (con autocompletamento; un codice nuovo crea l'articolo) e quelli citati con `#CODICE` nelle voci.
 
 ## Documenti e note
 
-Cliccando un documento nella scheda di un articolo si apre il visualizzatore con le note a lato:
+Cliccando un documento nella scheda di un articolo si apre il visualizzatore con le note a lato. Il documento usa tutta la larghezza della pagina; con **note** nascondi la barra delle note (la preferenza resta), con **espandi** sparisce anche il resto dell'app e il documento occupa tutta la finestra (Esc per tornare).
 
 - **PDF** (con PDF.js, incluso nel progetto in `public/vendor/pdfjs`, nessuna connessione esterna) e **immagini**: clicchi un punto e lasci una nota lì; il segnaposto numerato resta al suo posto a ogni zoom. Cliccando una nota il documento scorre al punto, e viceversa.
 - **File di testo**: anteprima del contenuto.
 - **Qualsiasi altro file o link** (firmware, archivi, …): niente anteprima, ma le **note generali** sul file funzionano per tutti.
+
+La pagina **Documenti** (barra laterale; su telefono dal pulsante in Magazzino) raccoglie tutti i documenti per articolo o per tipo, con filtri e "con note aperte". Spunta fino a 3 documenti e **Rivedi affiancati**: si aprono uno accanto all'altro, ognuno con le sue note (si aprono nel pannello in cui clicchi). Tipo e versione di un documento si cambiano in qualsiasi momento, qui, nella scheda dell'articolo o nel visualizzatore; se cambia un firmware, l'articolo prende la versione del firmware più recente.
 
 Ogni nota si può modificare, segnare come risolta (sparisce, si rivede con il filtro "risolte"), eliminare (va nel cestino) o trasformare in todo con **→ todo**: la voce nasce con il `#CODICE` dell'articolo e negli aggiornamenti un link che riapre il documento su quella nota. Il file originale non viene modificato: le note vivono nell'app. Nella scheda dell'articolo ogni documento mostra quante note aperte ha; la ricerca trova anche il testo delle note.
 
@@ -110,6 +114,8 @@ Rubrica condivisa con nome, email, telefono, azienda, ruolo e note, tutto modifi
 Eliminare sposta nel cestino: voci (con le loro sotto-attività), progetti, articoli, documenti e contatti. Dopo ogni eliminazione compare "Annulla". Dal Cestino si ripristina o si elimina definitivamente; dopo 30 giorni (variabile `TRASH_DAYS`) gli elementi spariscono da soli, file compresi. Scrivere `@tag` o `#CODICE` di qualcosa che è nel cestino lo ripristina.
 
 ## Magazzino
+
+Ogni articolo può avere un **link** facoltativo (pagina prodotto, repo, wiki). Nella vista per categoria un articolo si sposta in un'altra categoria **trascinandolo** nella colonna (o in "Nuova categoria").
 
 Il colore di un articolo dipende dalla sua categoria, ovunque compaia (elenchi, `#CODICE` nel testo, suggerimenti); senza categoria è grigio. Si può filtrare per categoria o passare alla vista **per categoria**, a colonne sugli schermi larghi. Nella composizione e nei collegamenti ai progetti il codice si autocompleta; se non esiste viene creato.
 

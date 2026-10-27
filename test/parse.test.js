@@ -71,3 +71,10 @@ test('riga articolo e riga progetto', async () => {
   assert.equal(parseItemLine('CAV-1 /modulo_radio').category, 'modulo radio');
   assert.deepEqual(parseProjectLine('Firmware motori @rover'), { name: 'Firmware motori', parent: 'rover' });
 });
+
+test('più progetti', () => {
+  const p = parseQuick('allineare fw @rover @serra-iot @Rover !ven', { today: T });
+  assert.equal(p.project, 'rover');
+  assert.deepEqual(p.projects, ['rover', 'serra-iot']);
+  assert.equal(p.title, 'allineare fw');
+});
