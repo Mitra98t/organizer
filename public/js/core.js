@@ -445,7 +445,7 @@ export function renameDoc(d) {
   act(() => api('PATCH', `/docs/${d.id}`, { label: name.trim() }));
 }
 
-export const DOC_KINDS = ['firmware', 'datasheet', 'schema', 'manuale', 'foto', 'altro'];
+export const DOC_KINDS = ['firmware', 'datasheet', 'schema', 'footprint', 'manuale', 'foto', 'altro'];
 
 // URL del file di un documento. L'impronta (sha256) nell'indirizzo evita che il browser mostri dalla cache
 // un file vecchio con lo stesso numero di documento (dopo un reset o il ripristino di un backup).

@@ -759,3 +759,6 @@ html, body { overflow-x: clip; }
 @media (pointer: coarse) { .doc-name .icon-btn, .drow-edit { opacity: 0.8; } }
 .dv-title-in { flex: 0 1 auto; min-width: 120px; max-width: 520px; font-size: 17px !important; }
 .doc-name a { font-weight: 500; }
+
+/* Footprint (impronte PCB): colore proprio, come firmware e datasheet. */
+.dk.k-footprint, .dk-sel.k-footprint { background: color-mix(in srgb, var(--note) 15%, transparent); color: var(--note); }

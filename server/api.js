@@ -16,7 +16,7 @@ import { currentWorkspace } from './db.js';
 
 const KINDS = ['todo', 'mail', 'note'];
 const STATUSES = ['open', 'paused', 'closed'];
-const DOC_KINDS = ['firmware', 'datasheet', 'schema', 'manuale', 'foto', 'altro'];
+const DOC_KINDS = ['firmware', 'datasheet', 'schema', 'footprint', 'manuale', 'foto', 'altro'];
 const ARCHIVE_DAYS = 30;
 const MAX_UPLOAD = (+process.env.MAX_UPLOAD_MB || 200) * 1048576;
 const CODE_OK = /^[A-Za-z0-9](?:[\w.\-/]*[A-Za-z0-9_])?$/;

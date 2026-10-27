@@ -126,7 +126,7 @@ Ogni articolo può avere un **link** facoltativo (pagina prodotto, repo, wiki). 
 
 Il colore di un articolo dipende dalla sua categoria, ovunque compaia (elenchi, `#CODICE` nel testo, suggerimenti); senza categoria è grigio. Si può filtrare per categoria o passare alla vista **per categoria**, a colonne sugli schermi larghi. Nella composizione e nei collegamenti ai progetti il codice si autocompleta; se non esiste viene creato.
 
-Ogni articolo ha codice, descrizione, categoria, versione firmware, posizione, quantità e note (pinout, procedura di flash…). Gli carichi documenti (firmware, datasheet, schemi, manuali, foto) o link esterni. Un file di tipo firmware con versione aggiorna da solo il campo Firmware, e per ogni file si vede lo sha256. "Composizione" collega prodotti e schede. In basso trovi tutte le voci che citano quel `#CODICE`. Se rinomini un codice, i riferimenti nel testo delle voci vengono aggiornati.
+Ogni articolo ha codice, descrizione, categoria, versione firmware, posizione, quantità e note (pinout, procedura di flash…). Gli carichi documenti (firmware, datasheet, schemi, footprint, manuali, foto) o link esterni. Un file di tipo firmware con versione aggiorna da solo il campo Firmware, e per ogni file si vede lo sha256. "Composizione" collega prodotti e schede. In basso trovi tutte le voci che citano quel `#CODICE`. Se rinomini un codice, i riferimenti nel testo delle voci vengono aggiornati.
 
 ## Workspace e più persone
 
