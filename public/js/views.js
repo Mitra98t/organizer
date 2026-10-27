@@ -2,7 +2,7 @@ import {
   h, icon, S, ui, RS, api, act, render, richText, dueInfo, dayDiff, fmtDay, fmtLongDay, fmtTime, fmtSize,
   userName, toast, save, patchEntry, addEntry, isMine, localDay, autosize, stop, copy, hue, trashIt, contactLabel,
   descendants, ancestors, catStyle, itemAttrs, docFileUrl, projectsOf, DOC_KINDS, projHue, catHue, huePicker,
-  switchWorkspace, newWorkspace,
+  switchWorkspace, newWorkspace, docName, renameDoc,
 } from './core.js';
 import { docMeta } from './docview.js';
 import { today, addDays } from './parse.js';
@@ -729,7 +729,9 @@ function docSection(it) {
     docs.map(d => h('div.doc',
       docMeta(d),
       h('div.doc-main',
-        h('a', { href: `#/d/${d.id}`, title: 'Apri con le note' }, d.label || d.filename || d.url),
+        h('span.doc-name',
+          h('a', { href: `#/d/${d.id}`, title: 'Apri con le note' }, docName(d)),
+          h('button.icon-btn.sm', { title: 'Rinomina', onclick: () => renameDoc(d) }, icon('edit'))),
         h('div.meta',
           d.label && d.filename && h('span', d.filename),
           d.size != null && h('span', fmtSize(d.size)),

@@ -4,7 +4,7 @@
 // L'app ridisegna le viste a ogni sincronizzazione: ridisegnare un PDF ogni volta sarebbe lento, quindi
 // il visualizzatore (canvas compresi) resta in memoria e viene solo riagganciato; si aggiornano i segnaposto.
 // Più visualizzatori possono essere aperti insieme (revisione affiancata, #/review?d=1,2,3).
-import { h, icon, S, ui, api, act, render, richText, fmtTime, fmtSize, userName, toast, trashIt, autosize, itemAttrs, save, docFileUrl, DOC_KINDS } from './core.js';
+import { h, icon, S, ui, api, act, render, richText, fmtTime, fmtSize, userName, toast, trashIt, autosize, itemAttrs, save, docFileUrl, DOC_KINDS, docName, renameDoc } from './core.js';
 import { today } from './parse.js';
 
 const PDFJS = new URL('../vendor/pdfjs/', import.meta.url).href;
@@ -447,7 +447,12 @@ export function viewDoc(id, query = {}) {
     h('div.head',
       h('a.icon-btn', { href: it ? `#/i/${it.id}` : '#/magazzino', title: 'Torna all\'articolo (Esc)' }, icon('back')),
       it && h('a.code', { href: `#/i/${it.id}`, ...itemAttrs(it) }, it.code),
-      h('h2.dv-title', d.label || d.filename || d.url),
+      // Il titolo si modifica direttamente: diventa il nome del documento nell'app (il file resta com'è).
+      h('input.h-title.dv-title-in', {
+        value: docName(d), title: d.filename ? `File: ${d.filename}` : d.url, 'data-fk': `dname-${d.id}`,
+        onchange: ev => act(() => api('PATCH', `/docs/${d.id}`, { label: ev.target.value.trim() })),
+        onkeydown: ev => { if (ev.key === 'Enter') ev.target.blur(); },
+      }),
       docMeta(d),
       h('span.grow'),
       fileButtons(d),
@@ -538,7 +543,8 @@ export function viewReview(_id, query = {}) {
       return h('section.rv-pane',
         h('div.rv-h',
           it && h('a.code', { href: `#/i/${it.id}`, ...itemAttrs(it) }, it.code),
-          h('a.rv-title', { href: `#/d/${d.id}`, title: 'Apri da solo' }, d.label || d.filename || d.url),
+          h('a.rv-title', { href: `#/d/${d.id}`, title: 'Apri da solo' }, docName(d)),
+          h('button.icon-btn.sm', { title: 'Rinomina', onclick: () => renameDoc(d) }, icon('edit')),
           docMeta(d),
           h('span.grow'),
           notesChip(d, v),

@@ -714,7 +714,10 @@ route('GET', '/api/docs/:id/file', ({ res, params, query }) => {
   const file = path.join(UPLOAD_DIR, d.stored);
   if (!fs.existsSync(file)) fail(404, 'File mancante sul server');
   const safe = INLINE_OK.test(d.mime || '');
-  const name = d.filename || `documento-${d.id}`;
+  // Scaricando, il file prende il nome dato nell'app (con l'estensione del file originale).
+  const ext = path.extname(d.filename || '');
+  const label = (d.label || '').replace(/[\\/:*?"<>|\r\n]+/g, ' ').replace(/\s+/g, ' ').replace(/\s+(\.\w+)$/, '$1').trim();
+  const name = label ? (ext && !label.toLowerCase().endsWith(ext.toLowerCase()) ? `${label}${ext}` : label) : d.filename || `documento-${d.id}`;
   res.writeHead(200, {
     'Content-Type': safe ? d.mime : 'application/octet-stream',
     'Content-Length': fs.statSync(file).size,

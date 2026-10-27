@@ -1,6 +1,6 @@
 // Pagina Documenti: tutti i file del magazzino in un posto solo, pensata per la revisione.
 // Si filtrano, si raggruppano per articolo o per tipo, e se ne scelgono fino a 3 da aprire affiancati.
-import { h, icon, S, ui, render, save, toast, fmtSize, fmtTime, itemAttrs, DOC_KINDS } from './core.js';
+import { h, icon, S, ui, render, save, toast, fmtSize, fmtTime, itemAttrs, DOC_KINDS, docName, renameDoc } from './core.js';
 import { docMeta } from './docview.js';
 
 const MAX_REVIEW = 3;
@@ -23,7 +23,8 @@ function docRow(d, { showItem }) {
   return h('div.drow', { class: sel ? 'sel' : null },
     h('input', { type: 'checkbox', checked: sel, title: 'Seleziona per la revisione affiancata', onchange: () => toggleSel(d.id) }),
     docMeta(d),
-    h('a.drow-name', { href: `#/d/${d.id}`, title: 'Apri con le note' }, d.label || d.filename || d.url),
+    h('a.drow-name', { href: `#/d/${d.id}`, title: 'Apri con le note' }, docName(d)),
+    h('button.icon-btn.sm.drow-edit', { title: 'Rinomina', onclick: () => renameDoc(d) }, icon('edit')),
     showItem && it && h('a.code', { href: `#/i/${it.id}`, ...itemAttrs(it) }, it.code),
     h('span.grow'),
     n > 0 && h('a.doc-notes', { href: `#/d/${d.id}`, title: 'Note aperte' }, icon('log'), n),

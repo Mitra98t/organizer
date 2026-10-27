@@ -124,6 +124,7 @@ const ICONS = {
   restore: '<path d="M4 12a8 8 0 1 0 2.3-5.6L4 8.7"/><path d="M4 4v4.7h4.7"/>',
   contacts: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6.5 6.5 0 0 1 3.5 6"/>',
   file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13 7 4 4"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
   logout: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 8l-4 4 4 4M6 12h10"/>',
@@ -435,6 +436,15 @@ export function hue(s) {
   for (const c of String(s)) x = (x * 31 + c.codePointAt(0)) >>> 0;
   return x % 360;
 }
+// Nome di un documento: quello dato nell'app, altrimenti il nome del file (o il link).
+export const docName = d => d.label || d.filename || d.url;
+
+export function renameDoc(d) {
+  const name = prompt('Nuovo nome del documento (vuoto = torna al nome del file):', d.label || d.filename || '');
+  if (name == null) return;
+  act(() => api('PATCH', `/docs/${d.id}`, { label: name.trim() }));
+}
+
 export const DOC_KINDS = ['firmware', 'datasheet', 'schema', 'manuale', 'foto', 'altro'];
 
 // URL del file di un documento. L'impronta (sha256) nell'indirizzo evita che il browser mostri dalla cache

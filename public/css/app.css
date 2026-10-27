@@ -750,3 +750,12 @@ button.cdot.pick:hover { box-shadow: 0 0 0 3px color-mix(in srgb, var(--text) 25
 .empty code.k, .qhelp code.k, .syntax code.k { white-space: normal; overflow-wrap: anywhere; }
 .main { min-width: 0; }
 html, body { overflow-x: clip; }
+
+/* ---------- nome dei documenti ---------- */
+.doc-name { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; }
+.doc-name a { overflow-wrap: anywhere; }
+.doc-name .icon-btn, .drow-edit { opacity: 0.45; }
+.doc:hover .doc-name .icon-btn, .drow:hover .drow-edit { opacity: 1; }
+@media (pointer: coarse) { .doc-name .icon-btn, .drow-edit { opacity: 0.8; } }
+.dv-title-in { flex: 0 1 auto; min-width: 120px; max-width: 520px; font-size: 17px !important; }
+.doc-name a { font-weight: 500; }
