@@ -8,7 +8,7 @@ APP_PORT    ?= 8080
 
 .DEFAULT_GOAL := help
 .PHONY: help up down restart logs ps https wait reset demo seed backup restore \
-        users invite workspaces reset-password make-admin mail-helper mail-helper-uninstall remote remote-off remote-status shell info test dev dev-reset dev-demo confirm
+        users invite workspaces reset-password make-admin mail-helper mail-helper-uninstall cli cli-uninstall remote remote-off remote-status shell info test dev dev-reset dev-demo confirm
 
 help: ## Mostra questo elenco
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -112,6 +112,14 @@ mail-helper: ## Installa l'helper che apre le mail in Thunderbird con gli allega
 
 mail-helper-uninstall: ## Rimuove l'helper Thunderbird
 	tools/install-mail-helper.sh --uninstall
+
+# ---------- terminale ----------
+cli: ## Installa il comando `org` (CLI, serve Node 22 sul computer); poi: org login http://localhost:8080
+	npm install --global ./cli
+	@echo "Fatto: prova con  org help"
+
+cli-uninstall: ## Rimuove il comando `org`
+	npm uninstall --global organizer-cli
 
 shell: ## Shell dentro il container
 	$(COMPOSE) exec app sh

@@ -8,8 +8,10 @@ import './mail.js';
 import './backup.js';
 import './workspaces.js';
 import './remote.js';
+import './tokens.js';
+import './chat.js';
 import { purgeExpired } from './trash.js';
-import { resolveAuth, workspaceById, acc } from './accounts.js';
+import { resolveAuth, resolveApiToken, workspaceById, acc } from './accounts.js';
 import { bump } from './events.js';
 import { HttpError, sendJson, parseCookies, readJson } from './util.js';
 import { DATA_DIR, withWorkspace, closeAll } from './db.js';
@@ -44,15 +46,19 @@ async function handleApi(req, res, url) {
   let match;
   const r = routes.find(r => r.method === req.method && (match = url.pathname.match(r.re)));
   if (!r) throw new HttpError(404, 'Endpoint inesistente');
-  // Le chiamate che modificano dati devono arrivare dalla nostra app (un form di un altro sito non può impostare questo header).
-  if (req.method !== 'GET' && req.headers['x-requested-with'] !== 'organizer') throw new HttpError(403, 'Richiesta non valida');
+  // CLI e programmi esterni si autenticano con un token API (Authorization: Bearer ...), l'app con il cookie.
+  const bearer = req.headers.authorization?.match(/^Bearer\s+(\S+)$/i)?.[1];
+  // Con il cookie, le chiamate che modificano dati devono arrivare dalla nostra app (un form di un altro sito
+  // non può impostare questo header). Il token invece il browser non lo manda da solo: il controllo non serve.
+  if (!bearer && req.method !== 'GET' && req.headers['x-requested-with'] !== 'organizer') throw new HttpError(403, 'Richiesta non valida');
 
-  const token = parseCookies(req.headers.cookie).sid;
-  const auth = resolveAuth(token);
+  const token = bearer ? null : parseCookies(req.headers.cookie).sid;
+  const auth = bearer ? resolveApiToken(bearer, req.headers['x-workspace']) : resolveAuth(token);
+  if (bearer && !auth) throw new HttpError(401, 'Token non valido o revocato');
   // user.is_admin = admin del workspace attivo; workspace_id = workspace attivo della sessione (o null).
   const user = auth && {
     id: auth.account.id, username: auth.account.username, name: auth.account.name,
-    is_admin: auth.role === 'admin' ? 1 : 0, workspace_id: auth.ws?.id ?? null,
+    is_admin: auth.role === 'admin' ? 1 : 0, workspace_id: auth.ws?.id ?? null, api_token: auth.apiToken ?? null,
   };
   if (r.auth !== 'none' && !user) throw new HttpError(401, 'Accesso richiesto');
   if (r.auth === 'admin' && !user.is_admin) throw new HttpError(403, 'Solo per gli admin del workspace');
@@ -70,7 +76,7 @@ async function handleApi(req, res, url) {
     body: () => (bodyPromise ??= readJson(req)),
   };
   const out = ws ? await withWorkspace(ws, () => r.handler(ctx)) : await r.handler(ctx);
-  if (req.method !== 'GET') bump(user?.id, r.ws ? ws?.id : null);
+  if (req.method !== 'GET' && !r.quiet) bump(user?.id, r.ws ? ws?.id : null);
   if (res.headersSent) return;
   if (out === undefined) {
     res.writeHead(204);

@@ -64,7 +64,11 @@ export function mailComposer(e) {
       h('input', { value: e.mail_cc || '', 'data-fk': `cc-${e.id}`, 'data-ac': 'email', autocomplete: 'off', spellcheck: 'false', onblur: saveField('mail_cc') })),
     h('label.mf', h('span', 'Oggetto'),
       h('input', { value: e.mail_subject || '', placeholder: subjectOf({ ...e, mail_subject: null }), 'data-fk': `subj-${e.id}`, onblur: saveField('mail_subject') })),
-    h('textarea.mail-body', { rows: 4, value: e.notes, placeholder: 'Testo della mail…', 'data-fk': `body-${e.id}`, oninput: autosize, onblur: saveField('notes') }),
+    // #articolo suggerisce dal magazzino e scrive il codice senza # (la mail va a chi non usa l'app).
+    h('textarea.mail-body', {
+      rows: 4, value: e.notes, placeholder: 'Testo della mail… (#codice per inserire un articolo del magazzino)', 'data-fk': `body-${e.id}`,
+      'data-ac': 'mail', 'data-ac-only': '#', 'data-ac-bare': '', oninput: autosize, onblur: saveField('notes'),
+    }),
     h('div.atts',
       atts.map(a => h('span.att',
         icon('clip'),

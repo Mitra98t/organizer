@@ -194,6 +194,25 @@ function entryEditor(e) {
       }, icon('trash'), 'Elimina')));
 }
 
+// Una voce da sola, aperta (i link [[voce:ID]] della chat portano qui).
+let autoOpened = null;
+export function viewEntryPage(id) {
+  const D = S.data;
+  const e = D.entryById.get(+id);
+  if (!e) {
+    return h('div.view', empty(h('p', 'Voce non trovata: è stata eliminata, oppure è fatta da più di 30 giorni (la trovi con la ricerca).'),
+      h('p', h('a', { href: '#/cerca' }, 'Cerca'))));
+  }
+  if (autoOpened !== e.id) {
+    autoOpened = e.id;
+    ui.open.add(e.id);
+  }
+  const parent = e.parent_id && D.entryById.get(e.parent_id);
+  return h('div.view.entry-page',
+    parent && h('p.muted', '↳ sotto-attività di ', h('a', { href: `#/v/${parent.id}` }, parent.title)),
+    h('div.sec-b', entryRow(e)));
+}
+
 function pendingRows(filter = () => true) {
   return S.outbox.filter(filter).map((p, i) => entryRow({
     id: -1 - i, kind: p.kind || 'todo', title: p.text, notes: '', pinned: 0, pending: true, created_at: new Date().toISOString(),
@@ -883,6 +902,39 @@ function loadInvites() {
   api('GET', '/admin/invites').then(r => { ui.invites = r; render(); }).catch(() => {});
 }
 
+function loadTokens() {
+  ui.tokens = [];
+  api('GET', '/tokens').then(r => { ui.tokens = r; render(); }).catch(() => {});
+}
+
+// Token per la CLI e per i programmi esterni (bot, script): si vede una volta sola, alla creazione.
+function tokensSection() {
+  if (ui.tokens == null) loadTokens();
+  const create = () => {
+    const name = prompt('Nome del token (es. "bot telegram", "script backup"):');
+    if (!name?.trim()) return;
+    act(async () => {
+      const r = await api('POST', '/tokens', { name });
+      loadTokens();
+      prompt('Copia il token adesso: non verrà più mostrato.', r.token);
+    });
+  };
+  return section('set-tokens', 'CLI e token API', [
+    h('p', 'Dal terminale: installa la CLI con ', kbd('make cli'), ' e accedi con ', kbd(`org login ${location.origin}`), '.'),
+    h('p.muted', 'Per un bot o uno script crea un token: dà accesso a tutto ciò che vedi tu, in tutti i tuoi workspace. Le API sono descritte in docs/API.md.'),
+    h('button.btn', { onclick: create }, icon('plus'), 'Crea token'),
+    ui.tokens.map(t => h('div.invite',
+      h('code', `…${t.hint}`),
+      h('span', t.name),
+      h('span.muted', t.last_used_at ? `usato ${fmtTime(t.last_used_at)}` : 'mai usato'),
+      h('span.grow'),
+      h('button.icon-btn', {
+        title: 'Revoca',
+        onclick: () => { if (confirm(`Revocare il token "${t.name}"? Chi lo usa non potrà più accedere.`)) act(async () => { await api('DELETE', `/tokens/${t.id}`); loadTokens(); }, 'Token revocato'); },
+      }, icon('x')))),
+  ], { count: ui.tokens.length || '', collapsed: true });
+}
+
 const inviteLink = code => `${location.origin}${location.pathname}#/registrati?code=${code}`;
 
 export function viewSettings() {
@@ -924,6 +976,8 @@ export function viewSettings() {
     ], { count: '', collapsed: true }),
 
     workspaceSection(D),
+
+    tokensSection(),
 
     section('set-users', `Persone in "${D.workspace.name}"`, [
       D.members.map(u => h('div.user-row',

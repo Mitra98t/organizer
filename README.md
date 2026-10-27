@@ -96,7 +96,7 @@ Ogni nota si può modificare, segnare come risolta (sparisce, si rivede con il f
 
 ## Mail
 
-Una voce di tipo mail è una mail vera: destinatari (A, Cc) con suggerimenti dalla rubrica, oggetto (se vuoto usa il titolo), testo e allegati. Gli allegati possono essere file caricati (anche trascinandoli) o documenti già presenti in magazzino, per esempio il firmware da mandare al cliente.
+Una voce di tipo mail è una mail vera: destinatari (A, Cc) con suggerimenti dalla rubrica, oggetto (se vuoto usa il titolo), testo e allegati. Gli allegati possono essere file caricati (anche trascinandoli) o documenti già presenti in magazzino, per esempio il firmware da mandare al cliente. Nel testo `#` suggerisce gli articoli del magazzino e inserisce il codice senza `#` (es. `#sch051` → `SCH-051`).
 
 **Manda** apre la mail già compilata in Thunderbird, allegati compresi. Un link `mailto:` non può portare allegati, quindi serve un piccolo helper locale da installare una volta per computer:
 
@@ -137,6 +137,24 @@ Un **workspace** è un insieme di dati separato (progetti, voci, magazzino, cont
 - Dentro un workspace tutto è condiviso tranne le voci e i progetti marcati **privati**. Le modifiche arrivano in tempo reale solo a chi è nello stesso workspace.
 
 Sul server: `accounts.db` contiene account, sessioni, workspace e inviti; ogni workspace ha il suo file (`organizer.db` il primo, `ws-<id>.db` gli altri). Aggiornando da una versione senza workspace, l'installazione esistente diventa il workspace "Principale" (nome cambiabile con `WORKSPACE_NAME`) con gli stessi utenti e ruoli.
+
+## Chat
+
+Ogni workspace ha una chat tra i suoi membri (Chat nella barra laterale; su telefono l'icona in alto). Nei messaggi si collegano le cose dell'app: `@progetto`, `#CODICE`, `+persona` e, scrivendo `[[`, un documento, una voce (todo, mail, nota) o un contatto, scelti dai suggerimenti. Nel messaggio diventano link con il nome sempre aggiornato. Il numero sul badge sono i messaggi non letti; dal terminale `org chat -f` la segue dal vivo.
+
+## Terminale (CLI) e API
+
+`org` è la CLI: un eseguibile a parte (cartella `cli/`, serve Node 22) per fare dal terminale quasi tutto quello che si fa nell'app: scrivere e riorganizzare voci, progetti e magazzino, caricare e scaricare documenti, preparare mail con allegati.
+
+```bash
+make cli                          # installa il comando org
+org login http://localhost:8080   # utente e password, una volta
+org add 'flash fw #SCH-042 @rover !ven'
+org ls -p rover
+org doc up SCH-042 fw_2.4.0.bin -V 2.4.0
+```
+
+Guida completa in [cli/README.md](cli/README.md). La CLI usa le API pubbliche, le stesse per bot e script: si autenticano con un **token** creato in Impostazioni → *CLI e token API* (o da `org login`). Endpoint ed esempi in [docs/API.md](docs/API.md).
 
 ## Telefono e altri computer
 
@@ -194,8 +212,13 @@ server/       HTTP, API REST, autenticazione, SSE (Node, solo moduli standard)
   contacts.js rubrica
   trash.js    cestino e pulizia automatica
   backup.js   ripristino di un backup .db dal browser
+  tokens.js   token API per la CLI e i programmi esterni
+  chat.js     chat del workspace
 public/       PWA senza build: HTML, CSS, moduli ES
   js/parse.js parser della barra rapida, condiviso con il server
+cli/          la CLI `org` (eseguibile a sé, usa solo le API pubbliche)
+docs/API.md   API per CLI, bot e script
+CHANGELOG.md  novità di ogni versione
 test/         node --test
 tools/        generatore icone, helper Thunderbird (organizer-mail.sh) e suo installer
 public/vendor/pdfjs  PDF.js 6.4.299 (Apache-2.0), solo i file necessari al visualizzatore

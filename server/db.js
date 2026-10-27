@@ -226,6 +226,19 @@ const MIGRATIONS = [
   `
   ALTER TABLE items ADD COLUMN status TEXT NOT NULL DEFAULT '';
   `,
+  // v9: chat del workspace. I collegamenti stanno nel testo: #CODICE, @progetto, [[doc:12]], [[voce:34]], [[contatto:5]].
+  // chat_read_id: l'ultimo messaggio letto da ogni persona (per il numero di non letti).
+  `
+  CREATE TABLE chat_messages (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users,
+    text TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    edited_at TEXT,
+    deleted_at TEXT
+  );
+  ALTER TABLE users ADD COLUMN chat_read_id INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

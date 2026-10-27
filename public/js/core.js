@@ -29,6 +29,9 @@ export const ui = {
   docVer: '',
   archive: null,
   invites: null,
+  tokens: null,
+  chatDraft: '',
+  chatEdit: null,
   trash: null,
   contactFilter: '',
   mailHelper: load('org.mailHelper', false),
@@ -128,6 +131,7 @@ const ICONS = {
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
   logout: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 8l-4 4 4 4M6 12h10"/>',
+  chat: '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9a1.5 1.5 0 0 1-1.5 1.5H10l-5 4v-4h.5A1.5 1.5 0 0 1 4 14.5z"/><path d="M8 9h8M8 12h5"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17.5v.01"/>',
 };
 export const icon = (name, cls = '') =>
@@ -191,6 +195,9 @@ function indexData(d) {
   d.docNotes ||= [];
   d.entryProjects ||= [];
   d.categoryColors ||= [];
+  d.chat ||= [];
+  d.chatUnread ??= 0;
+  d.chatReadId ??= 0;
   d.members = d.users.filter(u => u.member !== 0); // membri attuali del workspace (gli altri sono ex, per i nomi)
   d.catHueOf = new Map(d.categoryColors.map(c => [c.name.toLowerCase(), c.hue]));
   d.entryById = new Map(d.entries.map(e => [e.id, e]));
@@ -266,7 +273,9 @@ export function sync() {
         const d = await api('GET', '/sync');
         if (S.data && d.rev === S.data.rev && d.me.id === S.data.me.id) continue;
         save('org.cache', d);
+        const prev = S.data;
         S.data = indexData(d);
+        window.dispatchEvent(new CustomEvent('org:data', { detail: { prev, data: S.data } }));
         S.me = d.me;
         S.noWorkspace = false;
         render();
@@ -525,6 +534,54 @@ export function richText(text) {
     last = m.index + m[0].length;
   }
   out.push(String(text || '').slice(last));
+  return out;
+}
+
+// ---------- collegamenti nei messaggi della chat ----------
+// Nel testo: [[doc:12]], [[voce:34]], [[contatto:5]] (scritti dall'autocompletamento dopo "[["),
+// più @progetto, +persona, #CODICE e link come nel resto dell'app. Il nome mostrato è sempre quello attuale.
+export const REF_KINDS = { doc: 'documento', voce: 'voce', contatto: 'contatto' };
+const CHAT_RE = /\[\[(doc|voce|contatto):(\d+)\]\]|(^|[\s(\[,;:])([@+])([\p{L}\d_][\p{L}\d_.-]*[\p{L}\d_]|[\p{L}\d_])/gu;
+const ENTRY_ICON = { todo: 'check', mail: 'mail', note: 'diary' };
+
+export function refChip(kind, id) {
+  const D = S.data;
+  if (kind === 'doc') {
+    const d = D.docById.get(id);
+    const it = d && D.itemById.get(d.item_id);
+    return d ? h('a.ref', { href: `#/d/${id}`, onclick: stop, title: `${d.kind}${it ? ` di ${it.code}` : ''}` }, icon('file'), docName(d), it && h('span.ref-x', it.code))
+      : h('span.ref.gone', icon('file'), 'documento eliminato');
+  }
+  if (kind === 'voce') {
+    const e = D.entryById.get(id);
+    return h('a.ref', { href: `#/v/${id}`, onclick: stop, class: e?.done_at ? 'done' : null },
+      icon(ENTRY_ICON[e?.kind] || 'check'), e ? e.title.replace(/(^|\s)#/g, '$1') : `voce ${id}`);
+  }
+  const c = D.contactById.get(id);
+  return c ? h('a.ref', { href: `#/contatti/${id}`, onclick: stop, title: c.email }, icon('user'), c.name || c.email)
+    : h('span.ref.gone', icon('user'), 'contatto eliminato');
+}
+
+export function chatText(text) {
+  const D = S.data;
+  const out = [];
+  let last = 0;
+  for (const m of String(text).matchAll(CHAT_RE)) {
+    if (m[1]) {
+      out.push(...richText(text.slice(last, m.index)), refChip(m[1], +m[2]));
+      last = m.index + m[0].length;
+      continue;
+    }
+    const [, , , pre, sig, name] = m;
+    const p = sig === '@' && D.projectByTag.get(name.toLowerCase());
+    const u = sig === '+' && D.users.find(x => x.username.toLowerCase() === name.toLowerCase());
+    if (!p && !u) continue; // non è un collegamento: resta testo
+    out.push(...richText(text.slice(last, m.index + pre.length)));
+    out.push(p ? h('a.tag', { href: `#/p/${p.id}`, onclick: stop, style: `--h:${projHue(p)}` }, `@${p.tag}`)
+      : h('span.mention', { class: u.id === D.me.id ? 'me' : null, title: u.name }, `+${u.username}`));
+    last = m.index + m[0].length;
+  }
+  out.push(...richText(String(text).slice(last)));
   return out;
 }
 

@@ -6,9 +6,12 @@
 // suggerimento conferma subito il campo (come premere Invio). data-ac-self esclude un codice.
 // data-ac="cfield" + data-ac-field="company|timeslot|role": un campo dei contatti; suggerisce i valori già
 // usati in rubrica e scegliendone uno il campo si salva.
+// data-ac="chat": @ # + come sempre, e "[[" suggerisce documenti, voci (todo, mail, note) e contatti,
+// inserendo [[doc:12]], [[voce:34]], [[contatto:5]] (nel messaggio diventano link con il nome attuale).
+// data-ac-bare: si inserisce il valore senza simbolo (testo delle mail: "#SCH" → "SCH-042").
 // Nella barra in alto: modalità 'item' (/categoria, @progetto) e 'project' (@progetto padre).
 // Un solo menu flottante per tutta l'app, agganciato al campo che ha il focus: sopravvive ai re-render.
-import { h, S, fmtDay, hue, catStyle, projHue } from './core.js';
+import { h, S, fmtDay, hue, catStyle, projHue, docName, REF_KINDS } from './core.js';
 import { parseDate, parseQuick, today, fromYmd } from './parse.js';
 
 const box = h('div.ac', { hidden: true, role: 'listbox' });
@@ -57,6 +60,10 @@ function update(el) {
   if (pos == null || pos !== el.selectionEnd) return close();
   if (el.dataset.ac === 'email') return updateEmail(el, pos);
   if (['code', 'project', 'cfield'].includes(el.dataset.ac)) return updateWhole(el);
+  if (el.dataset.ac === 'chat') {
+    const r = el.value.slice(0, pos).match(/\[\[([^\]\n]{0,40})$/);
+    if (r) return updateRef(el, pos, r[1]);
+  }
   const kind = kindOf(el);
   const allowed = el.dataset.acOnly || { item: '/@', project: '@' }[kind] || '@#!+>';
   const m = el.value.slice(0, pos).match(/(?:^|\s)([@#!+>/])([^\s@#!+>/]*)$/);
@@ -66,7 +73,8 @@ function update(el) {
   const [, sig, q] = m;
   const start = pos - q.length - 1;
   const end = pos + el.value.slice(pos).match(/^\S*/)[0].length;
-  const items = suggest(sig, q, kind);
+  let items = suggest(sig, q, kind);
+  if (el.dataset.acBare != null) items = items.map(i => ({ ...i, insert: i.insert.slice(1) }));
   if (!items.length) return close();
   st = { el, start, end, items, index: 0, token: sig + q, suffix: ' ' };
   draw();
@@ -94,6 +102,33 @@ function updateWhole(el) {
   draw();
 }
 
+function updateRef(el, pos, q) {
+  const items = refSuggestions(lc(q.trim()));
+  if (!items.length) return close();
+  st = { el, start: pos - q.length - 2, end: pos, items, index: 0, token: `[[${q}`, suffix: ' ' };
+  draw();
+}
+
+// Documenti, voci e contatti insieme; senza testo: le voci aperte più recenti, poi documenti e contatti.
+function refSuggestions(ql) {
+  const D = S.data;
+  const words = ql.split(/\s+/).filter(Boolean);
+  const hit = (...v) => words.every(w => v.some(x => lc(x).includes(w)));
+  const KIND = { todo: 'todo', mail: 'mail', note: 'nota' };
+  const entries = D.entries
+    .filter(e => hit(e.title, e.contact) && (ql || !e.done_at))
+    .sort((a, b) => !!a.done_at - !!b.done_at || b.updated_at.localeCompare(a.updated_at))
+    .map(e => ({ insert: `[[voce:${e.id}]]`, label: e.title.replace(/(^|\s)#/g, '$1'), hint: e.contact || '', extra: KIND[e.kind], r: rank(e.title, ql) }));
+  const docs = D.docs
+    .filter(d => D.itemById.has(d.item_id) && hit(docName(d), d.filename, d.kind, D.itemById.get(d.item_id).code))
+    .map(d => ({ insert: `[[doc:${d.id}]]`, label: docName(d), hint: D.itemById.get(d.item_id).code, extra: d.kind, r: rank(docName(d), ql) }));
+  const contacts = D.contacts
+    .filter(c => hit(c.name, c.email, c.company))
+    .map(c => ({ insert: `[[contatto:${c.id}]]`, label: c.name || c.email, hint: c.company || (c.name ? c.email : ''), extra: REF_KINDS.contatto, r: rank(c.name, ql) }));
+  if (!ql) return [...entries.slice(0, 4), ...docs.slice(0, 3), ...contacts.slice(0, 2)];
+  return [...entries, ...docs, ...contacts].sort((a, b) => a.r - b.r).slice(0, 10);
+}
+
 function contactFieldSuggestions(field, ql) {
   const counts = new Map();
   for (const c of S.data.contacts) {
@@ -110,9 +145,13 @@ function contactFieldSuggestions(field, ql) {
     .map(c => ({ insert: c.name, label: c.name, extra: c.n === 1 ? '1 contatto' : `${c.n} contatti` }));
 }
 
+// Nei codici trattini, punti e barre non contano: "sch051" trova SCH-051.
+const bare = s => lc(s).replace(/[-_./\s]+/g, '');
+
 function itemSuggestions(ql, filter = () => true) {
+  const qb = bare(ql);
   return S.data.items
-    .filter(i => filter(i) && (!ql || [i.code, i.name, i.firmware, i.category].some(v => lc(v).includes(ql))))
+    .filter(i => filter(i) && (!ql || [i.code, i.name, i.firmware, i.category].some(v => lc(v).includes(ql)) || (qb && bare(i.code).includes(qb))))
     .sort((a, b) => rank(a.code, ql) - rank(b.code, ql) || a.code.localeCompare(b.code))
     .slice(0, 8)
     .map(i => ({ label: i.code, hint: i.name, extra: i.firmware ? `fw ${i.firmware}` : i.category, code: true, cat: i.category }));

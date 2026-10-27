@@ -14,6 +14,7 @@ if (cmd === 'reset-password' && arg) {
   const pw = randomCode(12);
   acc.prepare('UPDATE users SET pass = ? WHERE id = ?').run(await hashPassword(pw), u.id);
   acc.prepare('DELETE FROM sessions WHERE user_id = ?').run(u.id);
+  acc.prepare('DELETE FROM api_tokens WHERE user_id = ?').run(u.id);
   console.log(`Nuova password per ${arg}: ${pw}`);
 } else if (cmd === 'make-admin' && arg) {
   // make-admin <utente> [workspace]: admin nel workspace indicato (predefinito: il primo).

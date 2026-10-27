@@ -4,11 +4,12 @@ import crypto from 'node:crypto';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { db, tx, DATA_DIR, UPLOAD_DIR } from './db.js';
-import { parseQuick, extractCodes, isYmd, today } from '../public/js/parse.js';
+import { parseQuick, parseDate, extractCodes, isYmd, today } from '../public/js/parse.js';
 import { hashPassword, verifyPassword, sessionCookie, validUsername, validPassword, randomCode } from './auth.js';
 import {
   acc, atx, userCount, getAccount, workspaceById, workspacesOf, membersOf, roleIn, adminCount,
   addMember, createWorkspace, removeMember, syncMirror, createSession, destroySession, defaultWorkspace, setSessionWorkspace,
+  revokeApiTokens,
 } from './accounts.js';
 import { HttpError, fail, now, bool, str, sendJson } from './util.js';
 import { rev, openStream, dropUser } from './events.js';
@@ -18,16 +19,18 @@ const KINDS = ['todo', 'mail', 'note'];
 const STATUSES = ['open', 'paused', 'closed'];
 const DOC_KINDS = ['firmware', 'datasheet', 'schema', 'footprint', 'manuale', 'foto', 'altro'];
 const ARCHIVE_DAYS = 30;
+const CHAT_IN_SYNC = 100;
 const MAX_UPLOAD = (+process.env.MAX_UPLOAD_MB || 200) * 1048576;
 const CODE_OK = /^[A-Za-z0-9](?:[\w.\-/]*[A-Za-z0-9_])?$/;
 
 export const routes = [];
 // auth: 'none' | 'user' | 'admin' (admin del workspace attivo). ws: false per le route che non usano
-// i dati di un workspace (account, elenco e creazione dei workspace).
-export function route(method, pattern, handler, { auth = 'user', ws = auth !== 'none' } = {}) {
+// i dati di un workspace (account, elenco e creazione dei workspace). quiet: la modifica riguarda solo
+// chi la fa, quindi gli altri client non vengono avvisati di rileggere i dati.
+export function route(method, pattern, handler, { auth = 'user', ws = auth !== 'none', quiet = false } = {}) {
   const keys = [];
   const re = new RegExp('^' + pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)'; }) + '$');
-  routes.push({ method, re, keys, handler, auth, ws });
+  routes.push({ method, re, keys, handler, auth, ws, quiet });
 }
 
 // ---------- visibilità ----------
@@ -107,11 +110,12 @@ function setFields(table, id, f) {
 
 // ---------- autenticazione ----------
 const attempts = new Map();
-function throttle(key) {
+export function throttle(key) {
   const a = attempts.get(key);
   if (a && a.n >= 10 && Date.now() - a.t < 15 * 60e3) fail(429, 'Troppi tentativi, riprova tra qualche minuto');
 }
-function noteFailure(key) {
+export const clearFailures = key => attempts.delete(key);
+export function noteFailure(key) {
   let a = attempts.get(key);
   if (!a || Date.now() - a.t > 15 * 60e3) a = { n: 0, t: Date.now() };
   a.n++;
@@ -239,7 +243,9 @@ route('GET', '/api/events', ({ req, res, user }) => openStream(req, res, user));
 
 // ---------- sync ----------
 route('GET', '/api/sync', ({ req, res, user }) => {
-  const etag = `"${rev()}-${user.id}-${user.workspace_id}"`;
+  // Il segno di lettura della chat cambia senza notifiche (riguarda solo chi legge): fa parte dell'ETag.
+  const chatRead = db.prepare('SELECT chat_read_id FROM users WHERE id = ?').get(user.id)?.chat_read_id ?? 0;
+  const etag = `"${rev()}-${user.id}-${user.workspace_id}-${chatRead}"`;
   if (req.headers['if-none-match'] === etag) {
     res.writeHead(304, { ETag: etag, 'Cache-Control': 'private, no-cache' });
     return res.end();
@@ -273,6 +279,11 @@ route('GET', '/api/sync', ({ req, res, user }) => {
       WHERE n.deleted_at IS NULL AND d.deleted_at IS NULL ORDER BY n.id`).all(),
     attachments: db.prepare(`SELECT a.id, a.entry_id, a.doc_id, a.filename, a.mime, a.size FROM mail_attachments a
       JOIN entries e ON e.id = a.entry_id WHERE ${where} ORDER BY a.id`).all(p),
+    // Chat: gli ultimi messaggi (i precedenti con /api/chat?before=) e quanti ne restano da leggere.
+    chat: db.prepare(`SELECT id, user_id, text, created_at, edited_at FROM chat_messages WHERE deleted_at IS NULL
+      ORDER BY id DESC LIMIT ${CHAT_IN_SYNC}`).all().reverse(),
+    chatReadId: chatRead,
+    chatUnread: db.prepare('SELECT COUNT(*) AS n FROM chat_messages WHERE deleted_at IS NULL AND user_id != ? AND id > ?').get(uid, chatRead).n,
     trashCount: db.prepare(`SELECT
       (SELECT COUNT(*) FROM entries e WHERE e.deleted_at IS NOT NULL AND ${VIS_ANY}
         AND (e.parent_id IS NULL OR NOT EXISTS (SELECT 1 FROM entries x WHERE x.id = e.parent_id AND x.deleted_at = e.deleted_at)))
@@ -374,8 +385,10 @@ export function updateEntry(e, b, user) {
     f.kind = b.kind;
   }
   if (b.due !== undefined) {
-    if (b.due !== null && !isYmd(b.due)) fail(400, 'Data non valida');
-    f.due = b.due;
+    // Oltre a AAAA-MM-GG, le date della barra rapida: "ven", "3g", "25/11", "no" (= nessuna).
+    const due = b.due === null || isYmd(b.due) ? b.due : parseDate(str(b.due, 30).replace(/^!/, ''), base, { past: (f.kind ?? e.kind) === 'note' });
+    if (due === undefined) fail(400, 'Data non valida');
+    f.due = due;
   }
   if (b.contact !== undefined) f.contact = str(b.contact, 1000) || null;
   if (b.mail_cc !== undefined) f.mail_cc = str(b.mail_cc, 1000) || null;
@@ -400,6 +413,23 @@ export function updateEntry(e, b, user) {
 route('POST', '/api/entries', async ({ user, body }) => {
   const b = await body();
   return { id: tx(() => createEntry(b, user)) };
+});
+
+// Una voce con tutto ciò che le sta attorno (per la CLI e i programmi esterni: l'app usa /api/sync).
+// Funziona anche per le voci archiviate, che /api/sync non manda più.
+route('GET', '/api/entries/:id', ({ params, user }) => {
+  const e = getEntry(params.id, user.id);
+  return {
+    ...e,
+    projects: db.prepare(`SELECT p.id, p.tag, p.name FROM projects p WHERE p.id IN
+      (SELECT $pid UNION SELECT project_id FROM entry_projects WHERE entry_id = $id) AND ${PVIS}
+      ORDER BY p.id != $pid, p.name COLLATE NOCASE`).all({ pid: e.project_id, id: e.id, uid: user.id }),
+    items: db.prepare(`SELECT i.id, i.code, i.name FROM entry_items ei JOIN items i ON i.id = ei.item_id
+      WHERE ei.entry_id = ? AND i.deleted_at IS NULL ORDER BY i.code`).all(e.id),
+    logs: db.prepare('SELECT * FROM entry_log WHERE entry_id = ? ORDER BY id').all(e.id),
+    subtasks: db.prepare(`SELECT e.* FROM entries e WHERE e.parent_id = $id AND ${VIS} ORDER BY e.id`).all({ id: e.id, uid: user.id }),
+    attachments: db.prepare('SELECT id, doc_id, filename, mime, size FROM mail_attachments WHERE entry_id = ? ORDER BY id').all(e.id),
+  };
 });
 
 route('PATCH', '/api/entries/:id', async ({ params, user, body }) => {
@@ -828,6 +858,7 @@ route('PATCH', '/api/admin/users/:id', async ({ params, user, body }) => {
     const password = randomCode(12);
     acc.prepare('UPDATE users SET pass = ? WHERE id = ?').run(await hashPassword(password), targetId);
     acc.prepare('DELETE FROM sessions WHERE user_id = ?').run(targetId);
+    revokeApiTokens(targetId);
     dropUser(targetId);
     return { password };
   }

@@ -51,6 +51,19 @@ const MIGRATIONS = [
     used_at TEXT
   );
   `,
+  // Token per la CLI e per i programmi esterni (bot, script): si mandano come "Authorization: Bearer ...".
+  `
+  CREATE TABLE api_tokens (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    hint TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_used_at TEXT
+  );
+  CREATE INDEX api_tokens_user ON api_tokens(user_id);
+  `,
 ];
 
 {
@@ -138,7 +151,9 @@ export function syncMirror(ws, userId) {
   const u = getAccount(userId);
   const role = roleIn(ws.id, userId);
   const data = openDataDb(ws.file);
-  data.prepare(`INSERT INTO users (id, username, name, pass, is_admin, member, created_at) VALUES ($id, $username, $name, '', $admin, $member, $t)
+  // Chi entra nel workspace trova la chat già letta: i messaggi di prima non contano come nuovi.
+  data.prepare(`INSERT INTO users (id, username, name, pass, is_admin, member, created_at, chat_read_id)
+    VALUES ($id, $username, $name, '', $admin, $member, $t, (SELECT IFNULL(MAX(id), 0) FROM chat_messages))
     ON CONFLICT(id) DO UPDATE SET username = $username, name = $name, is_admin = $admin, member = $member`)
     .run({ id: u.id, username: u.username, name: u.name, admin: role === 'admin' ? 1 : 0, member: role ? 1 : 0, t: now() });
 }
@@ -191,7 +206,8 @@ export function destroySession(token) {
 }
 
 export function setSessionWorkspace(token, userId, wsId) {
-  acc.prepare('UPDATE sessions SET workspace_id = ? WHERE token_hash = ?').run(wsId, sha(token));
+  // Con un token API non c'è sessione: cambia solo il workspace predefinito dell'account.
+  if (token) acc.prepare('UPDATE sessions SET workspace_id = ? WHERE token_hash = ?').run(wsId, sha(token));
   acc.prepare('UPDATE users SET last_workspace_id = ? WHERE id = ?').run(wsId, userId);
 }
 
@@ -214,4 +230,36 @@ export function resolveAuth(token) {
   }
   const ws = wsId ? workspaceById(wsId) : null;
   return { account, ws, role: ws ? roleIn(ws.id, account.id) : null };
+}
+
+// ---------- token API ----------
+// Il token si vede una volta sola, alla creazione; nel database resta l'hash e le ultime 4 lettere (per riconoscerlo).
+export function createApiToken(userId, name) {
+  const token = `org_${crypto.randomBytes(32).toString('base64url')}`;
+  const id = Number(acc.prepare('INSERT INTO api_tokens (user_id, name, token_hash, hint, created_at) VALUES (?, ?, ?, ?, ?)')
+    .run(userId, name, sha(token), token.slice(-4), now()).lastInsertRowid);
+  return { id, name, token };
+}
+
+export const apiTokensOf = userId =>
+  acc.prepare('SELECT id, name, hint, created_at, last_used_at FROM api_tokens WHERE user_id = ? ORDER BY created_at DESC').all(userId);
+
+export const revokeApiTokens = (userId, id = null) =>
+  acc.prepare('DELETE FROM api_tokens WHERE user_id = ? AND (? IS NULL OR id = ?)').run(userId, id, id).changes;
+
+// Come resolveAuth, ma per un token API. Il workspace si sceglie a ogni richiesta (header X-Workspace),
+// altrimenti è quello predefinito dell'account. Token sconosciuto → null.
+export function resolveApiToken(token, wsHeader) {
+  const t = acc.prepare('SELECT id, user_id, last_used_at FROM api_tokens WHERE token_hash = ?').get(sha(token));
+  if (!t) return null;
+  // "Ultimo uso" con la precisione di un minuto: non serve scrivere a ogni richiesta.
+  if (!t.last_used_at || Date.now() - Date.parse(t.last_used_at) > 60e3) acc.prepare('UPDATE api_tokens SET last_used_at = ? WHERE id = ?').run(now(), t.id);
+  const account = getAccount(t.user_id);
+  let wsId = defaultWorkspace(account.id);
+  if (wsHeader) {
+    wsId = +wsHeader;
+    if (!workspaceById(wsId) || !roleIn(wsId, account.id)) fail(403, `Non fai parte del workspace ${wsHeader}`);
+  }
+  const ws = wsId ? workspaceById(wsId) : null;
+  return { account, ws, role: ws ? roleIn(ws.id, account.id) : null, apiToken: t.id };
 }

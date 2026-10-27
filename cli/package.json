@@ -1,0 +1,16 @@
+{
+  "name": "organizer-cli",
+  "version": "0.7.0",
+  "description": "Organizer dal terminale: voci, progetti, magazzino, documenti e mail",
+  "type": "module",
+  "bin": {
+    "org": "bin/org.js"
+  },
+  "files": [
+    "bin",
+    "lib"
+  ],
+  "engines": {
+    "node": ">=22"
+  }
+}

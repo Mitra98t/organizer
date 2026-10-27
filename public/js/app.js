@@ -8,9 +8,10 @@ import { viewContacts } from './contacts.js';
 import { viewTrash } from './trash.js';
 import { viewDoc, viewReview, docCancelDraft, setDocFocus } from './docview.js';
 import { viewDocuments } from './documents.js';
+import { viewChat, notifyNew } from './chat.js';
 import { parseQuick, extractCodes, today, parseItemLine, parseProjectLine } from './parse.js';
 import {
-  viewAgenda, viewProjects, viewProject, viewMail, viewDiary, viewItems, viewItem, viewSearch, viewSettings,
+  viewAgenda, viewProjects, viewProject, viewMail, viewDiary, viewItems, viewItem, viewSearch, viewSettings, viewEntryPage,
 } from './views.js';
 
 const root = document.getElementById('root');
@@ -29,6 +30,8 @@ const VIEWS = {
   documenti: { fn: viewDocuments, title: 'Documenti', nav: 'documenti' },
   review: { fn: viewReview, title: 'Revisione', nav: 'documenti' },
   cerca: { fn: viewSearch, title: 'Cerca', nav: null },
+  chat: { fn: viewChat, title: 'Chat', nav: 'chat' },
+  v: { fn: viewEntryPage, title: 'Voce', nav: null },
   impostazioni: { fn: viewSettings, title: 'Impostazioni', nav: 'impostazioni' },
 };
 
@@ -235,6 +238,7 @@ const searchInput = h('input#search', {
 });
 
 const statusDot = h('span.status');
+const chatBadge = h('span.nbadge');
 const titleEl = h('h1.vtitle');
 const viewEl = h('div#view');
 const navLinks = new Map();
@@ -257,7 +261,7 @@ function buildShell() {
         h('div.brand', h('img', { src: 'icons/icon.svg', alt: '' }), h('span', 'Organizer')),
         wsSwitch,
         // Documenti solo nella barra laterale (su telefono si raggiunge dal Magazzino): le tab in basso sono già 6.
-        h('nav.side-nav', [...NAV.slice(0, 5), ['documenti', 'Documenti', 'file'], ...NAV.slice(5)].map(([k, l, i]) => navLink(k, l, i, navLinks, 'nav')),
+        h('nav.side-nav', [...NAV.slice(0, 5), ['documenti', 'Documenti', 'file'], ...NAV.slice(5), ['chat', 'Chat', 'chat']].map(([k, l, i]) => navLink(k, l, i, navLinks, 'nav')),
           h('span.sep'), navLink('cestino', 'Cestino', 'trash', navLinks, 'nav'),
           navLink('impostazioni', 'Impostazioni', 'settings', navLinks, 'nav'))),
       h('main.main',
@@ -265,6 +269,8 @@ function buildShell() {
           titleEl,
           h('label.search', icon('search'), searchInput),
           statusDot,
+          // Su telefono le tab in basso sono già 6: la chat sta in alto, con il numero dei non letti.
+          h('a.icon-btn.only-mobile.top-chat', { href: '#/chat', title: 'Chat' }, icon('chat'), chatBadge),
           h('a.icon-btn.only-mobile', { href: '#/impostazioni', title: 'Impostazioni' }, icon('settings'))),
         h('div.quick',
           h('div.qrow', icon('plus', 'qplus'), quickInput, quickCtx,
@@ -298,6 +304,9 @@ function updateBadges() {
     map.get('mail').badge.textContent = mails || '';
   }
   navLinks.get('cestino').badge.textContent = D.trashCount || '';
+  const unread = D.chatUnread > 99 ? '99+' : D.chatUnread || '';
+  navLinks.get('chat').badge.textContent = unread;
+  chatBadge.textContent = unread;
   navLinks.get('cestino').badge.classList.add('muted-badge');
 }
 
@@ -381,6 +390,7 @@ function renderApp() {
           : S.data ? v.fn(r.id, r.query) : h('div.empty', 'Caricamento…'));
     viewEl.classList.toggle('wide', r.name === 'd' || r.name === 'review');
     document.body.classList.toggle('doc-page', !!S.data && (r.name === 'd' || r.name === 'review'));
+    document.body.classList.toggle('chat-page', !!S.data && r.name === 'chat');
   } catch (e) {
     console.error(e);
     viewEl.replaceChildren(h('div.empty', `Errore di visualizzazione: ${e.message}`));
@@ -467,6 +477,7 @@ initAutocomplete(() => { const c = quickContext(); return c.mode || c.kind; });
 document.documentElement.dataset.theme = localStorage.getItem('org.theme') || 'auto';
 window.addEventListener('hashchange', () => { window.scrollTo(0, 0); render(); });
 window.addEventListener('org:logout', logout);
+window.addEventListener('org:data', ev => notifyNew(ev.detail.prev, ev.detail.data, route().name === 'chat'));
 // Altre viste chiedono di precompilare la barra rapida (es. "Nuova mail" da un contatto).
 window.addEventListener('org:quick', ev => {
   quickInput.value = ev.detail;
