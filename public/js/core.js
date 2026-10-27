@@ -32,11 +32,15 @@ export const ui = {
   trash: null,
   contactFilter: '',
   mailHelper: load('org.mailHelper', false),
+  itemView: load('org.itemView', 'list'),
+  itemCat: null,
+  projDeep: load('org.projDeep', true),
 };
 
 // ---------- render ----------
 // Durante il re-render l'elemento con il focus viene rimosso: i suoi blur/change non devono salvare nulla.
-export const RS = { busy: false };
+// hold: durante un trascinamento la vista non si ridisegna (si rimanda a dopo il rilascio).
+export const RS = { busy: false, hold: false, pending: false };
 let renderFn = () => {};
 let statusFn = () => {};
 export const setRenderer = (fn, status) => { renderFn = fn; statusFn = status; };
@@ -102,6 +106,7 @@ const ICONS = {
   cal: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',
   log: '<path d="M5 6h14M5 12h14M5 18h9"/>',
   clip: '<path d="m20 11.5-8.3 8.3a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"/>',
+  cols: '<rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="16" rx="1"/><rect x="17" y="4" width="4" height="16" rx="1"/>',
   restore: '<path d="M4 12a8 8 0 1 0 2.3-5.6L4 8.7"/><path d="M4 4v4.7h4.7"/>',
   contacts: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6.5 6.5 0 0 1 3.5 6"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
@@ -166,6 +171,7 @@ const group = (arr, key) => {
 function indexData(d) {
   d.contacts ||= []; // cache salvata da una versione precedente
   d.attachments ||= [];
+  d.projectItems ||= [];
   d.entryById = new Map(d.entries.map(e => [e.id, e]));
   d.projectById = new Map(d.projects.map(p => [p.id, p]));
   d.projectByTag = new Map(d.projects.map(p => [p.tag.toLowerCase(), p]));
@@ -182,6 +188,9 @@ function indexData(d) {
   d.contactById = new Map(d.contacts.map(c => [c.id, c]));
   d.contactByEmail = new Map(d.contacts.filter(c => c.email).map(c => [c.email.toLowerCase(), c]));
   d.attachmentsOf = group(d.attachments, 'entry_id');
+  d.itemsOfProject = group(d.projectItems, 'project_id');
+  d.projectsOfItem = group(d.projectItems, 'item_id');
+  d.subprojects = group(d.projects.filter(p => p.parent_id && d.projectById.has(p.parent_id)), 'parent_id');
   return d;
 }
 
@@ -370,11 +379,36 @@ export const isMine = e => {
 
 export const stop = ev => ev.stopPropagation();
 
-// Tinta stabile per progetto (dal tag): lo stesso progetto ha sempre lo stesso colore ovunque.
+// Tinta stabile per progetto (dal tag) e per categoria di magazzino: stesso nome, stesso colore ovunque.
 export function hue(s) {
   let x = 0;
   for (const c of String(s)) x = (x * 31 + c.codePointAt(0)) >>> 0;
   return x % 360;
+}
+export const catStyle = cat => (cat ? `--h:${hue(String(cat).toLowerCase())}` : null);
+export const itemAttrs = it => (it?.category ? { class: 'cat', style: catStyle(it.category) } : {});
+
+// Tutti i sottoprogetti (a ogni livello) di un progetto.
+export function descendants(id) {
+  const out = [];
+  const walk = pid => {
+    for (const c of S.data.subprojects.get(pid) || []) {
+      if (out.includes(c.id)) continue;
+      out.push(c.id);
+      walk(c.id);
+    }
+  };
+  walk(id);
+  return out;
+}
+
+export function ancestors(id) {
+  const out = [];
+  for (let p = S.data.projectById.get(id); p?.parent_id && out.length < 50;) {
+    p = S.data.projectById.get(p.parent_id);
+    if (p) out.unshift(p);
+  }
+  return out;
 }
 
 const RICH_RE = /(https?:\/\/[^\s<>]+[^\s<>.,;:!?)\]'"])|(^|[\s(\[,;:])#([A-Za-z0-9](?:[\w.\-/]*[A-Za-z0-9_])?)/g;
@@ -391,7 +425,7 @@ export function richText(text) {
     } else {
       out.push(text.slice(last, m.index + m[2].length));
       const it = S.data?.itemByCode.get(m[3].toUpperCase());
-      out.push(h('a.code', { href: it ? `#/i/${it.id}` : '#/magazzino', onclick: stop, title: it?.name || '' }, m[3]));
+      out.push(h('a.code', { href: it ? `#/i/${it.id}` : '#/magazzino', onclick: stop, title: [it?.name, it?.category].filter(Boolean).join(' · '), ...itemAttrs(it) }, m[3]));
     }
     last = m.index + m[0].length;
   }

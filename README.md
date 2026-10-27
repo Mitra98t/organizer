@@ -64,9 +64,17 @@ n: la rev B della SCH-042 vuole bootloader >= 2.3 #SCH-042
 
 Nelle liste ogni voce ha un'etichetta e un bordo colorato per tipo (verde todo, blu mail, viola nota), e ogni progetto ha un suo colore fisso, così in Agenda si capisce al volo cosa si sta guardando. I filtri Tutto / Todo / Mail in cima all'Agenda mostrano anche i conteggi.
 
-La barra rapida tiene conto di dove sei: in un progetto le voci finiscono lì, nella scheda di un articolo vengono collegate al suo codice, in Mail e Diario cambia il tipo predefinito.
+La barra in alto cambia con la pagina: in **Magazzino** aggiunge articoli (`SCH-060 scheda relè /scheda @rover`: codice, descrizione, `/categoria`, `@progetto` a cui collegarlo; se il codice esiste già Invio apre la sua scheda), in **Progetti** crea progetti (`Firmware motori @rover` lo crea come sottoprogetto di @rover).
+
+`Esc` esce dal campo; fuori dai campi chiude le voci aperte e poi torna all'elenco (da un progetto a Progetti, da un articolo a Magazzino).
+
+Nelle altre pagine la barra rapida tiene conto di dove sei: in un progetto le voci finiscono lì, nella scheda di un articolo vengono collegate al suo codice, in Mail e Diario cambia il tipo predefinito.
 
 Scorciatoie da tastiera: `n` o `/` per scrivere, `Ctrl/⌘ K` per cercare.
+
+## Progetti
+
+Un progetto può stare dentro un altro (campo "Dentro" nella sua pagina, o `@padre` quando lo crei), a più livelli. L'elenco li mostra ad albero con le voci aperte sommate e si riorganizza **trascinando**: un progetto rilasciato su un altro ci finisce dentro, rilasciato sulla riga in cima torna principale (su telefono: tieni premuto e trascina; dopo ogni spostamento c'è "Annulla"); nella pagina di un progetto ci sono i sottoprogetti e, se attivo "includi le voci dei sottoprogetti", anche le loro voci. La sezione **Magazzino del progetto** raccoglie gli articoli collegati a mano (con autocompletamento; un codice nuovo crea l'articolo) e quelli citati con `#CODICE` nelle voci.
 
 ## Mail
 
@@ -91,6 +99,8 @@ Rubrica condivisa con nome, email, telefono, azienda, ruolo e note, tutto modifi
 Eliminare sposta nel cestino: voci (con le loro sotto-attività), progetti, articoli, documenti e contatti. Dopo ogni eliminazione compare "Annulla". Dal Cestino si ripristina o si elimina definitivamente; dopo 30 giorni (variabile `TRASH_DAYS`) gli elementi spariscono da soli, file compresi. Scrivere `@tag` o `#CODICE` di qualcosa che è nel cestino lo ripristina.
 
 ## Magazzino
+
+Il colore di un articolo dipende dalla sua categoria, ovunque compaia (elenchi, `#CODICE` nel testo, suggerimenti); senza categoria è grigio. Si può filtrare per categoria o passare alla vista **per categoria**, a colonne sugli schermi larghi. Nella composizione e nei collegamenti ai progetti il codice si autocompleta; se non esiste viene creato.
 
 Ogni articolo ha codice, descrizione, categoria, versione firmware, posizione, quantità e note (pinout, procedura di flash…). Gli carichi documenti (firmware, datasheet, schemi, manuali, foto) o link esterni. Un file di tipo firmware con versione aggiorna da solo il campo Firmware, e per ogni file si vede lo sha256. "Composizione" collega prodotti e schede. In basso trovi tutte le voci che citano quel `#CODICE`. Se rinomini un codice, i riferimenti nel testo delle voci vengono aggiornati.
 
@@ -126,7 +136,8 @@ Caddy ottiene il certificato Let's Encrypt da solo. Puoi togliere la porta `8080
 
 ## Backup
 
-- Solo database: Impostazioni → Backup (admin) scarica un file `.db` consistente.
+- Solo database: Impostazioni → Backup e ripristino (admin) → **Scarica backup** (file `.db`).
+- Ripristino dal browser: stesso pannello → **Ripristina da backup…** con un file `.db`, anche di una versione precedente dell'app (viene aggiornato). Prima di sovrascrivere il server salva una copia del database attuale (`pre-restore-*.db` nel volume, tiene le ultime 3); dopo, tutti rientrano con le credenziali del backup. I file caricati non sono nel `.db`: se mancano, il ripristino lo segnala.
 - Tutto (database + file caricati): `make backup` crea `backups/organizer-AAAAMMGG-HHMMSS.tgz`
   (ferma l'app per qualche secondo così la copia di SQLite è coerente).
 - Ripristino: `make restore FILE=backups/organizer-....tgz`.
@@ -151,6 +162,7 @@ server/       HTTP, API REST, autenticazione, SSE (Node, solo moduli standard)
   mail.js     allegati, .eml e pacchetto per l'helper Thunderbird
   contacts.js rubrica
   trash.js    cestino e pulizia automatica
+  backup.js   ripristino di un backup .db dal browser
 public/       PWA senza build: HTML, CSS, moduli ES
   js/parse.js parser della barra rapida, condiviso con il server
 test/         node --test

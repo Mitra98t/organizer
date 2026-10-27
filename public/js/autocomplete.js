@@ -2,8 +2,11 @@
 // data-ac = tipo della voce ('todo' | 'mail' | 'note'), oppure 'auto' per la barra rapida
 // (il tipo si ricava dal prefisso t:/m:/n: e dal contesto). data-ac-only limita i token accettati.
 // data-ac="email": campo di indirizzi separati da virgola (A, Cc), suggerisce la rubrica senza simboli.
+// data-ac="code" / "project": tutto il campo è un codice di magazzino / un progetto; scegliere un
+// suggerimento conferma subito il campo (come premere Invio). data-ac-self esclude un codice.
+// Nella barra in alto: modalità 'item' (/categoria, @progetto) e 'project' (@progetto padre).
 // Un solo menu flottante per tutta l'app, agganciato al campo che ha il focus: sopravvive ai re-render.
-import { h, S, fmtDay, hue } from './core.js';
+import { h, S, fmtDay, hue, catStyle } from './core.js';
 import { parseDate, parseQuick, today, fromYmd } from './parse.js';
 
 const box = h('div.ac', { hidden: true, role: 'listbox' });
@@ -51,15 +54,54 @@ function update(el) {
   const pos = el.selectionStart;
   if (pos == null || pos !== el.selectionEnd) return close();
   if (el.dataset.ac === 'email') return updateEmail(el, pos);
-  const m = el.value.slice(0, pos).match(/(?:^|\s)([@#!+>])([^\s@#!+>]*)$/);
-  if (!m || (el.dataset.acOnly && !el.dataset.acOnly.includes(m[1]))) return close();
+  if (el.dataset.ac === 'code' || el.dataset.ac === 'project') return updateWhole(el);
+  const kind = kindOf(el);
+  const allowed = el.dataset.acOnly || { item: '/@', project: '@' }[kind] || '@#!+>';
+  const m = el.value.slice(0, pos).match(/(?:^|\s)([@#!+>/])([^\s@#!+>/]*)$/);
+  if (!m || !allowed.includes(m[1])) return close();
+  // Nella barra articoli il primo termine è il codice: niente suggerimenti finché non c'è.
+  if (kind === 'item' && m.index === 0 && !/^\s/.test(m[0])) return close();
   const [, sig, q] = m;
   const start = pos - q.length - 1;
   const end = pos + el.value.slice(pos).match(/^\S*/)[0].length;
-  const items = suggest(sig, q, kindOf(el));
+  const items = suggest(sig, q, kind);
   if (!items.length) return close();
   st = { el, start, end, items, index: 0, token: sig + q, suffix: ' ' };
   draw();
+}
+
+function updateWhole(el) {
+  const q = lc(el.value.trim().replace(/^[#@]/, ''));
+  if (!q) return close();
+  const D = S.data;
+  let items;
+  if (el.dataset.ac === 'code') {
+    const self = lc(el.dataset.acSelf);
+    items = itemSuggestions(q, i => lc(i.code) !== self).map(i => ({ ...i, insert: i.label }));
+  } else {
+    items = projectSuggestions(q).map(p => ({ ...p, insert: p.label.slice(1) }));
+  }
+  if (!items.length) return close();
+  st = { el, start: 0, end: el.value.length, items, index: 0, token: el.value.trim(), suffix: '', submit: true };
+  draw();
+}
+
+function itemSuggestions(ql, filter = () => true) {
+  return S.data.items
+    .filter(i => filter(i) && (!ql || [i.code, i.name, i.firmware, i.category].some(v => lc(v).includes(ql))))
+    .sort((a, b) => rank(a.code, ql) - rank(b.code, ql) || a.code.localeCompare(b.code))
+    .slice(0, 8)
+    .map(i => ({ label: i.code, hint: i.name, extra: i.firmware ? `fw ${i.firmware}` : i.category, code: true, cat: i.category }));
+}
+
+function projectSuggestions(ql) {
+  const order = { open: 0, paused: 1, closed: 2 };
+  return S.data.projects
+    .filter(p => !ql || lc(p.tag).includes(ql) || lc(p.name).includes(ql))
+    .filter(p => p.status !== 'closed' || ql)
+    .sort((a, b) => rank(a.tag, ql) - rank(b.tag, ql) || order[a.status] - order[b.status] || a.tag.localeCompare(b.tag))
+    .slice(0, 8)
+    .map(p => ({ label: `@${p.tag}`, hint: lc(p.name) !== lc(p.tag) ? p.name : '', extra: STATUS[p.status] || '', hue: hue(p.tag) }));
 }
 
 function updateEmail(el, pos) {
@@ -103,22 +145,17 @@ function suggest(sig, q, kind) {
   if (!D) return [];
   const ql = lc(q);
 
-  if (sig === '@') {
-    const order = { open: 0, paused: 1, closed: 2 };
-    return D.projects
-      .filter(p => !ql || lc(p.tag).includes(ql) || lc(p.name).includes(ql))
-      .filter(p => p.status !== 'closed' || ql)
-      .sort((a, b) => rank(a.tag, ql) - rank(b.tag, ql) || order[a.status] - order[b.status] || a.tag.localeCompare(b.tag))
-      .slice(0, 8)
-      .map(p => ({ insert: `@${p.tag}`, label: `@${p.tag}`, hint: lc(p.name) !== lc(p.tag) ? p.name : '', extra: STATUS[p.status] || '', hue: hue(p.tag) }));
-  }
+  if (sig === '@') return projectSuggestions(ql).map(p => ({ ...p, insert: p.label }));
 
-  if (sig === '#') {
-    return D.items
-      .filter(i => !ql || [i.code, i.name, i.firmware, i.category].some(v => lc(v).includes(ql)))
-      .sort((a, b) => rank(a.code, ql) - rank(b.code, ql) || a.code.localeCompare(b.code))
+  if (sig === '#') return itemSuggestions(ql).map(i => ({ ...i, insert: `#${i.label}` }));
+
+  if (sig === '/') {
+    const counts = new Map();
+    for (const i of D.items) if (i.category) counts.set(i.category, (counts.get(i.category) || 0) + 1);
+    return [...counts].filter(([c]) => !ql || lc(c).includes(ql))
+      .sort((a, b) => rank(a[0], ql) - rank(b[0], ql) || b[1] - a[1])
       .slice(0, 8)
-      .map(i => ({ insert: `#${i.code}`, label: i.code, hint: i.name, extra: i.firmware ? `fw ${i.firmware}` : i.category, code: true }));
+      .map(([c, n]) => ({ insert: `/${c.replace(/ /g, '_')}`, label: `/${c}`, extra: `${n} articoli`, cat: c }));
   }
 
   if (sig === '+') {
@@ -161,7 +198,10 @@ function draw() {
     role: 'option',
     onclick: () => accept(i),
   },
-  h('span.ac-l', { class: it.code ? 'code' : it.hue != null ? 'proj' : null, style: it.hue != null ? `--h:${it.hue}` : null }, it.label),
+  h('span.ac-l', {
+    class: [it.code && 'code', it.cat && 'cat', it.hue != null && 'proj'].filter(Boolean).join(' ') || null,
+    style: it.hue != null ? `--h:${it.hue}` : catStyle(it.cat),
+  }, it.label),
   it.hint && h('span.ac-h', it.hint),
   it.extra && h('span.ac-x', it.extra))));
   box.hidden = false;
@@ -188,8 +228,10 @@ function accept(i) {
   el.value = el.value.slice(0, start) + ins + after;
   const caret = start + ins.length;
   el.setSelectionRange(caret, caret);
+  const submit = st.submit;
   close();
   el.dispatchEvent(new Event('input', { bubbles: true }));
+  if (submit) el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
 }
 
 function onKey(ev) {

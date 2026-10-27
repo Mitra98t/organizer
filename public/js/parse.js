@@ -105,3 +105,35 @@ export function parseQuick(text, { today: base = today(), kind = 'todo' } = {}) 
   out.codes = extractCodes(out.title);
   return out;
 }
+
+// Barra in alto nella pagina Magazzino:  SCH-060 scheda relè /scheda @rover
+// (primo termine = codice, /categoria, @progetto a cui collegarlo, il resto è la descrizione)
+export const CODE_OK = /^[A-Za-z0-9](?:[\w.\-/]*[A-Za-z0-9_])?$/;
+
+export function parseItemLine(text) {
+  const words = String(text || '').trim().split(/\s+/).filter(Boolean);
+  const out = { code: (words.shift() || '').replace(/^#/, ''), name: '', category: null, project: null };
+  const rest = [];
+  for (const w of words) {
+    let m;
+    if ((m = w.match(/^\/(\S+)$/))) out.category = m[1].replace(/_/g, ' ');
+    else if ((m = w.match(/^@([\p{L}\d_][\p{L}\d_-]*)$/u))) out.project = m[1];
+    else rest.push(w);
+  }
+  out.name = rest.join(' ');
+  out.valid = CODE_OK.test(out.code);
+  return out;
+}
+
+// Barra in alto nella pagina Progetti:  Firmware motori @rover  (→ sottoprogetto di @rover)
+export function parseProjectLine(text) {
+  const out = { name: '', parent: null };
+  const rest = [];
+  for (const w of String(text || '').trim().split(/\s+/).filter(Boolean)) {
+    const m = w.match(/^@([\p{L}\d_][\p{L}\d_-]*)$/u);
+    if (m) out.parent = m[1];
+    else rest.push(w);
+  }
+  out.name = rest.join(' ');
+  return out;
+}

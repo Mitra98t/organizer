@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { routes } from './api.js';
 import './contacts.js';
 import './mail.js';
+import './backup.js';
 import { purgeExpired } from './trash.js';
 import { userFromToken } from './auth.js';
 import { bump } from './events.js';

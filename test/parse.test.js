@@ -62,3 +62,12 @@ test('nelle note le date guardano al passato', () => {
   assert.equal(parseQuick('n: banco in crash !lun', { today: T }).due, '2026-10-26');
   assert.equal(parseQuick('banco in crash !lun', { today: T }).due, '2026-11-02');
 });
+
+test('riga articolo e riga progetto', async () => {
+  const { parseItemLine, parseProjectLine } = await import('../public/js/parse.js');
+  assert.deepEqual(parseItemLine('#SCH-060 scheda relè 8 canali /scheda @rover'),
+    { code: 'SCH-060', name: 'scheda relè 8 canali', category: 'scheda', project: 'rover', valid: true });
+  assert.equal(parseItemLine('/scheda').valid, false);
+  assert.equal(parseItemLine('CAV-1 /modulo_radio').category, 'modulo radio');
+  assert.deepEqual(parseProjectLine('Firmware motori @rover'), { name: 'Firmware motori', parent: 'rover' });
+});

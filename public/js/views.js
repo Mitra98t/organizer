@@ -1,6 +1,7 @@
 import {
-  h, icon, S, ui, api, act, render, richText, dueInfo, dayDiff, fmtDay, fmtLongDay, fmtTime, fmtSize,
+  h, icon, S, ui, RS, api, act, render, richText, dueInfo, dayDiff, fmtDay, fmtLongDay, fmtTime, fmtSize,
   userName, toast, save, patchEntry, addEntry, isMine, localDay, autosize, stop, copy, hue, trashIt, contactLabel,
+  descendants, ancestors, catStyle, itemAttrs,
 } from './core.js';
 import { today, addDays } from './parse.js';
 import { mailComposer } from './mail.js';
@@ -250,65 +251,201 @@ function projectStats() {
   return stats;
 }
 
+// Statistiche di un progetto sommate a quelle di tutti i suoi sottoprogetti.
+function deepStats(stats, id) {
+  const out = { open: 0, over: 0, next: null, last: '' };
+  for (const pid of [id, ...descendants(id)]) {
+    const s = stats.get(pid);
+    if (!s) continue;
+    out.open += s.open;
+    out.over += s.over;
+    if (s.next && (!out.next || s.next < out.next)) out.next = s.next;
+    if (s.last > out.last) out.last = s.last;
+  }
+  return out;
+}
+
+function projectCard(p, stats, { compact = false, dnd = false } = {}) {
+  const own = stats.get(p.id) || { open: 0 };
+  const s = deepStats(stats, p.id);
+  const next = s.next && dueInfo(s.next);
+  const subs = descendants(p.id).length;
+  return h('a.card', { href: `#/p/${p.id}`, class: compact ? 'compact' : null, 'data-pid': dnd ? p.id : null, draggable: 'false' },
+    h('div.card-h', h('span.card-t', p.name), p.private ? icon('lock') : null, p.status !== 'open' && h('span.muted', STATUS_LABEL[p.status].toLowerCase().replace(/i$/, 'o'))),
+    h('div.card-tag', { style: `--h:${hue(p.tag)}` }, `@${p.tag}`),
+    h('div.card-m',
+      h('span', subs && s.open !== own.open ? `${s.open} aperte (${own.open} qui)` : `${s.open} aperte`),
+      s.over > 0 && h('span.over', `${s.over} scadute`),
+      next && h('span', { class: next.cls || null }, `prossima ${next.label}`),
+      subs > 0 && h('span', `${subs} sotto`)));
+}
+
 export function viewProjects() {
   const D = S.data;
   const stats = projectStats();
   const counts = { open: 0, paused: 0, closed: 0 };
   for (const p of D.projects) counts[p.status]++;
-  const ps = D.projects.filter(p => p.status === ui.projStatus)
-    .sort((a, b) => ((stats.get(b.id)?.last || b.updated_at).localeCompare(stats.get(a.id)?.last || a.updated_at)));
+  const last = p => deepStats(stats, p.id).last || p.updated_at;
+  const inList = p => p.status === ui.projStatus;
+  // Albero: radici = progetti dello stato scelto il cui padre non è anch'esso in elenco.
+  const roots = D.projects.filter(p => inList(p) && !(p.parent_id && D.projectById.get(p.parent_id) && inList(D.projectById.get(p.parent_id))))
+    .sort((a, b) => last(b).localeCompare(last(a)));
+  const tree = (p, depth) => {
+    const kids = (D.subprojects.get(p.id) || []).filter(inList).sort((a, b) => a.name.localeCompare(b.name));
+    return h('div.ptree', { class: depth ? 'sub' : null },
+      projectCard(p, stats, { dnd: true }),
+      kids.length > 0 && h('div.pkids', kids.map(k => tree(k, depth + 1))));
+  };
 
   return h('div.view',
     h('div.toolbar',
       Object.entries(STATUS_LABEL).map(([k, label]) =>
         h('button.chip', { class: ui.projStatus === k && 'on', onclick: () => { ui.projStatus = k; render(); } }, label, h('span.n', counts[k])))),
-    h('form.inline-add', {
-      onsubmit: ev => {
-        ev.preventDefault();
-        const name = ev.target.elements.name.value.trim();
-        if (!name) return;
-        ev.target.elements.name.value = '';
-        act(async () => { const r = await api('POST', '/projects', { name }); location.hash = `#/p/${r.id}`; });
-      },
-    }, h('input', { name: 'name', placeholder: 'Nuovo progetto…', 'data-fk': 'newproj', autocomplete: 'off' }), h('button.btn', { type: 'submit' }, icon('plus'), 'Crea')),
-    !ps.length && empty(h('p', ui.projStatus === 'open'
-      ? ['Nessun progetto aperto. Puoi anche crearli al volo scrivendo ', kbd('@nome'), ' nella barra in alto.']
+    !roots.length && empty(h('p', ui.projStatus === 'open'
+      ? ['Nessun progetto aperto. Crealo dalla barra in alto (', kbd('Nome @padre'), ' per un sottoprogetto) o al volo scrivendo ', kbd('@nome'), ' in una voce.']
       : 'Nessun progetto qui.')),
-    h('div.cards', ps.map(p => {
-      const s = stats.get(p.id) || { open: 0, over: 0, next: null };
-      const next = s.next && dueInfo(s.next);
-      return h('a.card', { href: `#/p/${p.id}` },
-        h('div.card-h', h('span.card-t', p.name), p.private ? icon('lock') : null),
-        h('div.card-tag', { style: `--h:${hue(p.tag)}` }, `@${p.tag}`),
-        h('div.card-m',
-          h('span', `${s.open} aperte`),
-          s.over > 0 && h('span.over', `${s.over} scadute`),
-          next && h('span', { class: next.cls || null }, `prossima ${next.label}`)));
-    })));
+    // La riga in cima è anche la zona di rilascio "progetto principale": ha sempre la stessa altezza,
+    // così all'inizio del trascinamento l'elenco non si sposta sotto il puntatore.
+    roots.length > 0 && h('div.proot',
+      h('span.idle', matchMedia('(pointer: coarse)').matches
+        ? 'Tieni premuto un progetto e trascinalo su un altro per spostarlo dentro.'
+        : 'Trascina un progetto su un altro per spostarlo dentro.'),
+      h('span.active', 'Rilascia qui per renderlo un progetto principale')),
+    h('div.pforest', roots.map(p => tree(p, 0))));
 }
+
+// ---------- drag and drop dell'albero progetti ----------
+// Eventi pointer (non il drag nativo HTML5) così funziona uguale con mouse e touch.
+// Mouse: si trascina dopo 5 px. Touch: pressione lunga, così lo scorrimento della pagina resta normale.
+let pdrag = null;
+
+function dragStart() {
+  pdrag.active = true;
+  RS.hold = true;
+  const p = S.data.projectById.get(pdrag.id);
+  pdrag.ghost = h('div.drag-ghost', h('span', p.name), h('span.tag', { style: `--h:${hue(p.tag)}` }, `@${p.tag}`));
+  document.body.append(pdrag.ghost);
+  document.body.classList.add('pdnd');
+  pdrag.card.classList.add('dragging');
+  navigator.vibrate?.(15);
+}
+
+function dragTarget(x, y) {
+  const el = document.elementFromPoint(x, y);
+  const card = el?.closest('.pforest .card[data-pid]');
+  if (card) {
+    const tid = +card.dataset.pid;
+    const ok = tid !== pdrag.id && !descendants(pdrag.id).includes(tid);
+    return { el: card, parent: tid, ok };
+  }
+  if (el?.closest('.proot')) return { el: el.closest('.proot'), parent: null, ok: true };
+  return null;
+}
+
+function dragEnd(drop) {
+  const d = pdrag;
+  pdrag = null;
+  clearTimeout(d.timer);
+  if (!d.active) return;
+  d.ghost.remove();
+  d.card.classList.remove('dragging');
+  d.target?.el.classList.remove('drop-ok', 'drop-no');
+  document.body.classList.remove('pdnd');
+  // Il rilascio non deve diventare anche un clic sul link della card.
+  // Se il clic non arriva (rilascio fuori dalla card) il blocco scade, così non mangia il clic successivo.
+  const swallow = ev => { ev.preventDefault(); ev.stopPropagation(); };
+  window.addEventListener('click', swallow, { capture: true, once: true });
+  setTimeout(() => window.removeEventListener('click', swallow, { capture: true }), 80);
+  RS.hold = false;
+  const p = S.data.projectById.get(d.id);
+  const t = d.target;
+  if (drop && t?.ok && p && (p.parent_id ?? null) !== t.parent) {
+    const before = p.parent_id ?? null;
+    const where = t.parent ? `dentro @${S.data.projectById.get(t.parent).tag}` : 'tra i principali';
+    act(() => api('PATCH', `/projects/${p.id}`, { parent_id: t.parent })).then(() => {
+      toast(`@${p.tag} spostato ${where}`, { action: { label: 'Annulla', fn: () => act(() => api('PATCH', `/projects/${p.id}`, { parent_id: before })) } });
+    });
+  }
+  if (RS.pending) {
+    RS.pending = false;
+    render();
+  }
+}
+
+document.addEventListener('pointerdown', ev => {
+  const card = ev.target.closest('.pforest .card[data-pid]');
+  if (!card || ev.button !== 0) return;
+  pdrag = { id: +card.dataset.pid, card, x: ev.clientX, y: ev.clientY, touch: ev.pointerType !== 'mouse', active: false };
+  if (pdrag.touch) pdrag.timer = setTimeout(() => pdrag && dragStart(), 380);
+});
+
+document.addEventListener('pointermove', ev => {
+  if (!pdrag) return;
+  const dist = Math.hypot(ev.clientX - pdrag.x, ev.clientY - pdrag.y);
+  if (!pdrag.active) {
+    if (pdrag.touch) { if (dist > 8) dragEnd(false); } // ha iniziato a scorrere: niente trascinamento
+    else if (dist > 5) dragStart();
+    if (!pdrag?.active) return;
+  }
+  ev.preventDefault();
+  pdrag.ghost.style.transform = `translate(${ev.clientX + 12}px, ${ev.clientY + 8}px)`;
+  const t = dragTarget(ev.clientX, ev.clientY);
+  if (pdrag.target?.el !== t?.el) {
+    pdrag.target?.el.classList.remove('drop-ok', 'drop-no');
+    t?.el.classList.add(t.ok ? 'drop-ok' : 'drop-no');
+  }
+  pdrag.target = t;
+  // Scorrimento automatico vicino ai bordi della finestra.
+  const edge = 70;
+  if (ev.clientY < edge) window.scrollBy(0, -12);
+  else if (ev.clientY > window.innerHeight - edge) window.scrollBy(0, 12);
+}, { passive: false });
+
+document.addEventListener('pointerup', () => pdrag && dragEnd(true));
+document.addEventListener('pointercancel', () => pdrag && dragEnd(false));
+document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && pdrag?.active) { ev.preventDefault(); dragEnd(false); } }, true);
+// Su touch, dopo la pressione lunga, il dito non deve far scorrere la pagina né aprire il menu del link.
+document.addEventListener('touchmove', ev => { if (pdrag?.active) ev.preventDefault(); }, { passive: false });
+document.addEventListener('contextmenu', ev => { if (pdrag) ev.preventDefault(); });
 
 export function viewProject(id) {
   const D = S.data;
   const p = D.projectById.get(+id);
   if (!p) return empty(h('p', 'Progetto non trovato (o privato).'), h('a', { href: '#/progetti' }, 'Torna ai progetti'));
   const me = D.me;
-  const es = D.entries.filter(e => e.project_id === p.id);
+  const subIds = descendants(p.id);
+  const ids = new Set(ui.projDeep ? [p.id, ...subIds] : [p.id]);
+  const es = D.entries.filter(e => ids.has(e.project_id));
   const top = es.filter(e => !e.parent_id);
   const todos = top.filter(e => e.kind === 'todo' && !e.done_at).sort(byDue);
   const mails = top.filter(e => e.kind === 'mail' && !e.done_at).sort(byDue);
   const notes = top.filter(e => e.kind === 'note').sort(byNoteDesc);
   const done = top.filter(e => e.kind !== 'note' && e.done_at).sort(byDoneDesc);
-  const itemIds = new Set(es.flatMap(e => (D.itemsOfEntry.get(e.id) || []).map(x => x.item_id)));
   const patch = f => act(() => api('PATCH', `/projects/${p.id}`, f));
-  const rows = (arr, showKind = false) => arr.map(e => entryRow(e, { showProject: false, showKind }));
+  const rows = (arr, showKind = false) => arr.map(e => entryRow(e, { showProject: e.project_id !== p.id, showKind }));
+
+  // Magazzino: collegati a mano (rimovibili) + citati con #CODICE nelle voci o collegati ai sottoprogetti.
+  const manual = (D.itemsOfProject.get(p.id) || []).map(x => D.itemById.get(x.item_id)).filter(Boolean);
+  const manualIds = new Set(manual.map(i => i.id));
+  const other = new Set();
+  for (const e of es) for (const x of D.itemsOfEntry.get(e.id) || []) other.add(x.item_id);
+  if (ui.projDeep) for (const sid of subIds) for (const x of D.itemsOfProject.get(sid) || []) other.add(x.item_id);
+  const cited = [...other].filter(i => !manualIds.has(i)).map(i => D.itemById.get(i)).filter(Boolean);
+
+  const parentOptions = [['', '— nessuno (progetto principale) —'],
+    ...D.projects.filter(x => x.id !== p.id && !subIds.includes(x.id)).sort((a, b) => a.tag.localeCompare(b.tag)).map(x => [String(x.id), `@${x.tag}`])];
+  const kids = (D.subprojects.get(p.id) || []).sort((a, b) => a.name.localeCompare(b.name));
+  const stats = projectStats();
 
   return h('div.view',
+    ancestors(p.id).length > 0 && h('div.crumbs', ancestors(p.id).map(a => [projTag(a), h('span.muted', ' › ')])),
     h('div.head',
-      h('a.icon-btn', { href: '#/progetti', title: 'Progetti' }, icon('back')),
+      h('a.icon-btn', { href: '#/progetti', title: 'Progetti (Esc)' }, icon('back')),
       h('input.h-title', { value: p.name, 'data-fk': `pname-${p.id}`, onchange: ev => patch({ name: ev.target.value }) })),
     h('div.fields',
       h('label.f', h('span', 'Tag @'), h('input.mono', { value: p.tag, size: 14, 'data-fk': `ptag-${p.id}`, onchange: ev => patch({ tag: ev.target.value }) })),
       h('label.f', h('span', 'Stato'), selectOf(p.status, [['open', 'Aperto'], ['paused', 'In pausa'], ['closed', 'Chiuso']], v => patch({ status: v }))),
+      h('label.f', h('span', 'Dentro'), selectOf(p.parent_id ? String(p.parent_id) : '', parentOptions, v => patch({ parent_id: v ? +v : null }))),
       p.created_by === me.id && h('button.chip', { class: p.private && 'on', onclick: () => patch({ private: !p.private }) }, icon('lock'), 'privato'),
       h('span.grow'),
       (p.created_by === me.id || me.is_admin) && h('button.btn.sm.danger', {
@@ -321,10 +458,30 @@ export function viewProject(id) {
       rows: 2, value: p.notes, placeholder: 'Appunti di progetto: repo, IP delle schede, toolchain, riferimenti…', 'data-fk': `pnotes-${p.id}`,
       oninput: autosize, onblur: ev => { if (ev.target.value !== p.notes) patch({ notes: ev.target.value }); },
     }),
+    section(`p${p.id}-subs`, 'Sottoprogetti', [
+      kids.length > 0 && h('div.cards.subcards', kids.map(k => projectCard(k, stats, { compact: true }))),
+      h('input.sub-in', {
+        placeholder: '+ nuovo sottoprogetto (nome, Invio)', 'data-fk': `newsub-${p.id}`, autocomplete: 'off',
+        onkeydown: enterAdd(name => act(() => api('POST', '/projects', { name, parent_id: p.id }))),
+      }),
+    ], { count: kids.length, collapsed: !kids.length }),
+    subIds.length > 0 && h('div.toolbar',
+      h('button.chip', { class: ui.projDeep && 'on', onclick: () => { ui.projDeep = !ui.projDeep; save('org.projDeep', ui.projDeep); render(); } },
+        icon('folder'), 'includi le voci dei sottoprogetti')),
     section(`p${p.id}-todo`, 'Da fare', todos.length ? rows(todos) : [empty(h('p', 'Scrivi nella barra in alto: le voci finiscono in ', kbd(`@${p.tag}`), '.'))], { count: todos.length }),
     mails.length > 0 && section(`p${p.id}-mail`, 'Mail da mandare', rows(mails)),
     notes.length > 0 && section(`p${p.id}-notes`, 'Diario', rows(notes)),
-    itemIds.size > 0 && section(`p${p.id}-items`, 'Magazzino coinvolto', [h('div.item-chips', [...itemIds].map(i => itemChip(D.itemById.get(i))))], { count: itemIds.size }),
+    section(`p${p.id}-items`, 'Magazzino del progetto', [
+      h('div.comp',
+        h('div.item-chips', manual.map(i => h('span.chip-wrap', itemChip(i),
+          h('button.icon-btn.sm', { title: 'Scollega dal progetto', onclick: () => act(() => api('DELETE', `/projects/${p.id}/items/${i.id}`)) }, icon('x'))))),
+        h('input.sub-in.mono', {
+          placeholder: '+ codice articolo', 'data-fk': `pitem-${p.id}`, size: 18, 'data-ac': 'code', autocomplete: 'off', autocapitalize: 'characters',
+          onkeydown: enterAdd(code => act(() => api('POST', `/projects/${p.id}/items`, { code }))),
+        })),
+      cited.length > 0 && h('div.comp', h('span.muted', ui.projDeep && subIds.length ? 'Citati nelle voci e nei sottoprogetti' : 'Citati nelle voci'),
+        h('div.item-chips', cited.map(itemChip))),
+    ], { count: manual.length + cited.length }),
     done.length > 0 && section(`p${p.id}-done`, 'Completate', rows(done, true), { collapsed: true }));
 }
 
@@ -366,7 +523,7 @@ export function viewDiary() {
 // ---------- magazzino ----------
 function itemChip(it) {
   if (!it) return null;
-  return h('a.item-chip', { href: `#/i/${it.id}` }, h('span.code', it.code), it.name && h('span', it.name), it.firmware && h('span.fw', `fw ${it.firmware}`));
+  return h('a.item-chip', { href: `#/i/${it.id}` }, h('span.code', itemAttrs(it), it.code), it.name && h('span', it.name), it.firmware && h('span.fw', `fw ${it.firmware}`));
 }
 
 function openCountOf(itemId) {
@@ -377,52 +534,152 @@ function openCountOf(itemId) {
   }).length;
 }
 
+const NO_CAT = 'Senza categoria';
+
+// ---------- scheda rapida al passaggio del mouse (solo con il mouse: su touch si apre la pagina) ----------
+const peekBox = h('div.peek', { hidden: true });
+let peekTimer = null;
+let peekAnchor = null;
+
+function hidePeek() {
+  clearTimeout(peekTimer);
+  peekAnchor = null;
+  peekBox.hidden = true;
+}
+
+function peekContent(it) {
+  const D = S.data;
+  const docs = D.docsOf.get(it.id) || [];
+  const fw = docs.find(d => d.kind === 'firmware' && !d.url);
+  const projects = [
+    ...(D.projectsOfItem.get(it.id) || []).map(x => D.projectById.get(x.project_id)),
+    ...(D.entriesOfItem.get(it.id) || []).map(x => D.projectById.get(D.entryById.get(x.entry_id)?.project_id)),
+  ].filter((p, i, a) => p && a.indexOf(p) === i);
+  const open = (D.entriesOfItem.get(it.id) || []).map(x => D.entryById.get(x.entry_id))
+    .filter(e => e && e.kind !== 'note' && !e.done_at).sort(byDue);
+  const children = (D.childItems.get(it.id) || []).map(l => D.itemById.get(l.child_id)).filter(Boolean);
+  const parents = (D.parentItems.get(it.id) || []).map(l => D.itemById.get(l.parent_id)).filter(Boolean);
+  const row = (label, ...val) => h('div.peek-r', h('span.muted', label), h('span', ...val));
+  const codes = list => list.slice(0, 6).map(c => h('span.code', itemAttrs(c), c.code)).concat(list.length > 6 ? [h('span.muted', `+${list.length - 6}`)] : []);
+
+  return [
+    h('div.peek-h', h('span.code', itemAttrs(it), it.code), it.category && h('span.peek-cat', h('span.cdot.cat', { style: catStyle(it.category) }), it.category)),
+    h('div.peek-name', it.name || h('span.muted', 'senza descrizione')),
+    h('div.peek-grid',
+      it.firmware && row('Firmware', h('span.mono', it.firmware), fw && h('span.muted', ` · ${fw.filename}`)),
+      it.location && row('Posizione', it.location),
+      it.qty != null && row('Quantità', String(it.qty)),
+      docs.length > 0 && row('Documenti', `${docs.length}`, h('span.muted', ` · ${[...new Set(docs.map(d => d.kind))].join(', ')}`)),
+      projects.length > 0 && row('Progetti', projects.map(p => h('span.tag', { style: `--h:${hue(p.tag)}` }, `@${p.tag}`))),
+      children.length > 0 && row('Contiene', codes(children)),
+      parents.length > 0 && row('Usato in', codes(parents)),
+      open.length > 0 && row('Da fare', `${open.length}`, h('span.muted', ` · ${open[0].title.replace(/(^|\s)#/g, '$1').slice(0, 48)}`))),
+    it.notes && h('div.peek-notes', it.notes.length > 280 ? `${it.notes.slice(0, 280)}…` : it.notes),
+  ];
+}
+
+function placePeek() {
+  const r = peekAnchor.getBoundingClientRect();
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const w = peekBox.offsetWidth;
+  const ph = peekBox.offsetHeight;
+  // A destra dell'elemento se c'è spazio (vista a colonne), altrimenti sotto o sopra (vista a lista).
+  if (r.right + 12 + w < vw - 8) {
+    peekBox.style.left = `${r.right + 12}px`;
+    peekBox.style.top = `${Math.max(8, Math.min(r.top - 8, vh - ph - 8))}px`;
+  } else {
+    peekBox.style.left = `${Math.max(8, Math.min(r.left + 120, vw - w - 8))}px`;
+    peekBox.style.top = `${r.bottom + 6 + ph < vh - 8 ? r.bottom + 6 : Math.max(8, r.top - ph - 6)}px`;
+  }
+}
+
+function peekable(el, it) {
+  el.addEventListener('pointerenter', ev => {
+    if (ev.pointerType !== 'mouse') return;
+    clearTimeout(peekTimer);
+    peekTimer = setTimeout(() => {
+      if (!el.isConnected) return;
+      if (!peekBox.isConnected) document.body.append(peekBox);
+      peekAnchor = el;
+      peekBox.replaceChildren(...peekContent(it));
+      peekBox.hidden = false;
+      placePeek();
+    }, 250);
+  });
+  el.addEventListener('pointerleave', hidePeek);
+  el.addEventListener('click', hidePeek);
+  return el;
+}
+
+window.addEventListener('hashchange', hidePeek);
+window.addEventListener('scroll', hidePeek, true);
+// Se la lista viene ridisegnata (sincronizzazione) mentre la scheda è aperta, l'elemento sotto il mouse cambia.
+document.addEventListener('pointermove', () => { if (peekAnchor && !peekAnchor.isConnected) hidePeek(); });
+
+function itemRow(i) {
+  const D = S.data;
+  const n = openCountOf(i.id);
+  const docs = (D.docsOf.get(i.id) || []).length;
+  return peekable(h('a.item-row', { href: `#/i/${i.id}` },
+    h('span.code', itemAttrs(i), i.code),
+    h('span.name', i.name || h('span.muted', 'senza descrizione')),
+    h('span.item-meta',
+      i.firmware && h('span.fw', icon('chip'), i.firmware),
+      i.location && h('span.loc', i.location),
+      i.qty != null && h('span.qty', `×${i.qty}`),
+      docs > 0 && h('span.docs', icon('link'), docs),
+      n > 0 && h('span.badge', n))), i);
+}
+
 export function viewItems() {
   const D = S.data;
   const f = ui.itemFilter.trim().toLowerCase();
   const docNames = id => (D.docsOf.get(id) || []).map(d => `${d.filename || ''} ${d.label} ${d.version}`).join(' ');
-  const items = D.items.filter(i => !f || [i.code, i.name, i.category, i.firmware, i.location, i.notes, docNames(i.id)].join(' ').toLowerCase().includes(f));
+  const cats = new Map();
+  for (const i of D.items) cats.set(i.category || '', (cats.get(i.category || '') || 0) + 1);
+  if (ui.itemCat != null && !cats.has(ui.itemCat)) ui.itemCat = null;
+  const items = D.items
+    .filter(i => ui.itemCat == null || (i.category || '') === ui.itemCat)
+    .filter(i => !f || [i.code, i.name, i.category, i.firmware, i.location, i.notes, docNames(i.id)].join(' ').toLowerCase().includes(f));
+  const setView = v => { ui.itemView = v; save('org.itemView', v); render(); };
+
+  // Vista per categoria: una colonna per tipo di articolo (affiancate sugli schermi larghi).
+  const groups = new Map();
+  for (const i of items) {
+    const c = i.category || '';
+    if (!groups.has(c)) groups.set(c, []);
+    groups.get(c).push(i);
+  }
+  const ordered = [...groups].sort(([a], [b]) => (!a) - (!b) || a.localeCompare(b));
 
   return h('div.view',
     h('div.toolbar',
       h('input.filter', {
         type: 'search', placeholder: 'Filtra per codice, nome, firmware, posizione, documento…', value: ui.itemFilter, 'data-fk': 'itemfilter',
         oninput: ev => { ui.itemFilter = ev.target.value; render(); },
-      })),
-    h('form.inline-add', {
-      onsubmit: ev => {
-        ev.preventDefault();
-        const els = ev.target.elements;
-        const code = els.code.value.trim().replace(/^#/, '');
-        if (!code) return;
-        act(async () => {
-          const r = await api('POST', '/items', { code, name: els.name.value.trim() });
-          location.hash = `#/i/${r.id}`;
-        });
-      },
-    },
-    h('input.mono', { name: 'code', placeholder: 'Codice (es. SCH-042)', 'data-fk': 'newcode', autocomplete: 'off', autocapitalize: 'characters', size: 14 }),
-    h('input', { name: 'name', placeholder: 'Descrizione', 'data-fk': 'newname', autocomplete: 'off' }),
-    h('button.btn', { type: 'submit' }, icon('plus'), 'Aggiungi')),
+      }),
+      h('div.seg',
+        h('button', { class: ui.itemView === 'list' && 'on', onclick: () => setView('list'), title: 'Elenco' }, icon('log')),
+        h('button', { class: ui.itemView === 'groups' && 'on', onclick: () => setView('groups'), title: 'Per categoria' }, icon('cols')))),
+    cats.size > 1 && h('div.toolbar.cats',
+      [...cats].sort(([a], [b]) => (!a) - (!b) || a.localeCompare(b)).map(([c, n]) =>
+        h('button.chip', { class: ui.itemCat === c && 'on', onclick: () => { ui.itemCat = ui.itemCat === c ? null : c; render(); } },
+          h('span.cdot', { class: c ? 'cat' : null, style: catStyle(c) }), c || NO_CAT, h('span.n', n)))),
     !D.items.length && empty(
       h('p', 'Il magazzino è vuoto.'),
-      h('p', 'Ogni ', kbd('#CODICE'), ' scritto in una voce crea e collega automaticamente l\'articolo.'),
-      h('p', 'Nella scheda dell\'articolo carichi firmware, datasheet e schemi.')),
+      h('p', 'Aggiungi articoli dalla barra in alto: ', kbd('SCH-042 scheda motori /scheda'), '.'),
+      h('p', 'Ogni ', kbd('#CODICE'), ' scritto in una voce crea e collega automaticamente l\'articolo.')),
     D.items.length > 0 && !items.length && empty(h('p', 'Nessun articolo corrisponde al filtro.')),
-    h('div.items', items.map(i => {
-      const n = openCountOf(i.id);
-      const docs = (D.docsOf.get(i.id) || []).length;
-      return h('a.item-row', { href: `#/i/${i.id}` },
-        h('span.code', i.code),
-        h('span.name', i.name || h('span.muted', 'senza descrizione')),
-        h('span.item-meta',
-          i.category && h('span.cat', i.category),
-          i.firmware && h('span.fw', icon('chip'), i.firmware),
-          i.location && h('span.loc', i.location),
-          i.qty != null && h('span.qty', `×${i.qty}`),
-          docs > 0 && h('span.docs', icon('link'), docs),
-          n > 0 && h('span.badge', n)));
-    })));
+    ui.itemView === 'groups'
+      ? h('div.cat-cols', ordered.map(([c, list]) => h('section.cat-col', { class: c ? 'cat' : null, style: catStyle(c) },
+        h('div.cat-h', h('span.cdot', { class: c ? 'cat' : null, style: catStyle(c) }), h('span', c || NO_CAT), h('span.count', list.length)),
+        h('div.cat-items', list.map(i => peekable(h('a.cat-item', { href: `#/i/${i.id}` },
+          h('span.code', itemAttrs(i), i.code),
+          h('span.name', i.name || ''),
+          i.firmware && h('span.fw', i.firmware),
+          openCountOf(i.id) > 0 && h('span.badge', openCountOf(i.id))), i))))))
+      : h('div.items', items.map(itemRow)));
 }
 
 async function uploadDocs(it, files) {
@@ -494,10 +751,19 @@ export function viewItem(id) {
   const open = linked.filter(e => e.kind !== 'note' && !e.done_at).sort(byDue);
   const notes = linked.filter(e => e.kind === 'note').sort(byNoteDesc);
   const done = linked.filter(e => e.kind !== 'note' && e.done_at).sort(byDoneDesc);
+  const manualProjects = (D.projectsOfItem.get(it.id) || []).map(x => D.projectById.get(x.project_id)).filter(Boolean);
+  const viaEntries = [...new Set(linked.map(e => e.project_id).filter(Boolean))]
+    .filter(pid => !manualProjects.some(p => p.id === pid)).map(pid => D.projectById.get(pid)).filter(Boolean);
+  const linkProject = text => {
+    const p = D.projectByTag.get(text.replace(/^@/, '').toLowerCase());
+    if (!p) return toast(`Il progetto @${text.replace(/^@/, '')} non esiste`, { err: true });
+    act(() => api('POST', `/projects/${p.id}/items`, { code: it.code }));
+  };
 
   return h('div.view',
     h('div.head',
-      h('a.icon-btn', { href: '#/magazzino', title: 'Magazzino' }, icon('back')),
+      h('a.icon-btn', { href: '#/magazzino', title: 'Magazzino (Esc)' }, icon('back')),
+      it.category && h('span.cdot.big', { class: 'cat', style: catStyle(it.category), title: it.category }),
       h('input.h-title.mono', { value: it.code, 'data-fk': `icode-${it.id}`, onchange: ev => patch({ code: ev.target.value }) }),
       h('button.icon-btn', { title: 'Copia codice', onclick: () => copy(it.code) }, icon('copy'))),
     h('div.grid',
@@ -518,11 +784,22 @@ export function viewItem(id) {
         h('div.item-chips', children.map(c => h('span.chip-wrap', itemChip(c),
           h('button.icon-btn.sm', { title: 'Scollega', onclick: () => act(() => api('DELETE', `/items/${it.id}/children/${c.id}`)) }, icon('x'))))),
         h('input.sub-in.mono', {
-          placeholder: '+ codice componente', 'data-fk': `child-${it.id}`, size: 16,
+          placeholder: '+ codice componente (nuovo se non esiste)', 'data-fk': `child-${it.id}`, size: 22,
+          'data-ac': 'code', 'data-ac-self': it.code, autocomplete: 'off', autocapitalize: 'characters',
           onkeydown: enterAdd(code => act(() => api('POST', `/items/${it.id}/children`, { code }))),
         })),
       parents.length > 0 && h('div.comp', h('span.muted', 'Usato in'), h('div.item-chips', parents.map(itemChip))),
     ], { count: children.length + parents.length }),
+    section('i-proj', 'Progetti', [
+      h('div.comp',
+        h('div.item-chips', manualProjects.map(p => h('span.chip-wrap', projTag(p),
+          h('button.icon-btn.sm', { title: 'Scollega dal progetto', onclick: () => act(() => api('DELETE', `/projects/${p.id}/items/${it.id}`)) }, icon('x'))))),
+        h('input.sub-in', {
+          placeholder: '+ collega a un progetto', 'data-fk': `iproj-${it.id}`, size: 20, 'data-ac': 'project', autocomplete: 'off',
+          onkeydown: enterAdd(linkProject),
+        })),
+      viaEntries.length > 0 && h('div.comp', h('span.muted', 'Citato in voci di'), h('div.item-chips', viaEntries.map(projTag))),
+    ], { count: manualProjects.length + viaEntries.length }),
     section('i-todo', 'Da fare', open.length ? open.map(e => entryRow(e)) : [empty(h('p', 'Scrivi nella barra in alto: le voci verranno collegate a ', kbd(`#${it.code}`), '.'))], { count: open.length }),
     notes.length > 0 && section('i-notes', 'Diario', notes.map(e => entryRow(e, { showKind: false }))),
     done.length > 0 && section('i-done', 'Completate', done.map(e => entryRow(e)), { collapsed: true }),
@@ -660,15 +937,36 @@ export function viewSettings() {
       h('p.muted', `Indirizzo attuale: ${location.origin}${isSecureContext ? '' : ' (non HTTPS: niente modalità offline)'}`),
     ], { count: '', collapsed: true }),
 
-    me.is_admin && section('set-admin', 'Backup', [
-      h('p.muted', 'Scarica una copia del database (voci, progetti, magazzino). I file caricati restano nel volume dati: vedi README.'),
-      h('a.btn', { href: 'api/admin/backup', download: '' }, icon('download'), 'Scarica backup database'),
+    me.is_admin && section('set-admin', 'Backup e ripristino', [
+      h('p.muted', 'Il backup contiene voci, progetti, magazzino, contatti e utenti. I file caricati (documenti, allegati) restano sul server: per una copia completa usa ', kbd('make backup'), '.'),
+      h('div.toolbar',
+        h('a.btn', { href: 'api/admin/backup', download: '' }, icon('download'), 'Scarica backup'),
+        h('button.btn.danger', { onclick: () => restoreInput.click() }, icon('restore'), 'Ripristina da backup…')),
+      h('p.muted', 'Il ripristino sostituisce tutti i dati con quelli del file .db scelto (anche di una versione precedente dell\'app). Prima salva una copia di sicurezza del database attuale sul server. Dopo, tutti rientrano con le credenziali del backup.'),
+      restoreInput,
     ], { count: '', collapsed: true }),
 
     h('div.danger-zone',
       h('span.muted', `Connesso come ${me.username}`),
       h('button.btn.sm', { onclick: () => window.dispatchEvent(new Event('org:logout')) }, icon('logout'), 'Esci')));
 }
+
+const restoreInput = h('input', {
+  type: 'file', accept: '.db,application/octet-stream', hidden: true,
+  onchange: async ev => {
+    const f = ev.target.files[0];
+    ev.target.value = '';
+    if (!f || !confirm(`Ripristinare "${f.name}"? Tutti i dati attuali verranno sostituiti (resta una copia di sicurezza sul server).`)) return;
+    toast('Ripristino in corso…');
+    try {
+      const r = await api('POST', '/admin/restore', f);
+      alert(`Backup ripristinato: ${r.users} utenti.${r.missing ? ` ${r.missing} documenti o allegati non hanno il file sul server.` : ''}\nCopia di sicurezza: ${r.safetyCopy}\nOra accedi con le credenziali del backup.`);
+      location.reload();
+    } catch (e) {
+      toast(e.message, { err: true });
+    }
+  },
+});
 
 async function share(url) {
   if (navigator.share) {

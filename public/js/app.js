@@ -1,11 +1,11 @@
 import {
   h, icon, S, ui, RS, api, sync, setRenderer, render, renderStatus, connectLive, disconnectLive, liveClosed,
-  flushOutbox, addEntry, loadCache, clearLocal, dueInfo, autosize, toast, isMine, dayDiff, save, hue,
+  flushOutbox, addEntry, loadCache, clearLocal, dueInfo, autosize, toast, isMine, dayDiff, save, hue, act, catStyle,
 } from './core.js';
 import { initAutocomplete, acCheck } from './autocomplete.js';
 import { viewContacts } from './contacts.js';
 import { viewTrash } from './trash.js';
-import { parseQuick, extractCodes, today } from './parse.js';
+import { parseQuick, extractCodes, today, parseItemLine, parseProjectLine } from './parse.js';
 import {
   viewAgenda, viewProjects, viewProject, viewMail, viewDiary, viewItems, viewItem, viewSearch, viewSettings,
 } from './views.js';
@@ -46,6 +46,9 @@ function route() {
 function quickContext() {
   const r = route();
   const D = S.data;
+  // Nelle liste di Magazzino e Progetti la barra crea articoli e progetti invece delle voci.
+  if (r.name === 'magazzino') return { mode: 'item', label: 'nuovo articolo' };
+  if (r.name === 'progetti') return { mode: 'project', label: 'nuovo progetto' };
   if (r.name === 'mail') return { kind: 'mail', label: 'nuova mail' };
   if (r.name === 'diario') return { kind: 'note', label: 'nuova nota' };
   if (r.name === 'p' && D) {
@@ -74,20 +77,70 @@ const quickInput = h('input#quick', {
 });
 const quickPreview = h('div.preview');
 const quickCtx = h('span.ctx');
-const quickHelp = h('div.qhelp', { hidden: true },
-  h('span', h('code.k', 't: m: n:'), ' tipo'),
-  h('span', h('code.k', '!ven !3g !25/11'), ' scadenza'),
-  h('span', h('code.k', '@progetto')),
-  h('span', h('code.k', '#CODICE'), ' magazzino'),
-  h('span', h('code.k', '+utente')),
-  h('span', h('code.k', '>destinatario')),
-  h('span', 'dopo il simbolo compaiono i suggerimenti: ', h('code.k', '↑↓'), ' scegli, ', h('code.k', 'Tab'), ' o ', h('code.k', 'Invio'), ' completa'));
+const quickHelp = h('div.qhelp', { hidden: true });
+const acHint = () => h('span', 'dopo il simbolo compaiono i suggerimenti: ', h('code.k', '↑↓'), ' scegli, ', h('code.k', 'Tab'), ' o ', h('code.k', 'Invio'), ' completa');
+const HELP = {
+  entry: () => [
+    h('span', h('code.k', 't: m: n:'), ' tipo'),
+    h('span', h('code.k', '!ven !3g !25/11'), ' scadenza'),
+    h('span', h('code.k', '@progetto')),
+    h('span', h('code.k', '#CODICE'), ' magazzino'),
+    h('span', h('code.k', '+utente')),
+    h('span', h('code.k', '>destinatario')),
+    acHint()],
+  item: () => [
+    h('span', h('code.k', 'CODICE descrizione'), ' il primo termine è il codice'),
+    h('span', h('code.k', '/categoria')),
+    h('span', h('code.k', '@progetto'), ' lo collega al progetto'),
+    h('span', 'se il codice esiste già, Invio apre la sua scheda'),
+    acHint()],
+  project: () => [
+    h('span', h('code.k', 'Nome del progetto')),
+    h('span', h('code.k', '@progetto'), ' lo crea come sottoprogetto'),
+    acHint()],
+};
+
+function previewItem(text) {
+  const D = S.data;
+  const p = parseItemLine(text);
+  const chips = [];
+  const existing = D?.itemByCode.get(p.code.toUpperCase());
+  if (!p.code) return chips;
+  if (!p.valid) chips.push(h('span.pv.warn', `${p.code}`, h('i', ' codice non valido')));
+  else if (existing) chips.push(h('span.pv.code', { class: existing.category ? 'cat' : null, style: catStyle(existing.category) }, existing.code, h('i', ' esiste: Invio la apre')));
+  else chips.push(h('span.pv.code', { class: p.category ? 'cat' : null, style: catStyle(p.category) }, p.code, h('i', ' nuovo')));
+  if (p.name && !existing) chips.push(h('span.pv', p.name));
+  if (p.category && !existing) {
+    const known = D?.items.some(i => i.category.toLowerCase() === p.category.toLowerCase());
+    chips.push(h('span.pv', icon('box'), p.category, !known && h('i', ' nuova')));
+  }
+  if (p.project) {
+    const known = D?.projectByTag.has(p.project.toLowerCase());
+    chips.push(h('span.pv.tag', { class: known ? null : 'warn', style: `--h:${hue(p.project.toLowerCase())}` }, `@${p.project}`, !known && h('i', ' inesistente')));
+  }
+  return chips;
+}
+
+function previewProject(text) {
+  const D = S.data;
+  const p = parseProjectLine(text);
+  const chips = [];
+  if (p.name) chips.push(h('span.pv', icon('folder'), p.name));
+  if (p.parent) {
+    const known = D?.projectByTag.has(p.parent.toLowerCase());
+    chips.push(h('span.pv', 'dentro'), h('span.pv.tag', { class: known ? null : 'warn', style: `--h:${hue(p.parent.toLowerCase())}` }, `@${p.parent}`, !known && h('i', ' inesistente')));
+  }
+  return chips;
+}
 
 function renderPreview() {
   const ctx = quickContext();
   const text = quickInput.value;
   const chips = [];
-  if (text.trim()) {
+  quickHelp.replaceChildren(...HELP[ctx.mode || 'entry']());
+  if (ctx.mode === 'item') chips.push(...previewItem(text));
+  else if (ctx.mode === 'project') chips.push(...previewProject(text));
+  else if (text.trim()) {
     const p = parseQuick(text, { today: today(), kind: ctx.kind || 'todo' });
     const D = S.data;
     if (p.kind !== 'todo' || p.kindExplicit) chips.push(h('span.kpill', { class: `k-${p.kind}` }, { todo: 'todo', mail: 'mail', note: 'nota' }[p.kind]));
@@ -102,18 +155,55 @@ function renderPreview() {
     if (p.contact) chips.push(h('span.pv', `→ ${p.contact}`));
   }
   quickInput.placeholder = {
+    item: 'Nuovo articolo… es. SCH-060 scheda relè /scheda @rover',
+    project: 'Nuovo progetto… es. Firmware motori @rover',
     mail: 'Mail da mandare… es. offerta 50 schede >acquisti@ditta.it !ven',
     note: 'Cosa è successo… es. la rev B vuole fw ≥ 2.3 #SCH-042',
-  }[ctx.kind] || 'Scrivi… es. flash fw #SCH-042 @rover !ven';
+  }[ctx.mode || ctx.kind] || 'Scrivi… es. flash fw #SCH-042 @rover !ven';
   quickCtx.textContent = ctx.label || '';
   quickCtx.hidden = !ctx.label;
   quickPreview.replaceChildren(...chips);
+}
+
+const projectByTag = tag => S.data.projectByTag.get(tag.toLowerCase());
+const openAction = hash => ({ label: 'Apri', fn: () => { location.hash = hash; } });
+
+async function submitItem(text) {
+  const p = parseItemLine(text);
+  if (!p.valid) return toast('Codice non valido: lettere, numeri e . _ - /', { err: true });
+  const proj = p.project && projectByTag(p.project);
+  if (p.project && !proj) return toast(`Il progetto @${p.project} non esiste`, { err: true });
+  const existing = S.data.itemByCode.get(p.code.toUpperCase());
+  quickInput.value = '';
+  renderPreview();
+  if (existing) {
+    if (proj) await act(() => api('POST', `/projects/${proj.id}/items`, { code: existing.code }));
+    location.hash = `#/i/${existing.id}`;
+    return;
+  }
+  const r = await act(() => api('POST', '/items', { code: p.code, name: p.name, category: p.category || '', project_id: proj?.id }));
+  if (r) toast(`${p.code} aggiunto`, { action: openAction(`#/i/${r.id}`) });
+  else { quickInput.value = text; renderPreview(); }
+}
+
+async function submitProject(text) {
+  const p = parseProjectLine(text);
+  if (!p.name) return toast('Scrivi il nome del progetto', { err: true });
+  const parent = p.parent && projectByTag(p.parent);
+  if (p.parent && !parent) return toast(`Il progetto @${p.parent} non esiste`, { err: true });
+  quickInput.value = '';
+  renderPreview();
+  const r = await act(() => api('POST', '/projects', { name: p.name, parent_id: parent?.id }));
+  if (r) toast(`@${r.tag} creato`, { action: openAction(`#/p/${r.id}`) });
+  else { quickInput.value = text; renderPreview(); }
 }
 
 async function submitQuick() {
   const ctx = quickContext();
   let text = quickInput.value.trim();
   if (!text) return;
+  if (ctx.mode === 'item') return submitItem(text);
+  if (ctx.mode === 'project') return submitProject(text);
   if (ctx.code && !extractCodes(text).some(c => c.toUpperCase() === ctx.code.toUpperCase())) text += ` #${ctx.code}`;
   if (ctx.email && !/(^|\s)>\S/.test(text)) text += ` >${ctx.email}`;
   quickInput.value = '';
@@ -200,6 +290,10 @@ function updateBadges() {
 }
 
 function renderApp() {
+  if (RS.hold) {
+    RS.pending = true;
+    return;
+  }
   if (!S.me) return renderAuth();
   if (!shellBuilt) buildShell();
   const r = route();
@@ -295,7 +389,7 @@ function start() {
 
 // ---------- avvio ----------
 setRenderer(renderApp, updateStatus);
-initAutocomplete(() => quickContext().kind);
+initAutocomplete(() => { const c = quickContext(); return c.mode || c.kind; });
 document.documentElement.dataset.theme = localStorage.getItem('org.theme') || 'auto';
 window.addEventListener('hashchange', () => { window.scrollTo(0, 0); render(); });
 window.addEventListener('org:logout', logout);
@@ -324,8 +418,23 @@ document.addEventListener('keydown', ev => {
   } else if (!inField && !ev.metaKey && !ev.ctrlKey && (ev.key === 'n' || ev.key === '/')) {
     ev.preventDefault();
     quickInput.focus();
+  } else if (ev.key === 'Escape' && !ev.defaultPrevented) {
+    goUp(inField ? ev.target : null);
   }
 });
+
+// Esc: esce dal campo; fuori dai campi chiude le voci aperte, poi risale alla lista (progetto → Progetti…).
+function goUp(field) {
+  if (field) return field.blur();
+  if (document.querySelector('.ac:not([hidden])')) return;
+  if (ui.open.size) {
+    ui.open.clear();
+    return render();
+  }
+  const r = route();
+  const up = { p: '#/progetti', i: '#/magazzino', cerca: '#/agenda' }[r.name] || (r.name === 'contatti' && r.id ? '#/contatti' : null);
+  if (up) location.hash = up;
+}
 
 if ('serviceWorker' in navigator && isSecureContext) navigator.serviceWorker.register('sw.js').catch(() => {});
 

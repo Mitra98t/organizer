@@ -214,6 +214,8 @@ route('GET', '/api/sync', ({ req, res, user }) => {
     entryItems: db.prepare(`SELECT ei.entry_id, ei.item_id FROM entry_items ei JOIN entries e ON e.id = ei.entry_id WHERE ${where}`).all(p),
     items: db.prepare('SELECT * FROM items WHERE deleted_at IS NULL ORDER BY code COLLATE NOCASE').all(),
     itemLinks: db.prepare('SELECT parent_id, child_id FROM item_links').all(),
+    projectItems: db.prepare(`SELECT pi.project_id, pi.item_id FROM project_items pi
+      JOIN projects p ON p.id = pi.project_id WHERE ${PVIS}`).all({ uid }),
     docs: db.prepare(`SELECT id, item_id, kind, label, version, filename, mime, size, sha256, url, created_by, created_at
       FROM documents WHERE deleted_at IS NULL ORDER BY created_at DESC`).all(),
     contacts: db.prepare('SELECT * FROM contacts WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE, email').all(),
@@ -386,11 +388,20 @@ route('POST', '/api/projects', async ({ user, body }) => {
   if (!tag) fail(400, 'Tag non valido');
   const clash = db.prepare('SELECT deleted_at FROM projects WHERE tag = ?').get(tag);
   if (clash) fail(409, clash.deleted_at ? `@${tag} è nel cestino: ripristinalo da lì` : `Esiste già un progetto @${tag}`);
+  const parentId = b.parent_id ? getProject(b.parent_id, user.id).id : null;
   const t = now();
-  const id = insertId(db.prepare('INSERT INTO projects (name, tag, private, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(name, tag, bool(b.private), user.id, t, t));
+  const id = insertId(db.prepare('INSERT INTO projects (name, tag, private, parent_id, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(name, tag, bool(b.private), parentId, user.id, t, t));
   return { id, tag };
 });
+
+// Un progetto non può finire dentro se stesso o dentro un suo discendente.
+function checkParent(p, parentId) {
+  for (let id = parentId, depth = 0; id; depth++) {
+    if (id === p.id || depth > 50) fail(400, 'Un progetto non può stare dentro se stesso o un suo sottoprogetto');
+    id = db.prepare('SELECT parent_id FROM projects WHERE id = ?').get(id)?.parent_id;
+  }
+}
 
 route('PATCH', '/api/projects/:id', async ({ params, user, body }) => {
   const b = await body();
@@ -406,12 +417,33 @@ route('PATCH', '/api/projects/:id', async ({ params, user, body }) => {
     f.status = b.status;
   }
   if (b.notes !== undefined) f.notes = str(b.notes, 20000);
+  if (b.parent_id !== undefined) {
+    f.parent_id = b.parent_id ? getProject(b.parent_id, user.id).id : null;
+    checkParent(p, f.parent_id);
+  }
   if (b.private !== undefined) {
     if (p.created_by !== user.id) fail(403, 'Solo chi ha creato il progetto può cambiarne la visibilità');
     f.private = bool(b.private);
   }
   f.updated_at = now();
   setFields('projects', p.id, f);
+});
+
+// Articoli di magazzino legati al progetto a mano (oltre a quelli citati con #CODICE nelle voci).
+route('POST', '/api/projects/:id/items', async ({ params, user, body }) => {
+  const b = await body();
+  const p = getProject(params.id, user.id);
+  const code = checkCode(str(b.code, 64).replace(/^#/, ''));
+  return tx(() => {
+    const itemId = ensureItem(code, user);
+    db.prepare('INSERT OR IGNORE INTO project_items (project_id, item_id, created_at) VALUES (?, ?, ?)').run(p.id, itemId, now());
+    return { item_id: itemId };
+  });
+});
+
+route('DELETE', '/api/projects/:id/items/:item', ({ params, user }) => {
+  const p = getProject(params.id, user.id);
+  db.prepare('DELETE FROM project_items WHERE project_id = ? AND item_id = ?').run(p.id, +params.item);
 });
 
 route('DELETE', '/api/projects/:id', ({ params, user }) => {
@@ -444,11 +476,15 @@ route('POST', '/api/items', async ({ user, body }) => {
   const code = checkCode(str(b.code, 64));
   const existing = db.prepare('SELECT deleted_at FROM items WHERE code = ?').get(code);
   if (existing) fail(409, existing.deleted_at ? `${code} è nel cestino: ripristinalo da lì` : `Il codice ${code} esiste già`);
+  const projectId = b.project_id ? getProject(b.project_id, user.id).id : null;
   const t = now();
-  const id = insertId(db.prepare('INSERT INTO items (code, created_by, created_at, updated_at) VALUES (?, ?, ?, ?)')
-    .run(code, user.id, t, t));
-  setFields('items', id, itemFields(b));
-  return { id };
+  return tx(() => {
+    const id = insertId(db.prepare('INSERT INTO items (code, created_by, created_at, updated_at) VALUES (?, ?, ?, ?)')
+      .run(code, user.id, t, t));
+    setFields('items', id, itemFields(b));
+    if (projectId) db.prepare('INSERT INTO project_items (project_id, item_id, created_at) VALUES (?, ?, ?)').run(projectId, id, t);
+    return { id };
+  });
 });
 
 route('PATCH', '/api/items/:id', async ({ params, body }) => {

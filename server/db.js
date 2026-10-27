@@ -159,20 +159,38 @@ const MIGRATIONS = [
     expires_at TEXT NOT NULL
   );
   `,
+  // v3: sottoprogetti e articoli di magazzino collegati a mano a un progetto
+  `
+  ALTER TABLE projects ADD COLUMN parent_id INTEGER REFERENCES projects ON DELETE SET NULL;
+  CREATE TABLE project_items (
+    project_id INTEGER NOT NULL REFERENCES projects ON DELETE CASCADE,
+    item_id INTEGER NOT NULL REFERENCES items ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (project_id, item_id)
+  );
+  CREATE INDEX project_items_item ON project_items(item_id);
+  `,
 ];
 
-const { user_version: version } = db.prepare('PRAGMA user_version').get();
-for (let i = version; i < MIGRATIONS.length; i++) {
-  db.exec('BEGIN');
-  try {
-    db.exec(MIGRATIONS[i]);
-    db.exec(`PRAGMA user_version = ${i + 1}`);
-    db.exec('COMMIT');
-  } catch (e) {
-    db.exec('ROLLBACK');
-    throw e;
+export const SCHEMA_VERSION = MIGRATIONS.length;
+
+// Porta un database (quello in uso o un backup da ripristinare) all'ultima versione dello schema.
+export function migrate(conn) {
+  const { user_version: version } = conn.prepare('PRAGMA user_version').get();
+  for (let i = version; i < MIGRATIONS.length; i++) {
+    conn.exec('BEGIN');
+    try {
+      conn.exec(MIGRATIONS[i]);
+      conn.exec(`PRAGMA user_version = ${i + 1}`);
+      conn.exec('COMMIT');
+    } catch (e) {
+      conn.exec('ROLLBACK');
+      throw e;
+    }
   }
 }
+
+migrate(db);
 
 export function tx(fn) {
   db.exec('BEGIN IMMEDIATE');
