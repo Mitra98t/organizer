@@ -6,7 +6,7 @@
 // il visualizzatore (canvas compresi) resta in memoria e viene solo riagganciato; si aggiornano i segnaposto.
 // Più visualizzatori possono essere aperti insieme (revisione affiancata, #/review?d=1,2,3).
 import { backlinksBox } from './views.js';
-import { h, icon, S, ui, api, act, render, richText, fmtTime, fmtSize, userName, toast, trashIt, autosize, itemAttrs, save, docFileUrl, dkAttrs, kindPicker, docName, renameDoc, can, roClass, isReadOnly } from './core.js';
+import { h, icon, S, ui, api, act, render, richText, fmtTime, fmtSize, userName, toast, trashIt, autosize, itemAttrs, save, docFileUrl, dkAttrs, kindPicker, docName, renameDoc, can, roClass, isReadOnly, shareBox } from './core.js';
 import { today } from './parse.js';
 
 const PDFJS = new URL('../vendor/pdfjs/', import.meta.url).href;
@@ -781,7 +781,9 @@ function noteCard(d, n, num) {
       icon('check'), n.resolved_at ? 'riapri' : 'risolta'),
     h('button.chip', { onclick: () => { ui.docEdit = n.id; render(); } }, 'modifica'),
     h('button.chip', { onclick: () => noteToTodo(d, n) }, '→ todo'),
-    (n.created_by === me.id || me.is_admin) && h('button.icon-btn.sm', { title: 'Elimina', onclick: () => trashIt('docnote', `/doc-notes/${n.id}`, 'Nota') }, icon('trash'))));
+    (n.created_by === me.id || me.is_admin) && h('button.icon-btn.sm', { title: 'Elimina', onclick: () => trashIt('docnote', `/doc-notes/${n.id}`, 'Nota') }, icon('trash'))),
+  // Le note sono private di chi le scrive: qui si vede (e chi l'ha scritta sceglie) con chi è condivisa.
+  shareBox('docnote', n));
 }
 
 function notesPanel(d, v) {

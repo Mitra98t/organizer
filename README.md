@@ -50,7 +50,7 @@ Scrivi poche parole e premi Invio. I token fanno il resto:
 | `!oggi` `!domani` `!ven` `!3g` `!2s` `!1m` `!fm` `!25/11` `!2026-12-01` `!no` | scadenza (per le note: quando è successo) |
 | `@rover` | progetto, creato al volo se non esiste; più `@` = più progetti (il primo è il principale) |
 | `#SCH-042` | articolo di magazzino: resta nel testo come link, creato se non esiste |
-| `+marco` | assegna a un utente |
+| `+marco` `++marco` `+all` | condivide con Marco; condivide e gli assegna la voce; condivide con tutti (senza: solo tu) |
 | `>acquisti@ditta.it` | destinatario della mail |
 
 ```
@@ -170,15 +170,23 @@ Un **workspace** è un insieme di dati separato (progetti, voci, magazzino, cont
 
 - **Inviti**: Impostazioni → Persone → **Crea invito** (solo admin) e mandi il link. Chi non ha un account si registra; chi ce l'ha già accede con le sue credenziali (o, se è già collegato, preme "Entra nel workspace"). Link valido 7 giorni, per una persona.
 - **Admin del workspace**: invita, toglie persone, nomina altri admin, rinomina o elimina il workspace, fa backup e ripristino. Un workspace ha sempre almeno un admin.
-- Dentro un workspace tutto è condiviso tranne le voci e i progetti marcati **privati**. Le modifiche arrivano in tempo reale solo a chi è nello stesso workspace.
+- **Privato di default**: dentro un workspace magazzino e documenti sono di tutti; todo, diario, mail, progetti, contatti e note sui documenti li vede solo chi li ha creati (e chi ha una voce assegnata), finché non li condivide con `+persona`, `++persona` (e gliela assegna) o `+all`, oppure da "Visibile a". Vale anche per gli admin. Le modifiche arrivano in tempo reale solo a chi è nello stesso workspace.
 
-**Permessi**: in Impostazioni → Permessi un admin sceglie per ogni persona (non admin) cosa vede e cosa può modificare in ogni area: todo e diario, mail, progetti, magazzino, documenti, contatti, chat. Per ogni area: nessun accesso (l'area sparisce dall'app), lettura o scrittura. Le aree collegate si sistemano da sole: dando la scrittura alle mail, contatti, documenti, magazzino e progetti diventano almeno leggibili. Il server controlla ogni richiesta, quindi i permessi valgono anche per la CLI e per i bot. **La posta è personale**: le mail le vedono solo chi le ha scritte e chi le deve mandare (assegnate), la posta in arrivo da Thunderbird solo chi la riceve; nessun altro, nemmeno un admin. Il permesso Mail decide solo se una persona può usare le mail.
+**Permessi**: in Impostazioni → Permessi un admin sceglie per ogni persona (non admin) cosa vede e cosa può modificare in ogni area: todo e diario, mail, progetti, magazzino, documenti, contatti, chat. Per ogni area: nessun accesso (l'area sparisce dall'app), lettura o scrittura. Le aree collegate si sistemano da sole: dando la scrittura alle mail, contatti, documenti, magazzino e progetti diventano almeno leggibili. Il server controlla ogni richiesta, quindi i permessi valgono anche per la CLI e per i bot. I permessi decidono cosa si può fare nelle aree, non fanno vedere ciò che gli altri non condividono; la posta in arrivo da Thunderbird è sempre solo di chi la riceve. In più c'è **Gestire i canali** (sì/no, di base no) per la chat.
 
 Sul server: `accounts.db` contiene account, sessioni, workspace e inviti; ogni workspace ha il suo file (`organizer.db` il primo, `ws-<id>.db` gli altri). Aggiornando da una versione senza workspace, l'installazione esistente diventa il workspace "Principale" (nome cambiabile con `WORKSPACE_NAME`) con gli stessi utenti e ruoli.
 
 ## Chat
 
-Ogni workspace ha una chat tra i suoi membri (Chat nella barra laterale; su telefono l'icona in alto). Nei messaggi si collegano le cose dell'app: `@progetto`, `#CODICE`, `+persona` e, scrivendo `[[`, un documento, una voce (todo, mail, nota) o un contatto, scelti dai suggerimenti. Nel messaggio diventano link con il nome sempre aggiornato. Il numero sul badge sono i messaggi non letti; dal terminale `org chat -f` la segue dal vivo.
+Ogni workspace ha una chat a **canali** (Chat nella barra laterale; su telefono l'icona in alto). #generale è di tutti; gli altri canali hanno le loro persone, ognuna che legge o anche scrive. Li creano e li gestiscono gli admin e chi ha il permesso "Gestire i canali". Nei messaggi si collegano le cose dell'app: `@progetto`, `#CODICE`, `+persona` e, scrivendo `[[`, un documento, una voce (todo, mail, nota) o un contatto, scelti dai suggerimenti. Nel messaggio diventano link con il nome sempre aggiornato. Il numero sul badge sono i messaggi non letti di tutti i canali; dal terminale `org chat -f` la segue dal vivo (`-c canale` per un canale, `org chat canali` per l'elenco).
+
+## Offline
+
+Senza rete l'app mostra gli ultimi dati sincronizzati in sola lettura. Si possono creare todo (Agenda) e note (Diario): restano in coda ("in coda offline") e finché non partono si cambiano, si segnano fatte o si eliminano. Quando la rete torna partono da sole; ognuna ha un identificativo, quindi un invio interrotto e ripetuto non crea doppioni. Il resto (mail, progetti, magazzino, modifiche alle voci esistenti) aspetta la rete: così non ci sono conflitti con le modifiche degli altri.
+
+## Feedback
+
+"Feedback" accanto a Novità (su telefono in Impostazioni → App e aiuto) manda un errore o un'idea con testo e screenshot. Li rivede chi gestisce l'istanza (gli admin del primo workspace) nella pagina Feedback; dal terminale `make feedback` li esporta in `feedback/` (una cartella per feedback con `feedback.md` e le immagini; `ALL=1` anche i risolti). Le immagini stanno in `/data/feedback` e finiscono nei backup.
 
 ## Terminale (CLI) e API
 

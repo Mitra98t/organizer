@@ -1,5 +1,5 @@
 // Stato, rete, sincronizzazione e piccoli helper DOM condivisi dalle viste.
-import { today, ymd, fromYmd } from './parse.js';
+import { today, ymd, fromYmd, parseQuick } from './parse.js';
 import { allows, entryArea } from './perms.js';
 
 // Permessi dell'utente nel workspace attivo (dal server; null = tutto). Vedi perms.js.
@@ -7,8 +7,9 @@ export const can = (area, level = 'read') => allows(S.data?.perms, area, level);
 export const canEntry = (e, level = 'write') => can(entryArea(e.kind), level);
 
 // Sola lettura nella pagina: le parti marcate .ro (pagine, sezioni, voci) contengono controlli spenti,
-// le parti .rw dentro di esse no. Vale il contenitore più vicino.
-export const roClass = writable => (writable ? 'rw' : 'ro');
+// le parti .rw dentro di esse no. Vale il contenitore più vicino. Offline è tutto in sola lettura, tranne le
+// voci in coda (vedi "offline" più sotto).
+export const roClass = writable => (writable && S.online ? 'rw' : 'ro');
 export function isReadOnly(el) {
   const scope = el?.closest?.('.ro, .rw');
   return !!scope && scope.classList.contains('ro');
@@ -165,6 +166,14 @@ const ICONS = {
   edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13 7 4 4"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M15.5 4.6a3.5 3.5 0 0 1 0 6.8M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/>',
+  hash: '<path d="M9 4L7 20M17 4l-2 16M4.5 9h16M3.5 15h16"/>',
+  palette: '<path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.8 1.6-1.6 0-.9-.6-1.3-.6-2.1 0-.9.7-1.5 1.6-1.5H17a4 4 0 0 0 4-4c0-4.9-4-8.8-9-8.8z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7.5" r="1"/>',
+  key: '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/>',
+  shield: '<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
+  phone: '<rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/>',
+  keyboard: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10"/>',
+  bug: '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9a1.5 1.5 0 0 1-1.5 1.5H10l-5 4v-4h.5A1.5 1.5 0 0 1 4 14.5z"/><path d="M12 7v4M12 13.5v.5"/>',
   logout: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 8l-4 4 4 4M6 12h10"/>',
   news: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15v4M17 17h4"/>',
   up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
@@ -213,6 +222,7 @@ function setOnline(v) {
   if (S.online !== v) {
     S.online = v;
     renderStatus();
+    render(); // offline la pagina passa in sola lettura (e torna modificabile con la rete)
   }
 }
 
@@ -237,8 +247,8 @@ function indexData(d) {
   d.itemAliases ||= [];
   d.perms ??= null;
   d.chat ||= [];
+  d.chatChannels ||= [];
   d.chatUnread ??= 0;
-  d.chatReadId ??= 0;
   d.members = d.users.filter(u => u.member !== 0); // membri attuali del workspace (gli altri sono ex, per i nomi)
   d.catHueOf = new Map(d.categoryColors.map(c => [c.name.toLowerCase(), c.hue]));
   d.entryById = new Map(d.entries.map(e => [e.id, e]));
@@ -263,6 +273,13 @@ function indexData(d) {
   d.contactByEmail = new Map(d.contacts.filter(c => c.email).map(c => [c.email.toLowerCase(), c]));
   d.attachmentsOf = group(d.attachments, 'entry_id');
   d.mailMsgs ||= [];
+  d.shares ||= [];
+  d.sharesOf = new Map(); // "entry:12" → id delle persone con cui è condiviso
+  for (const x of d.shares) {
+    const k = `${x.kind}:${x.obj_id}`;
+    if (!d.sharesOf.has(k)) d.sharesOf.set(k, []);
+    d.sharesOf.get(k).push(x.user_id);
+  }
   d.inbox ||= [];
   d.mine = new Set((d.myAddresses || []).map(a => a.toLowerCase())); // i miei indirizzi (identità di Thunderbird)
   d.mailMsgsOf = group(d.mailMsgs, 'entry_id');
@@ -369,33 +386,68 @@ export function connectLive() {
   es.onerror = () => {
     S.live = false;
     renderStatus();
+    // Il tempo reale è caduto: il server risponde ancora? Se no si è offline (pagine in sola lettura).
+    fetch('api/info', { cache: 'no-store' }).then(r => setOnline(r.ok), () => setOnline(false));
   };
 }
 export const liveClosed = () => !es || es.readyState === EventSource.CLOSED;
+// Senza tempo reale si riprova ogni 15 secondi se il server risponde (online/offline e coda da mandare).
+setInterval(() => {
+  if (S.live || !S.me) return;
+  fetch('api/info', { cache: 'no-store' }).then(r => { setOnline(r.ok); if (r.ok) flushOutbox(); }, () => setOnline(false));
+}, 15000);
 export function disconnectLive() {
   es?.close();
   es = null;
   S.live = false;
 }
 
-// ---------- coda offline ----------
-// Solo l'inserimento rapido funziona offline: la riga viene accodata e inviata al ritorno della rete.
+// ---------- offline ----------
+// Senza rete si possono solo creare todo (in Agenda) e note (nel Diario): restano in coda (S.outbox) e,
+// finché non partono, si possono modificare, segnare fatte o eliminare. Tutto il resto si legge soltanto:
+// così al ritorno della rete non c'è niente da mettere d'accordo con il server, le voci nuove si aggiungono
+// e basta. client_id (generato qui) evita i doppioni se l'invio si interrompe e si ripete.
+export const OFFLINE_KINDS = ['todo', 'note'];
+const newCid = () => (globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`);
+
 export async function addEntry(payload) {
-  try {
-    await api('POST', '/entries', payload);
-    sync();
-  } catch (e) {
-    if (!e.offline) {
-      toast(e.message, { err: true });
-      return false;
+  if (S.online) {
+    try {
+      await api('POST', '/entries', payload);
+      sync();
+      return true;
+    } catch (e) {
+      if (!e.offline) {
+        toast(e.message, { err: true });
+        return false;
+      }
     }
-    S.outbox.push(payload);
-    save('org.outbox', S.outbox);
-    renderStatus();
-    render();
-    toast('Offline: voce in coda, la invio appena torna la rete');
   }
+  const kind = parseQuick(payload.text, { kind: payload.kind || 'todo' }).kind;
+  if (!OFFLINE_KINDS.includes(kind) || payload.parent_id) {
+    toast('Offline si possono aggiungere solo todo e note: riprova quando torna la rete', { err: true });
+    return false;
+  }
+  S.outbox.push({ ...payload, kind, cid: newCid(), pid: -Date.now(), queued_at: new Date().toISOString(), done: null });
+  saveOutbox();
+  toast(kind === 'note' ? 'Offline: nota in coda, parte appena torna la rete' : 'Offline: todo in coda, parte appena torna la rete');
   return true;
+}
+
+const saveOutbox = () => { save('org.outbox', S.outbox); renderStatus(); render(); };
+const pendingOf = pid => S.outbox.find(p => p.pid === pid);
+
+// Una voce in coda si cambia (testo, fatta) o si toglie finché non è partita.
+export function updatePending(pid, fields) {
+  const p = pendingOf(pid);
+  if (!p) return;
+  Object.assign(p, fields);
+  saveOutbox();
+}
+
+export function removePending(pid) {
+  S.outbox = S.outbox.filter(p => p.pid !== pid);
+  saveOutbox();
 }
 
 let flushing = false;
@@ -403,14 +455,18 @@ export async function flushOutbox() {
   if (flushing || !S.outbox.length) return;
   flushing = true;
   try {
+    // Le code salvate dalle versioni precedenti non hanno cid: se ne dà uno ora.
+    for (const p of S.outbox) p.cid ||= newCid();
     while (S.outbox.length) {
+      const p = S.outbox[0];
       try {
-        await api('POST', '/entries', S.outbox[0]);
+        const { text, today: day, kind, project_id: projectId, cid, done } = p;
+        await api('POST', '/entries', { text, today: day, kind, project_id: projectId, client_id: cid, done: done || undefined });
       } catch (e) {
         if (e.offline || e.status === 401) return;
         toast(`Voce in coda scartata: ${e.message}`, { err: true });
       }
-      S.outbox.shift();
+      S.outbox = S.outbox.filter(x => x !== p);
       save('org.outbox', S.outbox);
     }
   } finally {
@@ -912,4 +968,43 @@ export function updateBadge() {
   if (!S.data || !navigator.setAppBadge) return;
   const n = S.data.entries.filter(e => e.kind !== 'note' && !e.done_at && e.due && dayDiff(e.due) <= 0 && isMine(e)).length;
   (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
+}
+
+// ---------- condivisione ----------
+// Tutto è privato di chi lo crea (tranne magazzino e documenti): si condivide con delle persone o con tutti.
+// Chi l'ha creato apre il pannello e sceglie; gli altri vedono soltanto con chi è condiviso.
+export const sharedWithOf = (kind, o) => (S.data.sharesOf.get(`${kind}:${o.id}`) || []);
+
+export function shareLabel(kind, o) {
+  const D = S.data;
+  if (o.shared_all) return 'tutti';
+  const ids = sharedWithOf(kind, o);
+  if (!ids.length) return o.created_by === D.me.id ? 'solo tu' : `${userName(o.created_by)} e te`;
+  return ids.map(userName).join(', ');
+}
+
+export function shareBox(kind, o) {
+  const D = S.data;
+  const mine = o.created_by === D.me.id;
+  const key = `${kind}:${o.id}`;
+  const open = ui.shareOpen === key;
+  const ids = sharedWithOf(kind, o);
+  const others = D.members.filter(u => u.id !== D.me.id);
+  const save = (users, all) => act(() => api('PUT', `/shares/${kind}/${o.id}`, { users, all }));
+  return h('div.share', { class: open ? 'open' : null },
+    h('button.share-b', {
+      type: 'button', disabled: !mine, 'aria-expanded': mine ? String(open) : null,
+      title: mine ? 'Scegli con chi condividere' : `Creato da ${userName(o.created_by)}: solo lui sceglie con chi condividerlo`,
+      onclick: () => { ui.shareOpen = open ? null : key; render(); },
+    }, icon(o.shared_all ? 'users' : ids.length ? 'user' : 'lock'), h('span', 'Visibile a: ', h('b', shareLabel(kind, o))),
+    !mine && h('span.muted', ` · di ${userName(o.created_by)}`)),
+    open && h('div.share-p', { role: 'group', 'aria-label': 'Condividi con' },
+      h('label.check-row', h('input', { type: 'checkbox', checked: !!o.shared_all, onchange: ev => save(ids, ev.target.checked) }),
+        h('b', 'Tutti'), h('span.muted', ' (+all) anche chi entrerà nel workspace')),
+      others.map(u => h('label.check-row',
+        h('input', { type: 'checkbox', checked: ids.includes(u.id), disabled: !!o.shared_all,
+          onchange: ev => save(ev.target.checked ? [...ids, u.id] : ids.filter(x => x !== u.id), !!o.shared_all) }),
+        u.name || u.username, h('span.muted', ` @${u.username}`))),
+      !others.length && h('p.muted', 'Non ci sono altre persone nel workspace.'),
+      h('p.muted', 'Anche dalla barra in alto: +persona, ++persona (e gliela assegni), +all.')));
 }

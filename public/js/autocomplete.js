@@ -69,8 +69,8 @@ function update(el) {
     const r = el.value.slice(0, pos).match(/\[\[([^\]\n]{0,40})$/);
     if (r) return updateRef(el, pos, r[1]);
   }
-  const allowed = el.dataset.acOnly || { item: '/@', project: '@' }[kind] || '@#!+>';
-  const m = el.value.slice(0, pos).match(/(?:^|\s)([@#!+>/])([^\s@#!+>/]*)$/);
+  const allowed = el.dataset.acOnly || { item: '/@', project: '@+' }[kind] || '@#!+>';
+  const m = el.value.slice(0, pos).match(/(?:^|\s)(\+\+|[@#!+>/])([^\s@#!+>/]*)$/);
   if (!m || !allowed.includes(m[1])) return close();
   // Nella barra articoli il primo termine è il codice: niente suggerimenti finché non c'è.
   if (kind === 'item' && m.index === 0 && !/^\s/.test(m[0])) return close();
@@ -239,10 +239,14 @@ function suggest(sig, q, kind) {
       .map(([c, n]) => ({ insert: `/${c.replace(/ /g, '_')}`, label: `/${c}`, extra: `${n} articoli`, cat: c }));
   }
 
-  if (sig === '+') {
-    return D.members
-      .filter(u => !ql || lc(u.username).includes(ql) || lc(u.name).includes(ql))
-      .map(u => ({ insert: `+${u.username}`, label: `+${u.username}`, hint: lc(u.name) !== lc(u.username) ? u.name : '' }));
+  // +persona la vede anche lei, ++persona in più gliela assegna, +all la vedono tutti.
+  if (sig === '+' || sig === '++') {
+    const me = D.me.id;
+    const people = D.members
+      .filter(u => u.id !== me && (!ql || lc(u.username).includes(ql) || lc(u.name).includes(ql)))
+      .map(u => ({ insert: `${sig}${u.username}`, label: `${sig}${u.username}`, hint: lc(u.name) !== lc(u.username) ? u.name : '', extra: sig === '++' ? 'condividi e assegna' : 'condividi' }));
+    const all = sig === '+' && (!ql || 'all'.startsWith(ql) || 'tutti'.startsWith(ql)) ? [{ insert: '+all', label: '+all', hint: 'tutti', extra: 'condividi con tutti' }] : [];
+    return [...people, ...all];
   }
 
   if (sig === '>') {

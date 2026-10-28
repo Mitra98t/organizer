@@ -25,11 +25,18 @@ test('date relative e assolute', () => {
 });
 
 test('riga rapida completa', () => {
-  const p = parseQuick('fix bootloader #SCH-042 @rover !ven +marco', { today: T });
+  const p = parseQuick('fix bootloader #SCH-042 @rover !ven ++marco', { today: T });
   assert.deepEqual(
-    { kind: p.kind, title: p.title, due: p.due, project: p.project, assignee: p.assignee, codes: p.codes },
-    { kind: 'todo', title: 'fix bootloader #SCH-042', due: '2026-10-30', project: 'rover', assignee: 'marco', codes: ['SCH-042'] },
+    { kind: p.kind, title: p.title, due: p.due, project: p.project, assignee: p.assignee, shares: p.shares, codes: p.codes },
+    { kind: 'todo', title: 'fix bootloader #SCH-042', due: '2026-10-30', project: 'rover', assignee: 'marco', shares: ['marco'], codes: ['SCH-042'] },
   );
+});
+
+test('condivisione: +persona, ++persona, +all', () => {
+  const p = parseQuick('rivedere schema +luca ++marco +Luca +all', { today: T });
+  assert.deepEqual([p.title, p.shares, p.assignee, p.shareAll], ['rivedere schema', ['luca', 'marco'], 'marco', true]);
+  assert.deepEqual([parseQuick('solo per me').shares, parseQuick('solo per me').shareAll], [[], false]);
+  assert.equal(parseQuick('a tutti +tutti').shareAll, true);
 });
 
 test('prefisso tipo e destinatario', () => {
@@ -69,7 +76,8 @@ test('riga articolo e riga progetto', async () => {
     { code: 'SCH-060', name: 'scheda relè 8 canali', category: 'scheda', project: 'rover', valid: true });
   assert.equal(parseItemLine('/scheda').valid, false);
   assert.equal(parseItemLine('CAV-1 /modulo_radio').category, 'modulo radio');
-  assert.deepEqual(parseProjectLine('Firmware motori @rover'), { name: 'Firmware motori', parent: 'rover' });
+  assert.deepEqual(parseProjectLine('Firmware motori @rover'), { name: 'Firmware motori', parent: 'rover', share: [] });
+  assert.deepEqual(parseProjectLine('Banco test +marco +all').share, ['marco', 'all']);
 });
 
 test('più progetti', () => {

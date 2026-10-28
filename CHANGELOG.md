@@ -3,6 +3,17 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.13 — 2026-10-29
+- **Tutto è privato di chi lo crea**, tranne magazzino e documenti: todo, diario, mail, progetti, contatti e note sui documenti li vede solo chi li ha creati (e chi ha una voce assegnata). Vale anche per gli admin. I dati già esistenti diventano privati di chi li aveva creati; chi aveva una voce assegnata la vede ancora.
+- **Condividere**: `+marco` la rende visibile anche a Marco, `++marco` la condivide e gliela assegna, `+all` (o `+tutti`) la rende visibile a tutti, anche a chi entrerà dopo. Funziona nella barra in alto, nel titolo di una voce, nella barra dei progetti e nel testo delle note sui documenti; i suggerimenti propongono le persone e +all. In ogni voce, progetto, contatto e nota c'è **"Visibile a"**: chi l'ha creato sceglie con chi condividerlo e può togliere la condivisione. Nelle righe si vede di chi è una voce non tua e con chi hai condiviso le tue. "all" e "tutti" non possono più essere nomi utente.
+- **Chat a canali**: la chat di prima è #generale (di tutti). Si creano canali con le persone scelte, ognuna che legge o anche scrive; i non letti sono per canale. Li gestiscono gli admin e chi ha il nuovo permesso **"Gestire i canali"** (Impostazioni → Permessi, di base no). CLI: `org chat -c canale`, `org chat canali`.
+- **Feedback**: accanto a Novità (su telefono in Impostazioni → App e aiuto) si segnala un errore o un'idea, con testo e screenshot (scelti, trascinati o incollati con ⌘V); pagina, versione e browser si aggiungono da soli. Li rivede chi gestisce l'istanza (admin del primo workspace) nella pagina Feedback, o con `make feedback` che li esporta in `feedback/`.
+- **Impostazioni rifatte**: categorie a sinistra (Account, Aspetto, Privacy e condivisione, Mail e Thunderbird, Workspace e persone, Permessi, CLI e token, Barra rapida, App e aiuto, Backup) e riquadri a destra; su telefono un elenco che apre una pagina per volta. Controlli più grandi, titoli e etichette per la lettura da tastiera e con lettori di schermo.
+- **Offline**: senza rete si possono creare todo (in Agenda) e note (nel Diario). Restano in coda con "in coda offline" e finché non partono si possono modificare, segnare fatte o eliminare; tutto il resto si legge soltanto (una barra in alto lo spiega). Al ritorno della rete partono da sole, senza doppioni anche se l'invio si interrompe. Solo voci nuove: niente da mettere d'accordo con le modifiche fatte da altri.
+- **Inviti come link**: in Impostazioni → Workspace e persone ogni invito è il suo link, da aprire, copiare o condividere; quello appena creato è evidenziato.
+- **Permessi a tabella**: una riga per area (con cosa comprende), una colonna per persona, in ogni casella il livello per intero (Nessun accesso, Lettura, Scrittura) con il suo colore; sotto, la riga "Gestire i canali" e la legenda.
+- Schema dati v17, account v5.
+
 ## 0.12.2 — 2026-10-28
 - Correzione: dietro Cloudflare l'app poteva usare fino a 4 ore il codice della versione precedente (Cloudflare dice al browser di tenere JS e CSS 4 ore). Ora l'app ricontrolla sempre i suoi file con il server; un file non cambiato non si riscarica.
 

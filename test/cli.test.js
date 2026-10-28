@@ -221,14 +221,136 @@ test('thunderbird: manda, mandata, risposta, conversazione, rispondi', async () 
   const reg = await call('POST', '/register', { body: { code, username: 'luca', password: 'password-di-luca' } });
   const cookie = reg.headers.get('set-cookie').split(';')[0];
   const other = await call('GET', '/sync', { cookie }).then(json);
-  assert.ok(other.entries.some(x => x.kind === 'todo'));
-  assert.deepEqual([other.entries.filter(x => x.kind === 'mail').length, other.inbox.length, other.mailMsgs.length], [0, 0, 0]);
+  assert.deepEqual([other.entries.length, other.inbox.length, other.mailMsgs.length], [0, 0, 0]);
   assert.equal((await call('GET', `/entries/${id}/thread`, { cookie })).status, 404);
 
   // L'estensione si scarica già impostata per questo server.
   const xpi = Buffer.from(await (await tb('GET', '/mail/thunderbird.xpi')).arrayBuffer());
   assert.equal(xpi.subarray(0, 2).toString(), 'PK');
   ctrl.abort();
+});
+
+test('privato di default: +persona, ++persona, +all per voci, progetti, contatti, note', async () => {
+  const { token } = config();
+  const me = (method, p, body) => call(method, p, { token, body }).then(r => (r.status === 204 ? null : r.json()));
+  const login = await call('POST', '/login', { body: { username: 'luca', password: 'password-di-luca' } });
+  const cookie = login.headers.get('set-cookie').split(';')[0];
+  const luca = () => call('GET', '/sync', { cookie }).then(r => r.json());
+  const lucaId = (await luca()).me.id;
+  const titles = d => d.entries.map(e => e.title).sort();
+
+  const { id: mine } = await me('POST', '/entries', { text: 'solo mio' });
+  const { id: shared } = await me('POST', '/entries', { text: 'da vedere +luca' });
+  const { id: assigned } = await me('POST', '/entries', { text: 'da fare ++luca' });
+  await me('POST', '/entries', { text: 'per tutti +all' });
+  await me('POST', '/entries', { text: 'a chi? +nessuno' });
+  let d = await luca();
+  assert.deepEqual(titles(d), ['da fare', 'da vedere', 'per tutti']);
+  assert.equal(d.entries.find(e => e.id === assigned).assignee_id, lucaId);
+  assert.equal(d.entries.find(e => e.id === shared).assignee_id, null);
+  assert.ok(d.shares.some(s => s.kind === 'entry' && s.obj_id === shared && s.user_id === lucaId));
+  assert.equal((await call('GET', `/entries/${mine}`, { cookie })).status, 404);
+  assert.equal((await me('GET', `/entries/${(await me('GET', '/sync')).entries.find(e => e.title.startsWith('a chi?')).id}`)).title, 'a chi? +nessuno');
+
+  // Solo chi l'ha creata decide con chi condividerla; si può anche togliere.
+  assert.equal((await call('PUT', `/shares/entry/${shared}`, { cookie, body: { users: [] } })).status, 403);
+  await me('PUT', `/shares/entry/${shared}`, { users: [], all: false });
+  assert.deepEqual(titles(await luca()), ['da fare', 'per tutti']);
+  await me('PUT', `/shares/entry/${mine}`, { users: [lucaId] });
+  assert.ok(titles(await luca()).includes('solo mio'));
+
+  // Progetti e contatti privati, condivisi dalla barra o dal pannello; note sui documenti con +persona nel testo.
+  const { id: pid } = await me('POST', '/projects', { name: 'Segreto' });
+  await me('POST', '/projects', { name: 'Comune', share: ['luca'] });
+  const { id: cid } = await me('POST', '/contacts', { name: 'Fornitore', email: 'f@x.it' });
+  const doc = (await me('GET', '/sync')).docs[0];
+  await me('POST', `/docs/${doc.id}/notes`, { text: 'nota mia' });
+  await me('POST', `/docs/${doc.id}/notes`, { text: 'guarda qui +luca' });
+  d = await luca();
+  assert.deepEqual(d.projects.map(p => p.name), ['Comune']);
+  assert.equal(d.contacts.length, 0);
+  assert.deepEqual(d.docNotes.map(n => n.text), ['guarda qui']);
+  assert.ok(d.docs.some(x => x.id === doc.id)); // magazzino e documenti restano di tutti
+  await me('PUT', `/shares/project/${pid}`, { all: true });
+  await me('PUT', `/shares/contact/${cid}`, { users: [lucaId] });
+  d = await luca();
+  assert.deepEqual([d.projects.length, d.contacts.map(c => c.name)], [2, ['Fornitore']]);
+
+  // "all" non è un nome utente.
+  const { code } = await me('POST', '/admin/invites');
+  assert.equal((await call('POST', '/register', { body: { code, username: 'all', password: 'password-di-all' } })).status, 400);
+});
+
+test('voci create offline: niente doppioni se l\'invio si ripete, todo già fatta', async () => {
+  const { token } = config();
+  const post = body => call('POST', '/entries', { token, body }).then(r => r.json());
+  const a = await post({ text: 'scritta in treno', kind: 'todo', client_id: 'cid-123' });
+  const b = await post({ text: 'scritta in treno', kind: 'todo', client_id: 'cid-123' });
+  assert.equal(a.id, b.id);
+  const done = await post({ text: 'fatta offline', kind: 'todo', client_id: 'cid-456', done: '2026-10-29T08:00:00.000Z' });
+  const e = await call('GET', `/entries/${done.id}`, { token }).then(r => r.json());
+  assert.equal(e.done_at, '2026-10-29T08:00:00.000Z');
+  const n = await post({ text: 'nota offline', kind: 'note', client_id: 'cid-789', done: true });
+  assert.equal((await call('GET', `/entries/${n.id}`, { token }).then(r => r.json())).done_at, null); // le note non si "fanno"
+});
+
+test('chat a canali: membri, sola lettura, permesso di gestirli', async () => {
+  const { token } = config();
+  const me = (method, p, body) => call(method, p, { token, body });
+  const json = r => (r.status === 204 ? null : r.json());
+  const cookie = (await call('POST', '/login', { body: { username: 'luca', password: 'password-di-luca' } })).headers.get('set-cookie').split(';')[0];
+  const luca = (method, p, body) => call(method, p, { cookie, body });
+  const lucaId = (await luca('GET', '/sync').then(json)).me.id;
+
+  // #generale è di tutti (la chat di prima); i canali nuovi solo delle persone scelte.
+  const { id: off } = await me('POST', '/chat/channels', { name: 'officina', members: [{ user_id: lucaId, can_write: false }] }).then(json);
+  const { id: secret } = await me('POST', '/chat/channels', { name: 'riservato' }).then(json);
+  await me('POST', '/chat', { text: 'solo per pochi', channel: secret });
+  await me('POST', '/chat', { text: 'in officina', channel: 'officina' });
+  let d = await luca('GET', '/sync').then(json);
+  assert.deepEqual(d.chatChannels.map(c => [c.name, c.can_write]), [['generale', 1], ['officina', 0]]);
+  assert.ok(d.chat.every(m => m.channel_id !== secret));
+  assert.equal(d.chatChannels.find(c => c.id === off).unread, 1);
+  assert.equal((await luca('POST', '/chat', { text: 'posso?', channel: off })).status, 403);
+  assert.equal((await luca('GET', `/chat?channel=${secret}`)).status, 404);
+  await luca('POST', '/chat/read', { id: d.chat.at(-1).id, channel: off });
+  assert.equal((await luca('GET', '/sync').then(json)).chatChannels.find(c => c.id === off).unread, 0);
+
+  // Gestire i canali: admin, o chi ha il permesso "canali".
+  assert.equal((await luca('POST', '/chat/channels', { name: 'mio' })).status, 403);
+  await me('PATCH', `/admin/users/${lucaId}`, { perms: { canali: 'write' } });
+  assert.equal((await luca('POST', '/chat/channels', { name: 'mio' })).status, 200);
+  d = await luca('GET', '/sync').then(json);
+  assert.equal(d.canManageChannels, true);
+  assert.ok(d.chatChannels.some(c => c.name === 'riservato' && !c.member)); // lo vede per gestirlo, senza messaggi
+  assert.ok(d.chat.every(m => m.channel_id !== secret));
+  await me('PATCH', `/admin/users/${lucaId}`, { perms: null });
+});
+
+test('feedback: testo e screenshot, li vede chi gestisce l\'istanza, esportazione', async () => {
+  const { token } = config();
+  const json = r => (r.status === 204 ? null : r.json());
+  const cookie = (await call('POST', '/login', { body: { username: 'luca', password: 'password-di-luca' } })).headers.get('set-cookie').split(';')[0];
+  const { id } = await call('POST', '/feedback', { cookie, body: { text: 'il pulsante Manda non risponde', page: '#/mail', version: '0.13.0' } }).then(json);
+  const png = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010806000000', 'hex');
+  const up = await fetch(`${url}/api/feedback/${id}/files?name=schermo.png`, { method: 'POST', headers: { Cookie: cookie, 'X-Requested-With': 'organizer', 'Content-Type': 'image/png' }, body: png });
+  assert.equal(up.status, 200);
+  const txt = await fetch(`${url}/api/feedback/${id}/files?name=x.txt`, { method: 'POST', headers: { Cookie: cookie, 'X-Requested-With': 'organizer', 'Content-Type': 'text/plain' }, body: 'no' });
+  assert.equal(txt.status, 400);
+  assert.equal((await call('GET', '/feedback', { cookie })).status, 403); // luca non gestisce l'istanza
+  assert.equal((await call('GET', '/sync', { token }).then(json)).feedbackOpen, 1);
+  const [f] = await call('GET', '/feedback', { token }).then(json);
+  assert.deepEqual([f.text, f.username, f.page, f.files.map(x => x.name)], ['il pulsante Manda non risponde', 'luca', '#/mail', ['schermo.png']]);
+  const img = await fetch(`${url}/api/feedback/files/${f.files[0].id}`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.deepEqual(Buffer.from(await img.arrayBuffer()), png);
+
+  const out = path.join(dir, 'fb');
+  await promisify(execFile)(process.execPath, ['--disable-warning=ExperimentalWarning', path.join(root, 'server/feedback-export.js'), out],
+    { env: { ...process.env, DATA_DIR: path.join(dir, 'data') } });
+  const [sub] = fs.readdirSync(out);
+  assert.match(fs.readFileSync(path.join(out, sub, 'feedback.md'), 'utf8'), /il pulsante Manda non risponde[\s\S]*1-schermo\.png/);
+  await call('PATCH', `/feedback/${id}`, { token, body: { status: 'done' } });
+  assert.deepEqual(await call('GET', '/feedback', { token }).then(json), []);
 });
 
 test('token: niente CSRF col Bearer, workspace per richiesta, revoca', async () => {

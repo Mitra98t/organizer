@@ -1,5 +1,5 @@
 // Rubrica: elenco filtrabile, scheda modificabile, mail collegate a ogni contatto.
-import { h, icon, S, ui, api, act, render, copy, trashIt, save, richField, contactHue, contactStyle, CONTACT_COLOR, hue, huePicker, filterChip, can, roClass } from './core.js';
+import { h, icon, S, ui, api, act, render, copy, trashIt, save, richField, contactHue, contactStyle, CONTACT_COLOR, hue, huePicker, filterChip, can, roClass, shareBox } from './core.js';
 import { backlinksBox } from './views.js';
 import { addrList } from './mail.js';
 
@@ -166,6 +166,7 @@ function viewContact(id) {
       h('input.h-title', { value: c.name, placeholder: 'Nome', 'data-fk': `cname-${c.id}`, onchange: ev => patch({ name: ev.target.value }) })),
     ui.contactPicker === c.id && h('div.cat-pick', h('span.muted', `Colore di ${c.name || c.email} (il suo nome nelle mail): `),
       huePicker(c.hue ?? null, hue(String(c.email || c.name).toLowerCase()), x => { ui.contactPicker = null; patch({ hue: x }); })),
+    shareBox('contact', c),
     h('div.grid',
       field('email', 'Email', { type: 'email', class: 'mono' }),
       field('phone', 'Telefono', { type: 'tel' }),

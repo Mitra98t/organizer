@@ -17,9 +17,12 @@ export const AREAS = {
 };
 export const LEVELS = { none: 'nessuno', read: 'lettura', write: 'scrittura' };
 
-// La posta è personale (vale anche per gli admin, controllato dal server in VIS_ANY): il permesso Mail decide
-// se una persona può usare le mail, non le fa vedere quelle degli altri.
-export const MAIL_PERSONAL = 'La posta è personale: ognuno vede solo le mail che ha scritto o che gli sono assegnate da mandare, e la propria posta in arrivo da Thunderbird. Nessuno, nemmeno un admin, vede la posta degli altri. Il permesso Mail decide solo se una persona può usare le mail (L: leggere le proprie, S: scriverle e mandarle).';
+// Capacità che non sono un'area: sì ('write') o no ('none'), di base no. Stanno negli stessi permessi.
+export const CAPS = { canali: 'Gestire i canali della chat' };
+
+// Cosa si vede (controllato dal server, VIS_ANY e simili in server/api.js): i permessi decidono cosa si può fare
+// nelle aree, non fanno vedere le cose degli altri.
+export const PRIVACY_NOTE = 'Tutto è privato di chi lo crea, tranne magazzino e documenti: todo, diario, mail, progetti, contatti e note sui documenti li vede solo chi li ha creati (e chi ha una voce assegnata), finché non li condivide con +persona o +all. Nessuno, nemmeno un admin, vede ciò che non è condiviso con lui. La posta in arrivo da Thunderbird è sempre solo di chi la riceve. I permessi qui sotto decidono cosa ognuno può fare nelle aree.';
 const RANK = { none: 0, read: 1, write: 2 };
 
 // Per scrivere in un'area serve leggere queste.
@@ -41,7 +44,11 @@ const valid = l => (l in RANK ? l : 'write');
 
 // Completa i permessi rispettando le dipendenze, alzando ciò che serve (mai abbassando).
 export function normalize(perms) {
-  const p = { ...fullAccess(), ...Object.fromEntries(Object.entries(perms || {}).filter(([a]) => a in AREAS).map(([a, l]) => [a, valid(l)])) };
+  const p = {
+    ...fullAccess(),
+    ...Object.fromEntries(Object.entries(perms || {}).filter(([a]) => a in AREAS).map(([a, l]) => [a, valid(l)])),
+    ...Object.fromEntries(Object.keys(CAPS).map(c => [c, perms?.[c] === 'write' ? 'write' : 'none'])),
+  };
   for (let changed = true; changed;) {
     changed = false;
     for (const a of Object.keys(AREAS)) {

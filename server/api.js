@@ -4,15 +4,16 @@ import crypto from 'node:crypto';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { db, tx, DATA_DIR, UPLOAD_DIR } from './db.js';
-import { parseQuick, parseDate, extractCodes, isYmd, today } from '../public/js/parse.js';
+import { parseQuick, parseDate, extractCodes, isYmd, today, ALL, parseShares } from '../public/js/parse.js';
 import { hashPassword, verifyPassword, sessionCookie, validUsername, validPassword, randomCode } from './auth.js';
 import {
   acc, atx, userCount, getAccount, workspaceById, workspacesOf, membersOf, roleIn, adminCount,
   addMember, createWorkspace, removeMember, syncMirror, createSession, destroySession, defaultWorkspace, setSessionWorkspace,
-  revokeApiTokens, permsIn, setPerms, inboxOf, mailAddressesOf,
+  revokeApiTokens, permsIn, setPerms, inboxOf, mailAddressesOf, openFeedback,
 } from './accounts.js';
 import { HttpError, fail, now, bool, str, sendJson, clientIp } from './util.js';
 import { rev, openStream, dropUser, mailExtOn } from './events.js';
+import { chatSync, readKey } from './chatdata.js';
 import { allows, assertCan, entryArea, readableKinds } from './perms.js';
 import { currentWorkspace } from './db.js';
 
@@ -24,7 +25,6 @@ export const docKinds = () => [...DOC_KINDS.slice(0, -1),
   ...db.prepare('SELECT name FROM doc_kinds ORDER BY name').all().map(r => r.name), 'altro'];
 export const docKind = k => (docKinds().includes(String(k)) ? String(k) : 'altro');
 const ARCHIVE_DAYS = 30;
-const CHAT_IN_SYNC = 100;
 const MAX_UPLOAD = (+process.env.MAX_UPLOAD_MB || 200) * 1048576;
 const CODE_OK = /^[A-Za-z0-9](?:[\w.\-/]*[A-Za-z0-9_])?$/;
 
@@ -41,12 +41,17 @@ export function route(method, pattern, handler, { auth = 'user', ws = auth !== '
 }
 
 // ---------- visibilità ----------
-// Tutto è condiviso tra gli utenti dell'istanza, tranne voci e progetti marcati privati e le mail: la posta è
-// personale, la vedono solo chi l'ha scritta e chi la deve mandare (assegnata). Vale anche per gli admin.
-// Le versioni *_ANY includono anche ciò che sta nel cestino (deleted_at valorizzato).
-export const VIS_ANY = `((e.private = 0 AND e.kind != 'mail') OR e.created_by = $uid OR e.assignee_id = $uid)
-  AND (e.project_id IS NULL OR EXISTS (SELECT 1 FROM projects p WHERE p.id = e.project_id AND (p.private = 0 OR p.created_by = $uid)))`;
-export const PVIS_ANY = '(p.private = 0 OR p.created_by = $uid)';
+// Visibilità: tutto è privato di chi lo crea, tranne magazzino e documenti. Voci, progetti, contatti e note sui
+// documenti si condividono con delle persone (+persona, tabella shares) o con tutti (+all, shared_all). Vale
+// anche per gli admin. Una voce la vede anche chi la deve fare (assegnata), una sotto-attività chi vede la voce
+// sopra. Le versioni *_ANY includono anche ciò che sta nel cestino (deleted_at valorizzato).
+const sharedWith = (kind, a) => `(${a}.created_by = $uid OR ${a}.shared_all = 1
+  OR EXISTS (SELECT 1 FROM shares s WHERE s.kind = '${kind}' AND s.obj_id = ${a}.id AND s.user_id = $uid))`;
+export const VIS_ANY = `(${sharedWith('entry', 'e')} OR e.assignee_id = $uid
+  OR (e.parent_id IS NOT NULL AND EXISTS (SELECT 1 FROM entries pe WHERE pe.id = e.parent_id AND (${sharedWith('entry', 'pe')} OR pe.assignee_id = $uid))))`;
+export const PVIS_ANY = sharedWith('project', 'p');
+export const CVIS_ANY = sharedWith('contact', 'c');
+export const NVIS_ANY = sharedWith('docnote', 'n');
 export const VIS = `e.deleted_at IS NULL AND ${VIS_ANY}`;
 const PVIS = `p.deleted_at IS NULL AND ${PVIS_ANY}`;
 
@@ -65,6 +70,42 @@ const getItem = id => db.prepare('SELECT * FROM items WHERE id = ? AND deleted_a
 const getUser = id => db.prepare('SELECT id, username, name, is_admin FROM users WHERE id = ?').get(+id) || fail(404, 'Utente non trovato');
 // +utente: solo i membri attuali del workspace.
 const findUser = name => db.prepare('SELECT id FROM users WHERE member = 1 AND (username = $n COLLATE NOCASE OR name = $n COLLATE NOCASE)').get({ n: name });
+
+// ---------- condivisioni ----------
+export const SHARE_TABLES = { entry: 'entries', project: 'projects', contact: 'contacts', docnote: 'doc_notes' };
+
+// Nomi scritti con +persona → membri del workspace (e "all"); quelli sconosciuti tornano indietro.
+export function shareTargets(names) {
+  const out = { ids: [], all: false, unknown: [] };
+  for (const n of names) {
+    if (n === ALL) { out.all = true; continue; }
+    const u = findUser(n);
+    if (u) out.ids.push(u.id);
+    else out.unknown.push(n);
+  }
+  return out;
+}
+
+// Aggiunge persone (e "tutti"): da +persona si condivide e basta, non si toglie mai nessuno.
+export function addShares(kind, id, ids, all = false) {
+  for (const uid of ids) db.prepare('INSERT OR IGNORE INTO shares (kind, obj_id, user_id) VALUES (?, ?, ?)').run(kind, id, uid);
+  if (all) db.prepare(`UPDATE ${SHARE_TABLES[kind]} SET shared_all = 1 WHERE id = ?`).run(id);
+}
+
+// Con chi è condiviso (dal pannello "Condivisa con"): sostituisce l'elenco. Solo chi l'ha creato lo cambia.
+route('PUT', '/api/shares/:kind/:id', async ({ params, user, body }) => {
+  const table = SHARE_TABLES[params.kind] || fail(404, 'Tipo sconosciuto');
+  const b = await body();
+  const o = db.prepare(`SELECT id, created_by FROM ${table} WHERE id = ?`).get(+params.id) || fail(404, 'Non trovato');
+  if (o.created_by !== user.id) fail(403, 'Solo chi l\'ha creato decide con chi condividerlo');
+  const ids = (Array.isArray(b.users) ? b.users : []).map(Number)
+    .filter(id => id !== user.id && db.prepare('SELECT 1 FROM users WHERE id = ? AND member = 1').get(id));
+  tx(() => {
+    db.prepare('DELETE FROM shares WHERE kind = ? AND obj_id = ?').run(params.kind, o.id);
+    db.prepare(`UPDATE ${table} SET shared_all = ? WHERE id = ?`).run(bool(b.all), o.id);
+    addShares(params.kind, o.id, ids);
+  });
+});
 
 const fmtDate = d => (d ? `${d.slice(8)}/${d.slice(5, 7)}` : 'nessuna');
 export const insertId = r => Number(r.lastInsertRowid);
@@ -87,7 +128,7 @@ function resolveProject(tag, user) {
   // Scrivere @tag di un progetto nel cestino lo ripristina: è chiaramente quello che si intende.
   if (p?.deleted_at) db.prepare('UPDATE projects SET deleted_at = NULL, deleted_by = NULL WHERE id = ?').run(p.id);
   if (p) return p.id;
-  if (db.prepare('SELECT 1 FROM projects WHERE tag = ?').get(tag)) fail(403, `@${tag} è un progetto privato di un altro utente`);
+  if (db.prepare('SELECT 1 FROM projects WHERE tag = ?').get(tag)) fail(403, `@${tag} è un progetto di un altro utente, non condiviso con te`);
   // Scrivere @nuovo crea il progetto: serve poter scrivere nei progetti.
   if (!allows(user.perms, 'progetti', 'write')) fail(403, `Il progetto @${tag} non esiste e non hai il permesso di crearne`);
   const t = now();
@@ -195,7 +236,7 @@ function login(req, res, userId, wsId = defaultWorkspace(userId)) {
 
 async function newAccount(b) {
   const username = str(b.username, 32);
-  if (!validUsername(username)) fail(400, 'Username: 2-32 caratteri tra lettere, numeri, . _ -');
+  if (!validUsername(username)) fail(400, 'Username: 2-32 caratteri tra lettere, numeri, . _ - (non "all" né "tutti")');
   if (!validPassword(b.password)) fail(400, 'La password deve avere almeno 8 caratteri');
   if (acc.prepare('SELECT 1 FROM users WHERE username = ?').get(username)) fail(409, 'Username già in uso');
   return { username, name: str(b.name, 60) || username, pass: await hashPassword(b.password) };
@@ -308,7 +349,7 @@ route('GET', '/api/events', ({ req, res, user }) => openStream(req, res, user));
 // ---------- sync ----------
 route('GET', '/api/sync', ({ req, res, user }) => {
   // Il segno di lettura della chat cambia senza notifiche (riguarda solo chi legge): fa parte dell'ETag.
-  const chatRead = db.prepare('SELECT chat_read_id FROM users WHERE id = ?').get(user.id)?.chat_read_id ?? 0;
+  const chatRead = readKey(user.id);
   const etag = `"${rev()}-${user.id}-${user.workspace_id}-${chatRead}-${user.perms ? Object.values(user.perms).join('') : ''}"`;
   if (req.headers['if-none-match'] === etag) {
     res.writeHead(304, { ETag: etag, 'Cache-Control': 'private, no-cache' });
@@ -342,30 +383,34 @@ route('GET', '/api/sync', ({ req, res, user }) => {
     itemLinks: all('magazzino', 'SELECT parent_id, child_id FROM item_links'),
     entryProjects: all('progetti', `SELECT ep.entry_id, ep.project_id FROM entry_projects ep
       JOIN entries e ON e.id = ep.entry_id JOIN projects p ON p.id = ep.project_id
-      WHERE ${where} AND p.deleted_at IS NULL AND (p.private = 0 OR p.created_by = $uid)`, p),
+      WHERE ${where} AND p.deleted_at IS NULL AND ${PVIS_ANY}`, p),
     projectItems: can('magazzino') ? all('progetti', `SELECT pi.project_id, pi.item_id FROM project_items pi
       JOIN projects p ON p.id = pi.project_id WHERE ${PVIS}`, { uid }) : [],
     docs: all('documenti', `SELECT id, item_id, kind, label, version, filename, mime, size, sha256, url, created_by, created_at
       FROM documents WHERE deleted_at IS NULL ORDER BY created_at DESC`),
-    contacts: all('contatti', 'SELECT * FROM contacts WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE, email'),
+    contacts: all('contatti', `SELECT c.* FROM contacts c WHERE c.deleted_at IS NULL AND ${CVIS_ANY} ORDER BY c.name COLLATE NOCASE, c.email`, { uid }),
     categoryColors: all('magazzino', 'SELECT name, hue FROM category_colors'),
     docKinds: docKinds(),
     customDocKinds: db.prepare('SELECT name FROM doc_kinds ORDER BY name').all().map(r => r.name),
     docNotes: all('documenti', `SELECT n.* FROM doc_notes n JOIN documents d ON d.id = n.doc_id
-      WHERE n.deleted_at IS NULL AND d.deleted_at IS NULL ORDER BY n.id`),
+      WHERE n.deleted_at IS NULL AND d.deleted_at IS NULL AND ${NVIS_ANY} ORDER BY n.id`, { uid }),
+    // Con chi è condiviso ciò che si vede (per "Condivisa con"): voci, progetti, contatti, note sui documenti.
+    shares: db.prepare(`SELECT s.kind, s.obj_id, s.user_id FROM shares s WHERE
+      (s.kind = 'entry' AND s.obj_id IN (SELECT e.id FROM entries e WHERE ${where}))
+      OR (s.kind = 'project' AND s.obj_id IN (SELECT p.id FROM projects p WHERE ${PVIS}))
+      OR (s.kind = 'contact' AND s.obj_id IN (SELECT c.id FROM contacts c WHERE c.deleted_at IS NULL AND ${CVIS_ANY}))
+      OR (s.kind = 'docnote' AND s.obj_id IN (SELECT n.id FROM doc_notes n WHERE n.deleted_at IS NULL AND ${NVIS_ANY}))`).all(p),
     attachments: db.prepare(`SELECT a.id, a.entry_id, a.doc_id, a.filename, a.mime, a.size FROM mail_attachments a
       JOIN entries e ON e.id = a.entry_id WHERE ${where} ORDER BY a.id`).all(p),
     // Mail con Thunderbird: se l'estensione è collegata e i messaggi delle conversazioni (senza il testo).
     mailExt: mailExtOn(uid),
     inbox: can('mail') ? inboxOf(uid) : [], // posta in arrivo personale (solo di chi è collegato)
     myAddresses: mailAddressesOf(uid),
+    feedbackOpen: openFeedback(uid), // null = non gestisce i feedback
     mailMsgs: db.prepare(`SELECT m.id, m.entry_id, m.direction, m.from_addr, m.date FROM mail_messages m
       JOIN entries e ON e.id = m.entry_id WHERE ${where} ORDER BY m.date`).all(p),
-    // Chat: gli ultimi messaggi (i precedenti con /api/chat?before=) e quanti ne restano da leggere.
-    chat: all('chat', `SELECT id, user_id, text, created_at, edited_at FROM chat_messages WHERE deleted_at IS NULL
-      ORDER BY id DESC LIMIT ${CHAT_IN_SYNC}`).reverse(),
-    chatReadId: chatRead,
-    chatUnread: can('chat') ? db.prepare('SELECT COUNT(*) AS n FROM chat_messages WHERE deleted_at IS NULL AND user_id != ? AND id > ?').get(uid, chatRead).n : 0,
+    // Chat: i canali che si leggono (tutti, per chi li gestisce), gli ultimi messaggi di ognuno e i non letti.
+    ...(can('chat') ? chatSync(user) : { chatChannels: [], chat: [], chatUnread: 0, canManageChannels: false }),
     // Nel cestino contano solo le aree che si possono leggere.
     trashCount: [
       `SELECT COUNT(*) AS n FROM entries e WHERE e.deleted_at IS NOT NULL AND ${VIS_ANY} AND e.kind IN (${kinds})
@@ -374,8 +419,8 @@ route('GET', '/api/sync', ({ req, res, user }) => {
       can('magazzino') && 'SELECT COUNT(*) AS n FROM items WHERE deleted_at IS NOT NULL',
       can('documenti') && `SELECT COUNT(*) AS n FROM documents d WHERE d.deleted_at IS NOT NULL
         AND EXISTS (SELECT 1 FROM items i WHERE i.id = d.item_id AND i.deleted_at IS NULL)`,
-      can('contatti') && 'SELECT COUNT(*) AS n FROM contacts WHERE deleted_at IS NOT NULL',
-      can('documenti') && `SELECT COUNT(*) AS n FROM doc_notes n WHERE n.deleted_at IS NOT NULL
+      can('contatti') && `SELECT COUNT(*) AS n FROM contacts c WHERE c.deleted_at IS NOT NULL AND ${CVIS_ANY}`,
+      can('documenti') && `SELECT COUNT(*) AS n FROM doc_notes n WHERE n.deleted_at IS NOT NULL AND ${NVIS_ANY}
         AND EXISTS (SELECT 1 FROM documents d WHERE d.id = n.doc_id AND d.deleted_at IS NULL)`,
     ].filter(Boolean).reduce((sum, q) => sum + db.prepare(q).get(q.includes('$uid') ? { uid } : {}).n, 0),
   }, { ETag: etag });
@@ -392,17 +437,22 @@ route('GET', '/api/archive', ({ user, query }) => {
 
 // ---------- voci (todo / mail / note) ----------
 // ">marco" diventa l'email del contatto in rubrica che si chiama così (se è uno solo).
-function resolveContact(s) {
+function resolveContact(s, user) {
   if (s.includes('@')) return s;
   const name = s.replace(/[._]/g, ' ');
-  const exact = db.prepare(`SELECT email FROM contacts WHERE deleted_at IS NULL AND email != '' AND name = ? COLLATE NOCASE`).all(name);
+  const exact = db.prepare(`SELECT email FROM contacts c WHERE c.deleted_at IS NULL AND c.email != '' AND c.name = $name COLLATE NOCASE AND ${CVIS_ANY}`)
+    .all({ name, uid: user.id });
   if (exact.length === 1) return exact[0].email;
-  const prefix = db.prepare(`SELECT email FROM contacts WHERE deleted_at IS NULL AND email != '' AND name LIKE ? ESCAPE '\\'`)
-    .all(`${name.replace(/[%_\\]/g, '\\$&')}%`);
+  const prefix = db.prepare(`SELECT email FROM contacts c WHERE c.deleted_at IS NULL AND c.email != '' AND c.name LIKE $like ESCAPE '\\' AND ${CVIS_ANY}`)
+    .all({ like: `${name.replace(/[%_\\]/g, '\\$&')}%`, uid: user.id });
   return prefix.length === 1 ? prefix[0].email : s;
 }
 
 export function createEntry(b, user) {
+  // Voce creata offline e già arrivata (l'invio si è ripetuto): si restituisce quella.
+  const clientId = b.client_id ? str(b.client_id, 64) : null;
+  const seen = clientId && db.prepare('SELECT id FROM entries WHERE created_by = ? AND client_id = ?').get(user.id, clientId);
+  if (seen) return seen.id;
   const base = isYmd(b.today) ? b.today : today();
   const p = parseQuick(str(b.text, 1000), { today: base, kind: KINDS.includes(b.kind) ? b.kind : 'todo' });
   if (!p.title) fail(400, 'Scrivi almeno qualche parola');
@@ -421,18 +471,23 @@ export function createEntry(b, user) {
 
   let title = p.title;
   let assigneeId = b.assignee_id ? getUser(b.assignee_id).id : null;
-  const contact = p.contact ? resolveContact(p.contact) : null;
+  const contact = p.contact ? resolveContact(p.contact, user) : null;
+  // +persona condivide, ++persona condivide e assegna, +all condivide con tutti; i nomi sconosciuti restano nel titolo.
+  const sh = shareTargets(p.shares);
   if (p.assignee) {
     const u = findUser(p.assignee);
     if (u) assigneeId = u.id;
-    else title += ` +${p.assignee}`;
   }
+  if (sh.unknown.length) title += sh.unknown.map(n => ` +${n}`).join('');
 
   const t = now();
+  // done: una todo segnata fatta mentre si era offline arriva già fatta (alla sua ora).
+  const doneAt = b.done ? (typeof b.done === 'string' && !Number.isNaN(Date.parse(b.done)) ? new Date(b.done).toISOString() : t) : null;
   const id = insertId(db.prepare(`INSERT INTO entries
-    (kind, title, contact, due, private, project_id, parent_id, assignee_id, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(kind, title, contact, p.due ?? null, bool(b.private), projectId, parent?.id ?? null, assigneeId, user.id, t, t));
+    (kind, title, contact, due, project_id, parent_id, assignee_id, created_by, created_at, updated_at, client_id, done_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(kind, title, contact, p.due ?? null, projectId, parent?.id ?? null, assigneeId, user.id, t, t, clientId, kind === 'note' ? null : doneAt));
+  addShares('entry', id, sh.ids.filter(x => x !== user.id), p.shareAll || bool(b.shared_all));
   for (const pid of projectIds.slice(1)) addEntryProject(id, pid);
   syncEntryItems(id, user);
   return id;
@@ -458,11 +513,17 @@ export function updateEntry(e, b, user) {
       if (!e.project_id && f.project_id === undefined) f.project_id = pid;
       else if (pid !== (f.project_id ?? e.project_id)) addEntryProject(e.id, pid);
     }
-    if (p.contact) f.contact = resolveContact(p.contact);
+    if (p.contact) f.contact = resolveContact(p.contact, user);
+    // +persona / ++persona / +all nel titolo aggiungono condivisioni (non ne tolgono): solo chi ha creato la voce.
+    const sh = shareTargets(p.shares);
     if (p.assignee) {
       const u = findUser(p.assignee);
       if (u) f.assignee_id = u.id;
-      else f.title += ` +${p.assignee}`;
+    }
+    if (sh.unknown.length) f.title += sh.unknown.map(n => ` +${n}`).join('');
+    if (sh.ids.length || p.shareAll) {
+      if (e.created_by !== user.id) fail(403, 'Solo chi ha creato la voce decide con chi condividerla');
+      addShares('entry', e.id, sh.ids.filter(x => x !== user.id), p.shareAll);
     }
   }
   if (b.notes !== undefined) f.notes = str(b.notes, 20000);
@@ -491,10 +552,6 @@ export function updateEntry(e, b, user) {
     if (e.awaiting_reply && !b.awaiting && e.done_at) addLog(e.id, user.id, 'risposta arrivata', true);
   }
   if (b.pinned !== undefined) f.pinned = bool(b.pinned);
-  if (b.private !== undefined) {
-    if (e.created_by !== user.id) fail(403, 'Solo chi ha creato la voce può cambiarne la visibilità');
-    f.private = bool(b.private);
-  }
   if (!Object.keys(f).length) return;
   // Permessi: si scrive nell'area della voce e, se cambia tipo (todo ↔ mail), anche in quella nuova.
   assertCan(user, entryArea(e.kind), 'write');
@@ -540,7 +597,7 @@ route('GET', '/api/backlinks/:kind/:id', ({ params, user }) => {
   if (kind === 'articolo') ids.push(...db.prepare('SELECT entry_id AS id FROM entry_items WHERE item_id = ?').all(id).map(r => r.id));
   if (kind === 'doc') ids.push(...db.prepare('SELECT entry_id AS id FROM mail_attachments WHERE doc_id = ?').all(id).map(r => r.id));
   if (kind === 'contatto') {
-    const email = db.prepare("SELECT email FROM contacts WHERE id = ? AND email != ''").get(id)?.email;
+    const email = db.prepare(`SELECT email FROM contacts c WHERE c.id = $id AND c.email != '' AND ${CVIS_ANY}`).get({ id, uid: user.id })?.email;
     if (email) {
       ids.push(...db.prepare(`SELECT id FROM entries WHERE kind = 'mail' AND (',' || REPLACE(LOWER(contact), ' ', '') || ',') LIKE ?`)
         .all(`%,${email.toLowerCase()},%`).map(r => r.id));
@@ -634,9 +691,13 @@ route('POST', '/api/projects', async ({ user, body }) => {
   const clash = db.prepare('SELECT deleted_at FROM projects WHERE tag = ?').get(tag);
   if (clash) fail(409, clash.deleted_at ? `@${tag} è nel cestino: ripristinalo da lì` : `Esiste già un progetto @${tag}`);
   const parentId = b.parent_id ? getProject(b.parent_id, user.id).id : null;
+  // Privato di chi lo crea; share: i nomi scritti con +persona (e "all") nella barra dei progetti.
+  const sh = shareTargets(Array.isArray(b.share) ? b.share.map(x => str(x, 64)) : []);
+  if (sh.unknown.length) fail(400, `Non c'è nessuno che si chiama ${sh.unknown.map(n => `+${n}`).join(', ')} in questo workspace`);
   const t = now();
-  const id = insertId(db.prepare('INSERT INTO projects (name, tag, private, parent_id, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(name, tag, bool(b.private), parentId, user.id, t, t));
+  const id = insertId(db.prepare('INSERT INTO projects (name, tag, parent_id, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(name, tag, parentId, user.id, t, t));
+  addShares('project', id, sh.ids.filter(x => x !== user.id), sh.all);
   return { id, tag };
 }, { area: 'progetti' });
 
@@ -682,10 +743,6 @@ route('PATCH', '/api/projects/:id', async ({ params, user, body }) => {
   if (b.parent_id !== undefined) {
     f.parent_id = b.parent_id ? getProject(b.parent_id, user.id).id : null;
     checkParent(p, f.parent_id);
-  }
-  if (b.private !== undefined) {
-    if (p.created_by !== user.id) fail(403, 'Solo chi ha creato il progetto può cambiarne la visibilità');
-    f.private = bool(b.private);
   }
   f.updated_at = now();
   setFields('projects', p.id, f);
@@ -959,23 +1016,42 @@ function notePosition(b) {
   return { page, x, y, z };
 }
 
-const getNote = id => db.prepare('SELECT * FROM doc_notes WHERE id = ? AND deleted_at IS NULL').get(+id) || fail(404, 'Nota non trovata');
+// Le note sono private di chi le scrive; +persona / +all nel testo le condividono (e non restano nel testo).
+const getNote = (id, user) => db.prepare(`SELECT * FROM doc_notes n WHERE n.id = $id AND n.deleted_at IS NULL AND ${NVIS_ANY}`)
+  .get({ id: +id, uid: user.id }) || fail(404, 'Nota non trovata');
+
+function noteText(raw) {
+  const ps = parseShares(str(raw, 5000));
+  const sh = shareTargets(ps.names);
+  // Chi non esiste resta scritto nella nota, come nelle voci.
+  return { text: [ps.text, ...sh.unknown.map(n => `+${n}`)].filter(Boolean).join(' '), ids: sh.ids, all: ps.all };
+}
 
 route('POST', '/api/docs/:id/notes', async ({ params, user, body }) => {
   const b = await body();
   const d = db.prepare('SELECT id FROM documents WHERE id = ? AND deleted_at IS NULL').get(+params.id) || fail(404, 'Documento non trovato');
-  const text = str(b.text, 5000) || fail(400, 'Scrivi la nota');
+  const nt = noteText(b.text);
+  if (!nt.text) fail(400, 'Scrivi la nota');
   const { page, x, y, z } = notePosition(b);
   const t = now();
-  return { id: insertId(db.prepare(`INSERT INTO doc_notes (doc_id, page, x, y, z, text, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(d.id, page, x, y, z, text, user.id, t, t)) };
+  const id = insertId(db.prepare(`INSERT INTO doc_notes (doc_id, page, x, y, z, text, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(d.id, page, x, y, z, nt.text, user.id, t, t));
+  addShares('docnote', id, nt.ids.filter(x => x !== user.id), nt.all);
+  return { id };
 }, { area: 'documenti' });
 
-route('PATCH', '/api/doc-notes/:id', async ({ params, body }) => {
+route('PATCH', '/api/doc-notes/:id', async ({ params, user, body }) => {
   const b = await body();
-  const n = getNote(params.id);
+  const n = getNote(params.id, user);
   const f = {};
-  if (b.text !== undefined) f.text = str(b.text, 5000) || fail(400, 'La nota non può essere vuota');
+  if (b.text !== undefined) {
+    const nt = noteText(b.text);
+    f.text = nt.text || fail(400, 'La nota non può essere vuota');
+    if (nt.ids.length || nt.all) {
+      if (n.created_by !== user.id) fail(403, 'Solo chi ha scritto la nota decide con chi condividerla');
+      addShares('docnote', n.id, nt.ids.filter(x => x !== user.id), nt.all);
+    }
+  }
   if (b.resolved !== undefined) f.resolved_at = b.resolved ? n.resolved_at || now() : null;
   if (b.page !== undefined) Object.assign(f, notePosition(b));
   f.updated_at = now();
@@ -983,7 +1059,7 @@ route('PATCH', '/api/doc-notes/:id', async ({ params, body }) => {
 }, { area: 'documenti' });
 
 route('DELETE', '/api/doc-notes/:id', ({ params, user }) => {
-  const n = getNote(params.id);
+  const n = getNote(params.id, user);
   db.prepare('UPDATE doc_notes SET deleted_at = ?, deleted_by = ? WHERE id = ?').run(now(), user.id, n.id);
 }, { area: 'documenti' });
 

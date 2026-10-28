@@ -1,4 +1,5 @@
-// Chat del workspace dal terminale: leggere, scrivere, seguire in tempo reale (org chat -f).
+// Chat del workspace dal terminale: leggere, scrivere, seguire in tempo reale (org chat -f), per canale (-c).
+// Senza -c vale il primo canale in cui si è (di solito #generale).
 import { c, fail, ask, readStdin, rich, ymd } from './term.js';
 import { userName, linkRefs } from './data.js';
 
@@ -24,9 +25,10 @@ function print(D, list, lastDay = null) {
 }
 
 const markRead = (ctx, list) => list.length && ctx.api().post('/chat/read', { id: list.at(-1).id }).catch(() => {});
+const chanQuery = ch => (ch ? `&channel=${encodeURIComponent(String(ch).replace(/^#/, ''))}` : '');
 
 // Segue la chat: a ogni notifica del server (/api/events) legge i messaggi nuovi. Ctrl-C per uscire.
-async function follow(ctx, D, lastId, lastDay) {
+async function follow(ctx, D, lastId, lastDay, ch) {
   console.log(c.dim('In ascolto… (Ctrl-C per uscire)'));
   for (;;) {
     try {
@@ -38,7 +40,7 @@ async function follow(ctx, D, lastId, lastDay) {
         const events = buf.split('\n\n');
         buf = events.pop(); // l'ultimo pezzo può essere un evento non ancora completo
         if (!events.some(ev => ev.includes('event: change'))) continue; // solo ": ping"
-        const fresh = await ctx.api().get(`/chat?after=${lastId}&limit=500`);
+        const fresh = await ctx.api().get(`/chat?after=${lastId}&limit=500${chanQuery(ch)}`);
         if (!fresh.length) continue;
         lastDay = print(D, fresh, lastDay);
         lastId = fresh.at(-1).id;
@@ -53,30 +55,45 @@ async function follow(ctx, D, lastId, lastDay) {
 
 export default {
   ls: {
-    usage: 'chat [-n N] [-f]',
-    summary: 'ultimi messaggi della chat del workspace; -f resta in ascolto e mostra i nuovi',
-    options: { n: { type: 'string', short: 'n' }, follow: { type: 'boolean', short: 'f' } },
+    usage: 'chat [-c CANALE] [-n N] [-f]',
+    summary: 'ultimi messaggi di un canale (di base il primo, es. #generale); -f resta in ascolto e mostra i nuovi',
+    options: { channel: { type: 'string', short: 'c' }, n: { type: 'string', short: 'n' }, follow: { type: 'boolean', short: 'f' } },
     async run(ctx, _pos, o) {
       const n = o.n ? Math.min(Math.max(parseInt(o.n, 10) || 20, 1), 500) : 20;
-      const [D, list] = await Promise.all([ctx.data(), ctx.api().get(`/chat?limit=${n}`)]);
+      const [D, list] = await Promise.all([ctx.data(), ctx.api().get(`/chat?limit=${n}${chanQuery(o.channel)}`)]);
       if (ctx.json) return ctx.out(list);
       if (!list.length && !o.follow) return console.log(c.dim('Nessun messaggio. Scrivi con: org chat send TESTO'));
       const lastDay = print(D, list);
       await markRead(ctx, list);
-      if (o.follow) await follow(ctx, D, list.at(-1)?.id ?? 0, lastDay);
+      if (o.follow) await follow(ctx, D, list.at(-1)?.id ?? 0, lastDay, o.channel);
     },
   },
 
   send: {
-    usage: 'chat send TESTO…',
-    summary: 'scrive nella chat (@progetto #CODICE +persona, [[doc:ID]] [[voce:ID]] [[contatto:ID]]); senza testo lo chiede o lo legge da stdin',
-    async run(ctx, pos) {
+    usage: 'chat send [-c CANALE] TESTO…',
+    summary: 'scrive in un canale (@progetto #CODICE +persona, [[doc:ID]] [[voce:ID]] [[contatto:ID]]); senza testo lo chiede o lo legge da stdin',
+    options: { channel: { type: 'string', short: 'c' } },
+    async run(ctx, pos, o) {
       const text = pos.length ? pos.join(' ') : process.stdin.isTTY ? await ask(`${c.dim('›')} `) : (await readStdin()).trim();
       if (!text) fail('Scrivi qualcosa');
-      const { id } = await ctx.api().post('/chat', { text });
+      const { id } = await ctx.api().post('/chat', { text, ...(o.channel ? { channel: String(o.channel).replace(/^#/, '') } : {}) });
       if (ctx.json) return ctx.out({ id });
       const D = await ctx.data();
       print(D, [{ id, user_id: D.me.id, text, created_at: new Date().toISOString() }]);
+    },
+  },
+
+  canali: {
+    usage: 'chat canali',
+    summary: 'i canali in cui sei, con i messaggi non letti (e chi può solo leggere)',
+    async run(ctx) {
+      const D = await ctx.data();
+      const list = (D.chatChannels || []).filter(x => x.member);
+      if (ctx.json) return ctx.out(list);
+      if (!list.length) return console.log(c.dim('Non sei in nessun canale'));
+      for (const ch of list) {
+        console.log(`${c.bold(`#${ch.name}`)}${ch.unread ? c.yellow(` ${ch.unread} da leggere`) : ''}${ch.can_write ? '' : c.dim(' (solo lettura)')}${ch.everyone ? c.dim(' · tutti') : ''}`);
+      }
     },
   },
 };

@@ -1,14 +1,16 @@
 import {
   h, icon, S, ui, RS, api, act, render, richText, dueInfo, dayDiff, fmtDay, fmtLongDay, fmtTime, fmtSize,
-  userName, toast, save, patchEntry, addEntry, isMine, localDay, autosize, stop, copy, hue, trashIt, contactNames,
+  userName, toast, save, patchEntry, addEntry, isMine, localDay, autosize, stop, copy, hue, trashIt, contactNames, shareBox, sharedWithOf,
+  updatePending, removePending,
   descendants, ancestors, catStyle, itemAttrs, docFileUrl, projectsOf, DOC_KINDS, projHue, catHue, huePicker,
   switchWorkspace, newWorkspace, docName, renameDoc, richField, backlinks, plainRefs, CONTACT_COLOR, masonry, filterChip, aliasCodes, kindPicker, can, canEntry, roClass,
 } from './core.js';
 import { docMeta, docPeek } from './docview.js';
-import { today, addDays } from './parse.js';
+import { openFeedback } from './feedback.js';
+import { today, addDays, parseQuick } from './parse.js';
 import { mailComposer, mailThread, mailSide, inboxRow } from './mail.js';
 import { THEMES, BASE_THEMES, currentTheme, setTheme } from './themes.js';
-import { AREAS, LEVELS, WRITE_NEEDS, READ_NEEDS, MAIL_PERSONAL, fullAccess, setLevel, isRestricted } from './perms.js';
+import { AREAS, LEVELS, CAPS, WRITE_NEEDS, READ_NEEDS, PRIVACY_NOTE, fullAccess, setLevel, isRestricted } from './perms.js';
 import { draggable } from './dnd.js';
 
 const KIND_LABEL = { todo: 'Todo', mail: 'Mail', note: 'Nota' };
@@ -52,6 +54,7 @@ function toggleOpen(id) {
 }
 
 function toggleDone(e) {
+  if (e.pending) return updatePending(e.id, { done: e.done_at ? null : new Date().toISOString() });
   if (e.kind === 'mail') return advanceMail(e);
   const done = !e.done_at;
   patchEntry(e, { done });
@@ -134,7 +137,11 @@ export function entryRow(e, opt = {}) {
   if (kids.length) meta.push(h('span.kids', icon('check'), `${kids.filter(k => k.done_at).length}/${kids.length}`));
   if (logs.length) meta.push(h('span.logs', icon('log'), logs.length));
   if (e.notes) meta.push(h('span.has-notes', { title: 'Ha dettagli' }, '¶'));
-  if (e.private) meta.push(h('span.priv', { title: 'Privata' }, icon('lock')));
+  // Condivisione: di chi è (se non è mia) e con chi la condivido (le mie private non hanno niente: è il default).
+  const sharedIds = sharedWithOf('entry', e);
+  if (e.created_by !== D.me.id && e.created_by) meta.push(h('span.who', { title: 'Creata da' }, `di ${userName(e.created_by)}`));
+  else if (e.shared_all) meta.push(h('span.shared', { title: 'Visibile a tutti' }, icon('users'), 'tutti'));
+  else if (sharedIds.length) meta.push(h('span.shared', { title: `Condivisa con ${sharedIds.map(userName).join(', ')}` }, icon('user'), sharedIds.length === 1 ? userName(sharedIds[0]) : sharedIds.length));
   if (parent) meta.push(h('span.parent', { title: parent.title }, '↳ sotto-attività di ', h('b', parent.title)));
   if (e.pending) meta.push(h('span.pending', 'in coda offline'));
 
@@ -149,7 +156,7 @@ export function entryRow(e, opt = {}) {
 
   return h('div.entry', {
     class: [`k-${e.kind}`, e.done_at && 'done', e.done_at && e.awaiting_reply && 'waiting', open && 'open', e.pinned && 'pinned', opt.nested && 'nested',
-      e.pending ? null : roClass(canEntry(e))].filter(Boolean).join(' '),
+      e.pending ? 'rw' : roClass(canEntry(e))].filter(Boolean).join(' '),
   },
   h('div.row', check,
     h('div.body', { onclick: () => toggleOpen(e.id) },
@@ -158,7 +165,26 @@ export function entryRow(e, opt = {}) {
         e.pinned ? icon('star', 'pin') : null, richText(e.title)),
       meta.length > 0 && h('div.meta', meta)),
     e.kind === 'mail' && e.done_at && !e.pending && mailUpBtn(e)),
-  open && entryEditor(e));
+  open && (e.pending ? pendingEditor(e) : entryEditor(e)));
+}
+
+// Voce creata offline, ancora in coda: si cambia il testo (con gli stessi token della barra), si elimina.
+// Il resto (progetti, condivisione, sotto-attività…) quando è arrivata al server.
+function pendingEditor(e) {
+  const p = S.outbox.find(x => x.pid === e.id);
+  if (!p) return null;
+  return h('div.editor.rw',
+    h('textarea.ed-title', {
+      rows: 1, value: p.text, 'data-fk': `ptitle-${e.id}`, spellcheck: 'false', 'data-ac': e.kind, 'aria-label': 'Testo della voce in coda',
+      oninput: autosize,
+      onkeydown: ev => { if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); ev.target.blur(); } },
+      onblur: ev => { const v = ev.target.value.trim(); if (v && v !== p.text) updatePending(e.id, { text: v }); },
+    }),
+    h('p.muted', icon('wait'), ' In coda: parte appena torna la rete. Fino ad allora la puoi cambiare o eliminare; progetti, condivisione e il resto dopo.'),
+    h('div.ed-foot',
+      h('span.muted', `creata offline · ${fmtTime(p.queued_at)}`),
+      h('span.grow'),
+      h('button.btn.sm.danger', { onclick: () => { ui.open.delete(e.id); removePending(e.id); toast('Voce in coda eliminata'); } }, icon('trash'), 'Elimina')));
 }
 
 function entryEditor(e) {
@@ -206,8 +232,7 @@ function entryEditor(e) {
         selectOf(e.assignee_id ? String(e.assignee_id) : '', [['', '— nessuno —'], ...D.members.map(u => [String(u.id), u.name || u.username])],
           v => patchEntry(e, { assignee_id: v ? +v : null }))),
       h('button.chip', { class: e.pinned && 'on', onclick: () => patchEntry(e, { pinned: !e.pinned }) }, icon('star'), 'evidenza'),
-      // Le mail sono già personali: "privata" serve solo a todo e note.
-      e.created_by === me.id && e.kind !== 'mail' && h('button.chip', { class: e.private && 'on', onclick: () => patchEntry(e, { private: !e.private }) }, icon('lock'), 'privata'),
+      !e.parent_id && shareBox('entry', e),
       e.kind === 'mail' && e.done_at && h('button.chip', {
         class: e.awaiting_reply && 'on', title: 'La mail compare in "In attesa di risposta" finché non arriva la risposta',
         onclick: () => patchEntry(e, { awaiting: !e.awaiting_reply }),
@@ -337,10 +362,15 @@ export function backlinksBox(kind, id, { title = 'Collegato in', mailsOnly = fal
     : section(`bl-${kind}-${id}`, title, groups, { count: total });
 }
 
+// Voci create offline e ancora in coda (vedi core.js): come le altre, con "in coda offline".
 function pendingRows(filter = () => true) {
-  return S.outbox.filter(filter).map((p, i) => entryRow({
-    id: -1 - i, kind: p.kind || 'todo', title: p.text, notes: '', pinned: 0, pending: true, created_at: new Date().toISOString(),
-  }, { showProject: false }));
+  return S.outbox.filter(p => filter({ ...p, kind: p.kind || 'todo' })).map((p, i) => {
+    const q = parseQuick(p.text, { today: p.today || today(), kind: p.kind || 'todo' });
+    return entryRow({
+      id: p.pid ?? -1 - i, kind: p.kind || 'todo', title: q.title, due: q.due ?? null, notes: '', pinned: 0, pending: true,
+      done_at: p.done || null, created_by: S.data.me.id, shared_all: 0, created_at: p.queued_at || new Date().toISOString(),
+    }, { showProject: false });
+  });
 }
 
 // ---------- agenda ----------
@@ -368,7 +398,7 @@ export function viewAgenda() {
       })),
       D.members.length > 1 && h('span.tsep'),
       D.members.length > 1 && filterChip({ on: ui.mine, label: [icon('user'), 'solo mie'], onclick: () => { ui.mine = !ui.mine; save('org.mine', ui.mine); render(); } })),
-    pendingRows(),
+    pendingRows(p => p.kind !== 'note'),
     !list.length && ui.agendaKind !== 'all' && kindCount.all > 0 && empty(h('p', 'Niente di questo tipo. ', h('a', { href: '#/agenda', onclick: ev => { ev.preventDefault(); setKind('all'); } }, 'Mostra tutto'))),
     !kindCount.all && !S.outbox.length && empty(
       h('p', 'Niente in agenda.'),
@@ -426,7 +456,7 @@ function projectCard(p, stats, { compact = false, dnd = false } = {}) {
   const next = s.next && dueInfo(s.next);
   const subs = descendants(p.id).length;
   return h('a.card', { href: `#/p/${p.id}`, class: compact ? 'compact' : null, 'data-pid': dnd ? p.id : null, draggable: 'false' },
-    h('div.card-h', h('span.card-t', p.name), p.private ? icon('lock') : null, p.status !== 'open' && h('span.muted', STATUS_LABEL[p.status].toLowerCase().replace(/i$/, 'o'))),
+    h('div.card-h', h('span.card-t', p.name), p.shared_all ? icon('users') : sharedWithOf('project', p).length ? icon('user') : null, p.status !== 'open' && h('span.muted', STATUS_LABEL[p.status].toLowerCase().replace(/i$/, 'o'))),
     h('div.card-tag', { style: `--h:${projHue(p)}` }, `@${p.tag}`),
     h('div.card-m',
       h('span', subs && s.open !== own.open ? `${s.open} aperte (${own.open} qui)` : `${s.open} aperte`),
@@ -576,7 +606,7 @@ export function viewProject(id) {
       h('label.f', h('span', 'Tag @'), h('input.mono', { value: p.tag, size: 14, 'data-fk': `ptag-${p.id}`, onchange: ev => patch({ tag: ev.target.value }) })),
       h('label.f', h('span', 'Stato'), selectOf(p.status, [['open', 'Aperto'], ['paused', 'In pausa'], ['closed', 'Chiuso']], v => patch({ status: v }))),
       h('label.f', h('span', 'Dentro'), selectOf(p.parent_id ? String(p.parent_id) : '', parentOptions, v => patch({ parent_id: v ? +v : null }))),
-      p.created_by === me.id && h('button.chip', { class: p.private && 'on', onclick: () => patch({ private: !p.private }) }, icon('lock'), 'privato'),
+      shareBox('project', p),
       h('span.grow'),
       (p.created_by === me.id || me.is_admin) && h('button.btn.sm.danger', {
         onclick: () => {
@@ -679,7 +709,6 @@ export function viewMail() {
     h('p.muted.fhint', view === 'todo'
       ? 'Da fare: le mail ricevute da leggere, quelle da mandare e quelle che aspettano risposta. Aperta, una mail ricevuta è letta e quando lasci la pagina passa in Archivio.'
       : 'Archivio: le mail ricevute già lette (il tasto a sinistra le rimette da leggere) e quelle mandate che non aspettano risposta.'),
-    view === 'todo' && pendingRows(p => p.kind === 'mail'),
     shown.map(([k, label]) => groups[k].length > 0 && section(`mail-${k}`, label, rows(k), { cls: k === 'wait' ? 'waiting' : null })),
     !shown.some(([k]) => groups[k].length) && (filtered
       ? empty(h('p', 'Nessuna mail corrisponde ai filtri.'))
@@ -1134,7 +1163,7 @@ function tokensSection() {
       prompt('Copia il token adesso: non verrà più mostrato.', r.token);
     });
   };
-  return section('set-tokens', 'CLI e token API', [
+  return card('set-tokens', 'CLI e token API', [
     h('p', 'Dal terminale: installa la CLI con ', kbd('make cli'), ' e accedi con ', kbd(`org login ${location.origin}`), '.'),
     h('p.muted', 'Per un bot o uno script crea un token: dà accesso a tutto ciò che vedi tu, in tutti i tuoi workspace. Le API sono descritte in docs/API.md.'),
     h('button.btn', { onclick: create }, icon('plus'), 'Crea token'),
@@ -1170,12 +1199,13 @@ function themeCard(id, name, t) {
         h('span.th-line', { style: `background:${t.text}` }), h('span.th-line.short', { style: `background:${t.muted}` }),
         h('span.th-dots', [t.accent, t.blue, t.purple, t.orange].map(c => h('span', { style: `background:${c}` })))))
     : h('span.th-prev', { class: `base-${id}` }, h('span.th-panel', h('span.th-line'), h('span.th-line.short'), h('span.th-dots', h('span'), h('span'), h('span'), h('span'))));
-  return h('button.th-card', { class: on ? 'on' : null, title: name, onclick: () => { setTheme(id); render(); } }, prev, h('span.th-name', name));
+  // .keep: il tema vale per questo dispositivo, si cambia anche offline.
+  return h('button.th-card.keep', { class: on ? 'on' : null, title: name, 'aria-pressed': String(on), onclick: () => { setTheme(id); render(); } }, prev, h('span.th-name', name));
 }
 
 function themeSection() {
   const all = Object.entries(THEMES);
-  return section('set-theme', 'Tema', [
+  return card('set-theme', 'Tema', [
     h('div.th-grid', Object.entries(BASE_THEMES).map(([id, name]) => themeCard(id, name, null))),
     h('div.th-h', 'Scuri'),
     h('div.th-grid', all.filter(([, t]) => t.dark).map(([id, t]) => themeCard(id, t.name, t))),
@@ -1188,84 +1218,151 @@ function themeSection() {
 // ---------- permessi (Impostazioni) ----------
 // Admin: per ogni persona del workspace (non admin) il livello di ogni area. Cambiando un livello si
 // sistemano da sole le aree collegate (vedi perms.js): scrivere le mail fa leggere contatti, documenti…
-const LEVEL_SHORT = { none: '—', read: 'L', write: 'S' };
 const needsText = deps => deps.map(a => AREAS[a]).join(', ');
 
+// Cosa comprende ogni area (prima colonna della tabella dei permessi).
+const AREA_DESC = {
+  voci: 'todo, sotto-attività, note del diario',
+  mail: 'mail da mandare e mandate, conversazioni',
+  progetti: 'progetti e sottoprogetti',
+  magazzino: 'articoli, codici, categorie',
+  documenti: 'file degli articoli e note sui file',
+  contatti: 'rubrica',
+  chat: 'messaggi nei canali di cui fa parte',
+};
+const LEVEL_FULL = { none: 'Nessun accesso', read: 'Lettura', write: 'Scrittura' };
+const CAP_DESC = { canali: 'creare, rinominare, eliminare canali e sceglierne le persone' };
+
+// Tabella: una riga per area, una colonna per persona (non admin); in ogni casella il livello per intero.
+// Cambiando un livello si sistemano da sole le aree collegate (vedi perms.js).
 function permsSection(D) {
   const others = D.members.filter(u => !u.is_admin);
+  const admins = D.members.filter(u => u.is_admin);
   const setPerms = (u, perms) => act(() => api('PATCH', `/admin/users/${u.id}`, { perms }), `Permessi di ${u.name || u.username} aggiornati`);
-  const row = u => {
-    const cur = D.memberPerms?.[u.id] || fullAccess();
-    return h('tr',
-      h('th.pm-who', h('span', u.name || u.username), h('span.muted', `@${u.username}`),
-        isRestricted(D.memberPerms?.[u.id]) && h('button.btn.sm.ghost', { title: 'Accesso pieno a tutto', onclick: () => setPerms(u, null) }, 'tutto')),
-      Object.keys(AREAS).map(area => h('td',
-        h('div.pm-seg', Object.keys(LEVELS).map(l => h('button', {
-          class: [cur[area] === l && 'on', `l-${l}`].filter(Boolean).join(' '),
-          title: `${AREAS[area]}: ${LEVELS[l]}`,
-          onclick: () => { if (cur[area] !== l) setPerms(u, setLevel(cur, area, l)); },
-        }, LEVEL_SHORT[l]))))));
+  const permsOf = u => D.memberPerms?.[u.id] || fullAccess();
+  const who = u => u.name || u.username;
+  const cell = (u, key, options) => {
+    const cur = permsOf(u);
+    const v = cur[key] || (key in CAPS ? 'none' : 'write');
+    return h('td', h('select.pm-sel', {
+      class: `lvl-${v}`, value: v, 'aria-label': `${who(u)}: ${AREAS[key] || CAPS[key]}`,
+      onchange: ev => setPerms(u, setLevel(cur, key, ev.target.value)),
+    }, options.map(([l, label]) => h('option', { value: l, selected: l === v }, label))));
   };
-  return section('set-perms', 'Permessi', [
-    h('p.muted', 'Per ogni persona del workspace scegli cosa vede e cosa può modificare: — nessun accesso (l\'area sparisce), L lettura, S scrittura. Gli admin hanno sempre tutto, tranne la posta degli altri.'),
-    h('p.pm-note', icon('lock'), MAIL_PERSONAL),
+  return card('set-perms', 'Permessi per area', [
+    h('p.muted', 'Per ogni persona scegli cosa può fare in ogni area. Gli admin possono tutto, ma non vedono ciò che gli altri non condividono (vedi Privacy e condivisione).'),
     others.length
-      ? h('div.pm-wrap', h('table.pm',
-        h('thead', h('tr', h('th'), Object.values(AREAS).map(a => h('th', a)))),
-        h('tbody', others.map(row))))
-      : h('p', 'Non ci sono altre persone (non admin) in questo workspace: invitale da "Persone".'),
+      ? h('div.pm-wrap', h('table.pmt',
+        h('caption.sr-only', 'Permessi per area: righe le aree, colonne le persone'),
+        h('thead', h('tr',
+          h('th', { scope: 'col' }, 'Area'),
+          others.map(u => h('th', { scope: 'col' },
+            h('span.pm-name', who(u)), h('span.muted', `@${u.username}`),
+            isRestricted(D.memberPerms?.[u.id]) || D.memberPerms?.[u.id]?.canali === 'write'
+              ? h('button.btn.sm.ghost', { title: `Accesso pieno per ${who(u)} (senza gestione dei canali)`, onclick: () => setPerms(u, null) }, 'ripristina')
+              : h('span.muted.pm-full', 'accesso pieno'))))),
+        h('tbody',
+          Object.keys(AREAS).map(a => h('tr',
+            h('th', { scope: 'row' }, h('b', AREAS[a]), h('span.muted', AREA_DESC[a] || '')),
+            others.map(u => cell(u, a, Object.entries(LEVEL_FULL))))),
+          Object.keys(CAPS).map(c => h('tr.pm-cap',
+            h('th', { scope: 'row' }, h('b', CAPS[c]), h('span.muted', CAP_DESC[c] || '')),
+            others.map(u => cell(u, c, [['none', 'No'], ['write', 'Sì']])))))))
+      : h('p', 'Non ci sono altre persone (non admin) in questo workspace: invitale da "Workspace e persone".'),
+    admins.length > 0 && h('p.muted', `Admin, sempre con tutto: ${admins.map(who).join(', ')}.`),
+    h('div.pm-legend',
+      h('span.pm-sel.lvl-none', 'Nessun accesso'), h('span', 'l\'area sparisce dal menu'),
+      h('span.pm-sel.lvl-read', 'Lettura'), h('span', 'vede, non cambia niente'),
+      h('span.pm-sel.lvl-write', 'Scrittura'), h('span', 'vede e modifica')),
     h('details.pm-rules', h('summary', 'Aree collegate'),
       h('ul', Object.entries(WRITE_NEEDS).filter(([, deps]) => deps.length).map(([a, deps]) =>
         h('li', h('b', `Scrivere ${AREAS[a]}`), ` richiede di leggere ${needsText(deps)}.`)),
       Object.entries(READ_NEEDS).map(([a, deps]) => h('li', h('b', `Leggere ${AREAS[a]}`), ` richiede di leggere ${needsText(deps)}.`))),
       h('p.muted', 'Alzando un livello si alzano da sole le aree che servono; togliendo un\'area si abbassano quelle che ne hanno bisogno.')),
-  ], { count: others.filter(u => isRestricted(D.memberPerms?.[u.id])).length || '', collapsed: true });
+  ]);
 }
 
 // Chi non è admin vede i propri permessi, se ha delle limitazioni.
 function myPermsSection(D) {
-  if (!isRestricted(D.perms)) return null;
-  return section('set-myperms', 'I tuoi permessi', [
-    h('div.pm-mine', Object.entries(AREAS).map(([a, label]) => h('span.chip', { class: `pm-l-${D.perms[a]}` }, label, ': ', LEVELS[D.perms[a]]))),
+  if (!isRestricted(D.perms) && !D.canManageChannels) return null;
+  return card('set-myperms', 'I tuoi permessi', [
+    h('div.pm-mine',
+      Object.entries(AREAS).map(([a, label]) => h('span.chip', { class: `pm-l-${D.perms?.[a] || 'write'}` }, label, ': ', LEVELS[D.perms?.[a] || 'write'])),
+      D.canManageChannels && h('span.chip.pm-l-write', CAPS.canali)),
     h('p.muted', 'Li decide un admin del workspace.'),
-    h('p.pm-note', icon('lock'), MAIL_PERSONAL),
-  ], { count: '' });
+  ]);
 }
 
-export function viewSettings() {
-  const D = S.data;
+// Un riquadro delle Impostazioni: titolo e contenuto (niente a scomparsa: ogni categoria è già una pagina).
+function card(id, title, children, { cls } = {}) {
+  return h('section.set-card', { id, class: cls || null, 'aria-labelledby': `${id}-t` }, h('h3', { id: `${id}-t` }, title), children);
+}
+
+// Categorie: a sinistra (su telefono un elenco che apre una pagina per volta), il contenuto a destra.
+function settingsCategories(D) {
   const me = D.me;
-  if (me.is_admin && ui.invites == null) loadInvites();
-  return h('div.view.settings',
-    section('set-me', 'Profilo', [
-      h('div.grid',
-        h('label.f', h('span', 'Username'), h('input', { value: me.username, disabled: true })),
-        h('label.f', h('span', 'Nome visualizzato'), h('input', { value: me.name, 'data-fk': 'myname', onchange: ev => act(() => api('PATCH', '/me', { name: ev.target.value }), 'Nome aggiornato') }))),
-      h('form.grid', {
-        onsubmit: ev => {
-          ev.preventDefault();
-          const f = ev.target.elements;
-          act(async () => { await api('PATCH', '/me', { current: f.current.value, password: f.password.value }); ev.target.reset(); }, 'Password cambiata');
+  return [
+    ['account', 'Account', 'user', 'Nome, password, uscita'],
+    ['aspetto', 'Aspetto', 'palette', 'Tema e colori dei contatti'],
+    ['privacy', 'Privacy e condivisione', 'shield', 'Chi vede cosa, +persona e +all'],
+    ['mail', 'Mail e Thunderbird', 'mail', D.mailExt ? 'Thunderbird collegato' : 'Estensione per Thunderbird'],
+    ['workspace', 'Workspace e persone', 'users', `${D.workspace.name} · ${D.members.length} ${D.members.length === 1 ? 'persona' : 'persone'}`],
+    me.is_admin && ['permessi', 'Permessi', 'lock', 'Cosa può fare ognuno, canali della chat'],
+    ['token', 'CLI e token', 'key', 'Terminale, bot e script'],
+    ['barra', 'Barra rapida', 'keyboard', 'Sintassi e scorciatoie'],
+    ['app', 'App e aiuto', 'phone', `Installazione, novità, feedback${S.version ? ` · v${S.version}` : ''}`],
+    me.is_admin && ['backup', 'Backup', 'download', 'Scarica o ripristina i dati'],
+    D.feedbackOpen != null && ['feedback', 'Feedback ricevuti', 'bug', D.feedbackOpen ? `${D.feedbackOpen} da vedere` : 'nessuno da vedere'],
+  ].filter(Boolean);
+}
+
+function settingsPane(sec, D) {
+  const me = D.me;
+  switch (sec) {
+    case 'account': return [
+      card('set-me', 'Profilo', [
+        h('div.grid',
+          h('label.f', h('span', 'Username'), h('input', { value: me.username, disabled: true })),
+          h('label.f', h('span', 'Nome visualizzato'), h('input', { value: me.name, 'data-fk': 'myname', onchange: ev => act(() => api('PATCH', '/me', { name: ev.target.value }), 'Nome aggiornato') }))),
+      ]),
+      card('set-pass', 'Password', [
+        h('form.grid', {
+          onsubmit: ev => {
+            ev.preventDefault();
+            const f = ev.target.elements;
+            act(async () => { await api('PATCH', '/me', { current: f.current.value, password: f.password.value }); ev.target.reset(); }, 'Password cambiata');
+          },
         },
-      },
-      h('label.f', h('span', 'Password attuale'), h('input', { name: 'current', type: 'password', autocomplete: 'current-password' })),
-      h('label.f', h('span', 'Nuova password'), h('input', { name: 'password', type: 'password', autocomplete: 'new-password', minlength: 8 })),
-      h('button.btn', { type: 'submit' }, 'Cambia password')),
-    ], { count: '' }),
-
-    themeSection(),
-
-    h('a.trash-link', { href: '#/cestino' }, icon('trash'), 'Cestino', h('span.muted', D.trashCount ? `${D.trashCount} elementi` : 'vuoto')),
-    // Su telefono la barra laterale non c'è: le novità (changelog) si aprono da qui.
-    h('a.trash-link', { href: '#/novita' }, icon('news'), 'Novità', h('span.muted', S.version ? `versione ${S.version}` : '')),
-
-    section('set-contacts', 'Contatti', [
-      h('div.grid', h('label.f', h('span', 'Colore dei contatti'),
-        selectOf(ui.contactColor, Object.entries(CONTACT_COLOR), v => { ui.contactColor = v; save('org.contactColor', v); render(); }))),
-      h('p.muted', 'Il nome dei contatti è colorato nelle mail, in rubrica e nei collegamenti. Per azienda, fascia oraria o ruolo: stesso colore per chi ha lo stesso valore (senza quel dato, nessun colore). Vale per questo dispositivo.'),
-    ], { count: '', collapsed: true }),
-
-    section('set-mail', 'Mail e Thunderbird', [
+        h('label.f', h('span', 'Password attuale'), h('input', { name: 'current', type: 'password', autocomplete: 'current-password', required: true })),
+        h('label.f', h('span', 'Nuova password (almeno 8 caratteri)'), h('input', { name: 'password', type: 'password', autocomplete: 'new-password', minlength: 8, required: true })),
+        h('div', h('button.btn', { type: 'submit' }, 'Cambia password'))),
+      ]),
+      card('set-session', 'Sessione', [
+        h('div.set-row', h('span', 'Connesso come ', h('b', me.username)), h('span.grow'),
+          h('button.btn', { onclick: () => window.dispatchEvent(new Event('org:logout')) }, icon('logout'), 'Esci')),
+      ]),
+    ];
+    case 'aspetto': return [
+      themeSection(),
+      card('set-contacts', 'Colore dei contatti', [
+        h('label.f', h('span', 'Colora il nome dei contatti'),
+          selectOf(ui.contactColor, Object.entries(CONTACT_COLOR), v => { ui.contactColor = v; save('org.contactColor', v); render(); })),
+        h('p.muted', 'Il nome dei contatti è colorato nelle mail, in rubrica e nei collegamenti. Per azienda, fascia oraria o ruolo: stesso colore per chi ha lo stesso valore (senza quel dato, nessun colore). Vale per questo dispositivo.'),
+      ]),
+    ];
+    case 'privacy': return [
+      card('set-privacy', 'Chi vede cosa', [h('p.pm-note', icon('lock'), PRIVACY_NOTE)]),
+      card('set-share', 'Condividere', [
+        h('table.syntax', h('tbody', [
+          ['+marco', 'la vede anche Marco'],
+          ['++marco', 'la vede anche Marco e gliela assegni'],
+          ['+all', 'la vedono tutti nel workspace, anche chi entrerà dopo'],
+        ].map(([k, v]) => h('tr', h('td', kbd(k)), h('td', v))))),
+        h('p.muted', 'Funziona nella barra in alto, nel titolo di una voce, nella barra dei progetti e nel testo delle note sui documenti. In ogni voce, progetto, contatto e nota c\'è anche "Visibile a": chi l\'ha creato sceglie con chi condividerlo, e può togliere la condivisione.'),
+      ]),
+      myPermsSection(D) || card('set-myperms', 'I tuoi permessi', [h('p.muted', me.is_admin ? 'Sei admin di questo workspace: puoi fare tutto nelle aree (ma non vedi ciò che gli altri non condividono).' : 'Nessuna limitazione: puoi fare tutto nelle aree.')]),
+    ];
+    case 'mail': return [card('set-mail', 'Collegare Thunderbird', [
       h('p', 'Con l\'estensione Organizer per Thunderbird, "Manda" apre la mail in Thunderbird con gli allegati (anche se premi dal telefono: si apre sul computer). Quando la invii diventa "mandata" da sola, e le risposte compaiono nella conversazione della mail, da cui puoi rispondere.'),
       h('p', D.mailExt ? h('span.chip.on', icon('check'), 'Thunderbird collegato') : h('span.chip', 'Thunderbird non collegato')),
       h('ol.steps',
@@ -1273,86 +1370,118 @@ export function viewSettings() {
         h('li', 'In Thunderbird: menu ≡ → Componenti aggiuntivi e temi → ingranaggio → "Installa componente aggiuntivo da file…", e scegli il file.'),
         h('li', h('button.btn.sm', { onclick: thunderbirdToken }, icon('plus'), 'Crea token per Thunderbird'),
           ' e incollalo nelle opzioni dell\'estensione (Componenti aggiuntivi → Organizer → Opzioni), poi "Salva e collega".')),
-      h('p.pm-note', icon('lock'), MAIL_PERSONAL),
-      h('p.muted', 'Funziona finché Thunderbird è aperto. Le altre mail non escono da Thunderbird: l\'estensione confronta solo gli identificativi dei messaggi per riconoscere le risposte alle tue conversazioni.'),
+      h('p.muted', 'Funziona finché Thunderbird è aperto. La posta in arrivo è solo tua; con l\'opzione "solo risposte" dell\'estensione le altre mail non escono da Thunderbird.'),
       h('details',
         h('summary.muted', 'Senza estensione'),
         h('p', '"Manda" può usare il vecchio helper (da installare dalla cartella del progetto con ', kbd('make mail-helper'), ') oppure l\'app mail predefinita, senza allegati: per quelli c\'è il pulsante ".eml". In questi casi la mail si segna come mandata a mano.'),
         h('label.check-row',
           h('input', { type: 'checkbox', checked: ui.mailHelper, onchange: ev => { ui.mailHelper = ev.target.checked; save('org.mailHelper', ui.mailHelper); render(); } }),
           'Helper installato su questo computer')),
-    ], { count: '', collapsed: true }),
-
-    workspaceSection(D),
-
-    tokensSection(),
-
-    me.is_admin ? permsSection(D) : myPermsSection(D),
-
-    section('set-users', `Persone in "${D.workspace.name}"`, [
-      D.members.map(u => h('div.user-row',
-        icon('user'),
-        h('span', u.name || u.username), h('span.muted', `@${u.username}`),
-        u.is_admin ? h('span.chip.on', 'admin') : null,
-        h('span.grow'),
-        me.is_admin && u.id !== me.id && [
-          h('button.btn.sm.ghost', { onclick: () => act(() => api('PATCH', `/admin/users/${u.id}`, { is_admin: !u.is_admin })) }, u.is_admin ? 'Togli admin' : 'Rendi admin'),
-          h('button.btn.sm.ghost', {
-            onclick: () => {
-              if (!confirm(`Generare una nuova password per ${u.username}?`)) return;
-              act(async () => { const r = await api('PATCH', `/admin/users/${u.id}`, { reset_password: true }); prompt(`Nuova password per ${u.username}:`, r.password); });
-            },
-          }, 'Reset password'),
-          h('button.btn.sm.danger', {
-            onclick: () => { if (confirm(`Togliere ${u.username} da "${D.workspace.name}"? Le sue voci restano; il suo account e gli altri workspace no.`)) act(() => api('DELETE', `/admin/users/${u.id}`)); },
-          }, 'Togli'),
-        ])),
-      me.is_admin && h('div.invites',
-        h('p.muted', `Per far entrare qualcuno in "${D.workspace.name}" crea un invito e mandagli il link (valido 7 giorni, una sola persona). Chi ha già un account entra con le sue credenziali.`),
-        h('button.btn', { onclick: () => act(async () => { const r = await api('POST', '/admin/invites'); loadInvites(); share(inviteLink(r.code)); }) }, icon('plus'), 'Crea invito'),
-        (ui.invites || []).map(i => h('div.invite',
-          h('code', i.code),
-          h('span.muted', `scade ${fmtTime(i.expires_at)}`),
-          h('span.grow'),
-          h('button.icon-btn', { title: 'Copia link', onclick: () => share(inviteLink(i.code)) }, icon('copy')),
-          h('button.icon-btn', { title: 'Revoca', onclick: () => act(async () => { await api('DELETE', `/admin/invites/${i.code}`); loadInvites(); }) }, icon('x'))))),
-    ], { count: D.members.length }),
-
-    section('set-syntax', 'Sintassi della barra rapida', [
+    ])];
+    case 'workspace': return [workspaceSection(D), peopleCard(D)];
+    case 'permessi': return me.is_admin ? [permsSection(D)] : null;
+    case 'token': return [tokensSection()];
+    case 'barra': return [card('set-syntax', 'Sintassi della barra rapida', [
       h('table.syntax', h('tbody',
         [
           ['t: m: n:', 'tipo: todo (predefinito), mail, nota'],
           ['!oggi !domani !ven !3g !2s !1m !fm !25/11 !no', 'scadenza (per le note: quando è successo); !no la toglie'],
           ['@progetto', 'progetto, creato al volo se non esiste'],
           ['#CODICE', 'articolo di magazzino, resta nel testo come link'],
-          ['+utente', 'assegna a un utente'],
+          ['+persona', 'la vede anche lei (senza: solo tu)'],
+          ['++persona', 'la vede e gliela assegni'],
+          ['+all', 'la vedono tutti'],
           ['>destinatario', 'destinatario della mail'],
         ].map(([k, v]) => h('tr', h('td', kbd(k)), h('td', v))))),
       h('p.muted', 'Gli stessi token funzionano modificando il titolo di una voce e negli aggiornamenti: scrivi "slitta tutto !lun" e la scadenza si sposta, lasciando traccia.'),
       h('p.muted', 'Da tastiera: ', kbd('n'), ' o ', kbd('/'), ' scrive una voce, ', kbd('Ctrl/⌘ K'), ' cerca, ', kbd('Esc'), ' esce dal campo.'),
-    ], { count: '', collapsed: true }),
-
-    section('set-app', 'Installa l\'app', [
-      h('ul.install',
-        h('li', h('b', 'iPhone/iPad: '), 'apri in Safari → Condividi → "Aggiungi alla schermata Home".'),
-        h('li', h('b', 'Android: '), 'apri in Chrome → menu ⋮ → "Installa app" (serve HTTPS, vedi README).'),
-        h('li', h('b', 'Mac: '), 'Safari → File → "Aggiungi al Dock", oppure Chrome → icona di installazione nella barra indirizzi.'),
-        h('li', h('b', 'Linux: '), 'Chrome/Chromium → icona di installazione nella barra indirizzi.')),
-      h('p.muted', `Indirizzo attuale: ${location.origin}${isSecureContext ? '' : ' (non HTTPS: niente modalità offline)'}`),
-    ], { count: '', collapsed: true }),
-
-    me.is_admin && section('set-admin', 'Backup e ripristino', [
+    ])];
+    case 'app': return [
+      card('set-help', 'Novità e feedback', [
+        h('div.set-links',
+          h('a.set-link', { href: '#/novita' }, icon('news'), h('span', h('b', 'Novità'), h('span.muted', S.version ? `versione ${S.version}` : 'cosa è cambiato'))),
+          h('button.set-link', { type: 'button', onclick: openFeedback }, icon('bug'), h('span', h('b', 'Feedback'), h('span.muted', 'segnala un errore o un\'idea, anche con screenshot'))),
+          h('a.set-link', { href: '#/cestino' }, icon('trash'), h('span', h('b', 'Cestino'), h('span.muted', D.trashCount ? `${D.trashCount} elementi` : 'vuoto')))),
+      ]),
+      card('set-app', 'Installa l\'app', [
+        h('ul.install',
+          h('li', h('b', 'iPhone/iPad: '), 'apri in Safari → Condividi → "Aggiungi alla schermata Home".'),
+          h('li', h('b', 'Android: '), 'apri in Chrome → menu ⋮ → "Installa app" (serve HTTPS, vedi README).'),
+          h('li', h('b', 'Mac: '), 'Safari → File → "Aggiungi al Dock", oppure Chrome → icona di installazione nella barra indirizzi.'),
+          h('li', h('b', 'Linux: '), 'Chrome/Chromium → icona di installazione nella barra indirizzi.')),
+        h('p.muted', `Indirizzo attuale: ${location.origin}${isSecureContext ? '' : ' (non HTTPS: niente modalità offline)'}`),
+      ]),
+    ];
+    case 'backup': return me.is_admin ? [card('set-admin', 'Backup e ripristino', [
       h('p.muted', 'Il backup contiene voci, progetti, magazzino, contatti e utenti. I file caricati (documenti, allegati) restano sul server: per una copia completa usa ', kbd('make backup'), '.'),
       h('div.toolbar',
         h('a.btn', { href: 'api/admin/backup', download: '' }, icon('download'), 'Scarica backup'),
         h('button.btn.danger', { onclick: () => restoreInput.click() }, icon('restore'), 'Ripristina da backup…')),
       h('p.muted', 'Il ripristino sostituisce tutti i dati con quelli del file .db scelto (anche di una versione precedente dell\'app). Vale solo per questo workspace; prima il server salva una copia di sicurezza dei dati attuali. Account e membri non cambiano.'),
       restoreInput,
-    ], { count: '', collapsed: true }),
+    ])] : null;
+    case 'feedback': return D.feedbackOpen != null ? [card('set-fb', 'Da rivedere', [
+      h('p', D.feedbackOpen ? `${D.feedbackOpen} feedback da vedere.` : 'Nessun feedback da vedere.'),
+      h('div.toolbar', h('a.btn.primary', { href: '#/feedback' }, icon('bug'), 'Apri i feedback')),
+      h('p.muted', 'Dal terminale ', kbd('make feedback'), ' li esporta in feedback/ con le immagini (ALL=1 anche i risolti).'),
+    ])] : null;
+    default: return null;
+  }
+}
 
-    h('div.danger-zone',
-      h('span.muted', `Connesso come ${me.username}`),
-      h('button.btn.sm', { onclick: () => window.dispatchEvent(new Event('org:logout')) }, icon('logout'), 'Esci')));
+function peopleCard(D) {
+  const me = D.me;
+  return card('set-users', `Persone in "${D.workspace.name}"`, [
+    D.members.map(u => h('div.user-row',
+      icon('user'),
+      h('span', u.name || u.username), h('span.muted', `@${u.username}`),
+      u.is_admin ? h('span.chip.on', 'admin') : null,
+      h('span.grow'),
+      me.is_admin && u.id !== me.id && [
+        h('button.btn.sm.ghost', { onclick: () => act(() => api('PATCH', `/admin/users/${u.id}`, { is_admin: !u.is_admin })) }, u.is_admin ? 'Togli admin' : 'Rendi admin'),
+        h('button.btn.sm.ghost', {
+          onclick: () => {
+            if (!confirm(`Generare una nuova password per ${u.username}?`)) return;
+            act(async () => { const r = await api('PATCH', `/admin/users/${u.id}`, { reset_password: true }); prompt(`Nuova password per ${u.username}:`, r.password); });
+          },
+        }, 'Reset password'),
+        h('button.btn.sm.danger', {
+          onclick: () => { if (confirm(`Togliere ${u.username} da "${D.workspace.name}"? Le sue voci restano; il suo account e gli altri workspace no.`)) act(() => api('DELETE', `/admin/users/${u.id}`)); },
+        }, 'Togli'),
+      ])),
+    me.is_admin && h('div.invites',
+      h('p.muted', `Per far entrare qualcuno in "${D.workspace.name}" crea un invito e mandagli il link (valido 7 giorni, una sola persona). Chi ha già un account entra con le sue credenziali.`),
+      h('button.btn', { onclick: () => act(async () => { const r = await api('POST', '/admin/invites'); ui.newInvite = r.code; loadInvites(); }) }, icon('plus'), 'Crea invito'),
+      // Ogni invito è un link: si apre (anche qui, per vedere cosa vedrà chi lo riceve), si copia o si condivide.
+      (ui.invites || []).map(i => {
+        const link = inviteLink(i.code);
+        return h('div.invite', { class: ui.newInvite === i.code ? 'new' : null },
+          h('a.invite-link', { href: link, target: '_blank', rel: 'noopener', title: 'Apri il link dell\'invito' }, icon('link'), h('span', link)),
+          h('span.muted', `${ui.newInvite === i.code ? 'appena creato · ' : ''}scade ${fmtTime(i.expires_at)}`),
+          h('span.grow'),
+          h('button.btn.sm', { onclick: () => copy(link) }, icon('copy'), 'Copia'),
+          navigator.share && h('button.btn.sm', { onclick: () => share(link) }, icon('send'), 'Condividi'),
+          h('button.icon-btn', { title: 'Revoca', 'aria-label': 'Revoca invito', onclick: () => act(async () => { await api('DELETE', `/admin/invites/${i.code}`); loadInvites(); }) }, icon('x')));
+      })),
+  ]);
+}
+
+// #/impostazioni/<categoria>. Su computer senza categoria si apre la prima; su telefono si vede l'elenco.
+export function viewSettings(sec) {
+  const D = S.data;
+  if (D.me.is_admin && ui.invites == null) loadInvites();
+  const cats = settingsCategories(D);
+  const cur = cats.find(c => c[0] === sec) || null;
+  const shown = cur || cats[0];
+  return h('div.view.settings2', { class: cur ? 'has-sec' : null },
+    h('nav.set-nav', { 'aria-label': 'Categorie delle impostazioni' },
+      cats.map(([id, label, ic, desc]) => h('a.set-cat', { href: `#/impostazioni/${id}`, class: id === shown[0] ? 'on' : null, 'aria-current': id === shown[0] ? 'page' : null },
+        icon(ic), h('span.set-cat-t', h('b', label), h('span.muted', desc)), icon('back', 'set-cat-go')))),
+    h('div.set-pane',
+      h('div.set-pane-h',
+        h('a.icon-btn.set-back', { href: '#/impostazioni', title: 'Impostazioni', 'aria-label': 'Torna alle impostazioni' }, icon('back')),
+        h('h2', shown[1])),
+      settingsPane(shown[0], D) || h('p.muted', 'Niente da mostrare.')));
 }
 
 const restoreInput = h('input', {
@@ -1375,7 +1504,7 @@ const restoreInput = h('input', {
 function workspaceSection(D) {
   const ws = D.workspace;
   const admin = ws.role === 'admin';
-  return section('set-ws', 'Workspace', [
+  return card('set-ws', 'I tuoi workspace', [
     h('div.grid',
       h('label.f', h('span', 'Nome'), h('input', {
         value: ws.name, disabled: !admin, 'data-fk': 'wsname',

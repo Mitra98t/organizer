@@ -9,6 +9,7 @@ import { viewTrash } from './trash.js';
 import { viewDoc, viewReview, docCancelDraft, setDocFocus, docSearchKey } from './docview.js';
 import { viewDocuments } from './documents.js';
 import { viewChat, notifyNew } from './chat.js';
+import { openFeedback, viewFeedback } from './feedback.js';
 import { viewChangelog, hasNews, appVersion } from './changelog.js';
 import { applyTheme, currentTheme } from './themes.js';
 import { parseQuick, extractCodes, today, parseItemLine, parseProjectLine } from './parse.js';
@@ -35,6 +36,7 @@ const VIEWS = {
   chat: { fn: viewChat, title: 'Chat', nav: 'chat' },
   v: { fn: viewEntryPage, title: 'Voce', nav: null },
   novita: { fn: viewChangelog, title: 'Novità', nav: 'novita' },
+  feedback: { fn: viewFeedback, title: 'Feedback', nav: 'impostazioni' },
   impostazioni: { fn: viewSettings, title: 'Impostazioni', nav: 'impostazioni' },
 };
 
@@ -58,7 +60,11 @@ const PAGE_AREA = {
 const pageAllowed = name => !PAGE_AREA[name] || PAGE_AREA[name]();
 
 // La barra rapida c'è solo dove si può scrivere ciò che crea.
+// Offline la barra c'è solo in Agenda (todo) e nel Diario (note): le voci vanno in coda (vedi core.js).
+const offlinePage = name => name === 'agenda' || name === 'diario';
+
 function quickAllowed(ctx) {
+  if (!S.online && !offlinePage(route().name)) return false;
   if (ctx.mode === 'item') return can('magazzino', 'write');
   if (ctx.mode === 'project') return can('progetti', 'write');
   if (ctx.kind === 'mail') return can('mail', 'write');
@@ -123,7 +129,9 @@ const HELP = {
     h('span', h('code.k', '!ven !3g !25/11'), ' scadenza'),
     h('span', h('code.k', '@progetto')),
     h('span', h('code.k', '#CODICE'), ' magazzino'),
-    h('span', h('code.k', '+utente')),
+    h('span', h('code.k', '+persona'), ' la vede anche lei'),
+    h('span', h('code.k', '++persona'), ' e gliela assegni'),
+    h('span', h('code.k', '+all'), ' la vedono tutti (senza: solo tu)'),
     h('span', h('code.k', '>destinatario')),
     acHint()],
   item: () => [
@@ -135,6 +143,7 @@ const HELP = {
   project: () => [
     h('span', h('code.k', 'Nome del progetto')),
     h('span', h('code.k', '@progetto'), ' lo crea come sottoprogetto'),
+    h('span', h('code.k', '+persona +all'), ' lo condivide (senza: solo tu)'),
     acHint()],
 };
 
@@ -168,6 +177,18 @@ function previewProject(text) {
     const known = D?.projectByTag.has(p.parent.toLowerCase());
     chips.push(h('span.pv', 'dentro'), h('span.pv.tag', { class: known ? null : 'warn', style: tagStyle(p.parent) }, `@${p.parent}`, !known && h('i', ' inesistente')));
   }
+  if (p.name) chips.push(...shareChips(p.share.filter(n => n !== 'all'), p.share.includes('all'), null));
+  return chips;
+}
+
+// Con chi sarà condivisa: "solo tu", le persone (+, ++ = assegnata), "tutti". Nomi sconosciuti in giallo.
+function shareChips(names, all, assignee) {
+  const D = S.data;
+  const known = n => D?.members.some(u => [u.username, u.name].some(x => x?.toLowerCase() === n.toLowerCase()));
+  const chips = names.map(n => h('span.pv', { class: known(n) ? null : 'warn', title: known(n) ? null : 'Nessuno con questo nome nel workspace' },
+    icon('user'), n, assignee && n.toLowerCase() === assignee.toLowerCase() && h('i', ' assegnata'), !known(n) && h('i', ' ?')));
+  if (all) chips.push(h('span.pv', icon('users'), 'tutti'));
+  if (!names.length && !all) chips.push(h('span.pv.muted', icon('lock'), 'solo tu'));
   return chips;
 }
 
@@ -186,10 +207,7 @@ function renderPreview() {
     else if (p.due) { const d = dueInfo(p.due); chips.push(h('span.pv.due', { class: d.cls || null }, icon('cal'), d.label)); }
     if (p.project) chips.push(h('span.pv.tag', { style: tagStyle(p.project) }, `@${p.project}`, !D?.projectByTag.has(p.project.toLowerCase()) && h('i', ' nuovo')));
     for (const c of p.codes) chips.push(h('span.pv.code', c, !D?.itemByCode.has(c.toUpperCase()) && h('i', ' nuovo')));
-    if (p.assignee) {
-      const known = D?.users.some(u => [u.username, u.name].some(n => n?.toLowerCase() === p.assignee.toLowerCase()));
-      chips.push(h('span.pv', { class: known ? null : 'warn' }, `+${p.assignee}`, !known && h('i', ' ?')));
-    }
+    chips.push(...shareChips(p.shares, p.shareAll, p.assignee));
     if (p.contact) chips.push(h('span.pv', `→ ${p.contact}`));
   }
   quickInput.placeholder = {
@@ -231,7 +249,7 @@ async function submitProject(text) {
   if (p.parent && !parent) return toast(`Il progetto @${p.parent} non esiste`, { err: true });
   quickInput.value = '';
   renderPreview();
-  const r = await act(() => api('POST', '/projects', { name: p.name, parent_id: parent?.id }));
+  const r = await act(() => api('POST', '/projects', { name: p.name, parent_id: parent?.id, share: p.share }));
   if (r) toast(`@${r.tag} creato`, { action: openAction(`#/p/${r.id}`) });
   else { quickInput.value = text; renderPreview(); }
 }
@@ -292,9 +310,12 @@ function buildShell() {
           h('span.sep'), navLink('cestino', 'Cestino', 'trash', navLinks, 'nav'),
           navLink('impostazioni', 'Impostazioni', 'settings', navLinks, 'nav')),
         // In fondo alla barra: le novità della versione (il changelog), con "nuovo" finché non si leggono.
-        h('div.side-foot', navLink('novita', 'Novità', 'news', navLinks, 'nav'))),
+        // Accanto: Feedback per segnalare un errore o un'idea a chi sviluppa l'app.
+        h('div.side-foot', navLink('novita', 'Novità', 'news', navLinks, 'nav'),
+          h('button.nav.fb-btn', { type: 'button', onclick: openFeedback, title: 'Segnala un errore o un\'idea, anche con screenshot' }, icon('bug'), h('span.nl', 'Feedback')))),
       h('main.main',
         updateBar,
+        offlineBar,
         h('header.top',
           titleEl,
           h('label.search', icon('search'), searchInput),
@@ -439,6 +460,9 @@ function renderApp() {
   } finally {
     RS.busy = false;
   }
+  // Offline tutta la pagina è in sola lettura, tranne le voci in coda (.rw) e i filtri.
+  viewEl.classList.toggle('ro', !S.online);
+  updateOfflineBar();
   applyReadOnly(viewEl);
   viewEl.querySelectorAll('textarea').forEach(autosize);
   acCheck();
@@ -514,6 +538,15 @@ async function logout() {
 // (a ogni aggiornamento il server riparte), quando l'app torna in primo piano e ogni 30 minuti.
 let loadedVersion = null;
 const updateText = h('span');
+// Offline: cosa si può fare (e cosa aspetta in coda).
+const offlineText = h('span');
+const offlineBar = h('div.update-bar.offline-bar', { hidden: true, role: 'status' }, icon('wait'), offlineText);
+function updateOfflineBar() {
+  offlineBar.hidden = S.online;
+  const n = S.outbox.length;
+  offlineText.textContent = `Sei offline: puoi leggere tutto e aggiungere todo in Agenda e note nel Diario${n ? ` (${n} in coda, partono appena torna la rete)` : ''}. Il resto si modifica quando torni online.`;
+}
+
 const updateBar = h('div.update-bar', { hidden: true, role: 'status' },
   icon('news'), updateText, h('span.grow'),
   h('a.btn.sm.ghost', { href: '#/novita' }, 'Novità'),

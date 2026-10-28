@@ -307,6 +307,61 @@ const MIGRATIONS = [
   ALTER TABLE entries ADD COLUMN mail_thread INTEGER REFERENCES entries ON DELETE SET NULL;
   ALTER TABLE entries ADD COLUMN reply_to INTEGER REFERENCES mail_messages ON DELETE SET NULL;
   `,
+  // v16: tutto è privato di chi lo crea, tranne magazzino e documenti. Voci, progetti, contatti e note sui
+  // documenti si condividono con delle persone (shares) o con tutti (shared_all). La colonna private non conta
+  // più. I dati di prima diventano privati di chi li ha creati (chi aveva una voce assegnata la vede ancora);
+  // ciò che non ha più un autore resta di tutti.
+  // Chat a canali: "everyone" = tutti i membri del workspace leggono e scrivono, altrimenti chat_members
+  // (can_write 0 = solo lettura). chat_reads: l'ultimo messaggio letto per canale. La chat di prima è "generale".
+  `
+  CREATE TABLE shares (
+    kind TEXT NOT NULL CHECK (kind IN ('entry', 'project', 'contact', 'docnote')),
+    obj_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
+    PRIMARY KEY (kind, obj_id, user_id)
+  );
+  CREATE INDEX shares_user ON shares(user_id, kind);
+  ALTER TABLE entries ADD COLUMN shared_all INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE projects ADD COLUMN shared_all INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE contacts ADD COLUMN shared_all INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE doc_notes ADD COLUMN shared_all INTEGER NOT NULL DEFAULT 0;
+  UPDATE entries SET shared_all = 1 WHERE created_by IS NULL;
+  UPDATE projects SET shared_all = 1 WHERE created_by IS NULL;
+  UPDATE contacts SET shared_all = 1 WHERE created_by IS NULL;
+  UPDATE doc_notes SET shared_all = 1 WHERE created_by IS NULL;
+
+  CREATE TABLE chat_channels (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    everyone INTEGER NOT NULL DEFAULT 0,
+    created_by INTEGER REFERENCES users ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    deleted_at TEXT
+  );
+  CREATE TABLE chat_members (
+    channel_id INTEGER NOT NULL REFERENCES chat_channels ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
+    can_write INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (channel_id, user_id)
+  );
+  CREATE TABLE chat_reads (
+    channel_id INTEGER NOT NULL REFERENCES chat_channels ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
+    read_id INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (channel_id, user_id)
+  );
+  ALTER TABLE chat_messages ADD COLUMN channel_id INTEGER REFERENCES chat_channels ON DELETE CASCADE;
+  INSERT INTO chat_channels (id, name, everyone, created_at) VALUES (1, 'generale', 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+  UPDATE chat_messages SET channel_id = 1;
+  INSERT INTO chat_reads (channel_id, user_id, read_id) SELECT 1, id, chat_read_id FROM users WHERE chat_read_id > 0;
+  CREATE INDEX chat_messages_channel ON chat_messages(channel_id, id);
+  `,
+  // v17: voci create offline nell'app. client_id lo genera l'app: se l'invio si ripete (rete caduta a metà)
+  // la voce non si crea due volte.
+  `
+  ALTER TABLE entries ADD COLUMN client_id TEXT;
+  CREATE UNIQUE INDEX entries_client ON entries(created_by, client_id) WHERE client_id IS NOT NULL;
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

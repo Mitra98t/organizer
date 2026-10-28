@@ -8,7 +8,7 @@ APP_PORT    ?= 8080
 
 .DEFAULT_GOAL := help
 .PHONY: help up down restart logs ps https wait reset demo seed backup restore \
-        users invite workspaces reset-password make-admin mail-helper mail-helper-uninstall cli cli-uninstall tunnel tunnel-off tunnel-status shell info test dev dev-reset dev-demo confirm
+        users invite workspaces reset-password make-admin mail-helper mail-helper-uninstall feedback cli cli-uninstall tunnel tunnel-off tunnel-status shell info test dev dev-reset dev-demo confirm
 
 help: ## Mostra questo elenco
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -56,6 +56,11 @@ demo: reset ## Riparte da zero e carica i dati demo (login demo / demo1234)
 seed: ## Carica i dati demo senza cancellare nulla (FORCE=1 se ci sono già dati)
 	$(COMPOSE) exec -T app $(NODE) server/demo.js $(if $(FORCE),--force)
 	@echo "Ricarica la pagina nel browser per vederli."
+
+feedback: ## Esporta i feedback aperti in feedback/ (ALL=1 anche i risolti): testo e screenshot
+	@rm -rf feedback
+	$(COMPOSE) exec -T app node --disable-warning=ExperimentalWarning server/feedback-export.js /tmp/feedback-export $(if $(ALL),--all,)
+	@$(COMPOSE) cp app:/tmp/feedback-export ./feedback >/dev/null && echo "Apri feedback/ (un feedback per cartella, feedback.md + immagini)"
 
 backup: ## Salva database e file caricati in backups/ (ferma l'app per qualche secondo)
 	@mkdir -p backups

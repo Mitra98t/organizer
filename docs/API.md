@@ -37,7 +37,17 @@ Ogni membro di un workspace ha un livello per area: `none` (non la vede), `read`
 - `/api/sync` restituisce `perms` (i tuoi; `null` = tutto) e manda solo i dati delle aree che puoi leggere; agli admin anche `memberPerms` (`{ idUtente: perms | null }`).
 - Una richiesta fuori dai permessi risponde `403` con il motivo ("Non hai il permesso di modificare l'area Mail…"). Le voci appartengono all'area del loro tipo (le mail a `mail`, todo e note a `voci`).
 - Senza scrittura su progetti e magazzino, `@nuovo` in una voce non crea il progetto (403) e `#NUOVO` non crea l'articolo (resta testo).
-- `PATCH /api/admin/users/:id` `{ perms: { mail: "read", chat: "none", … } }` (solo admin; `perms: null` = accesso pieno): le aree non indicate restano in scrittura e le dipendenze si completano alzando ciò che serve.
+- `PATCH /api/admin/users/:id` `{ perms: { mail: "read", chat: "none", canali: "write", … } }` (solo admin; `perms: null` = accesso pieno, senza gestione dei canali): le aree non indicate restano in scrittura e le dipendenze si completano alzando ciò che serve. `canali` (gestire i canali della chat) è `none` se non indicato.
+
+## Visibilità e condivisione
+
+Magazzino e documenti sono di tutto il workspace. Voci, progetti, contatti e note sui documenti sono privati di chi li crea (anche per gli admin) e si condividono:
+- nel testo: `+utente` (lo vede anche lui), `++utente` (lo vede e gli si assegna la voce), `+all` (tutti); valgono per `POST /api/entries`, il titolo in `PATCH /api/entries/:id`, `share: ["utente", "all"]` in `POST /api/projects` e il testo delle note sui documenti;
+- `PUT /api/shares/:tipo/:id` `{users: [id…], all: true|false}` sostituisce l'elenco (solo chi l'ha creato); tipo: `entry`, `project`, `contact`, `docnote`.
+
+`POST /api/entries` accetta anche `client_id` (generato dal client: se la voce con quel `client_id` esiste già, restituisce quella invece di crearne un'altra) e `done` (`true` o la data: la todo arriva già fatta), per le voci create offline.
+
+In `/api/sync` ogni oggetto ha `shared_all`, e `shares` elenca `{kind, obj_id, user_id}` di ciò che vedi. Una voce la vede anche l'assegnatario, una sotto-attività chi vede la voce sopra.
 
 ## Convenzioni
 
@@ -214,19 +224,32 @@ Campi: `name`, `email`, `phone`, `company`, `role`, `timeslot` (fascia oraria), 
 
 ## Chat
 
-Una chat per workspace, tra i suoi membri. Un messaggio: `id`, `user_id`, `text`, `created_at`, `edited_at`.
+Una chat per workspace, a canali. Un canale: `id`, `name`, `everyone` (tutti i membri leggono e scrivono) oppure `members` `[{user_id, can_write}]`. In `/api/sync`: `chatChannels` (con `member`, `can_write`, `unread`, `read_id`; chi gestisce i canali li riceve tutti), `chat` (gli ultimi 100 messaggi di ogni canale in cui sei), `chatUnread`, `canManageChannels`. Un messaggio: `id`, `channel_id`, `user_id`, `text`, `created_at`, `edited_at`. Senza `channel` vale il primo canale in cui sei.
 
 I collegamenti stanno nel testo e l'app li mostra come link con il nome attuale: `#CODICE` (articolo), `@tag` (progetto), `+utente` (persona), `[[doc:ID]]` (documento), `[[voce:ID]]` (todo, mail o nota), `[[contatto:ID]]`.
 
 | | |
 |---|---|
-| `GET /api/chat?limit=50` | ultimi messaggi, in ordine cronologico (max 500) |
+| `GET /api/chat?channel=ID&limit=50` | ultimi messaggi del canale (per id o nome), in ordine cronologico (max 500) |
 | `GET /api/chat?before=ID` | i precedenti a ID (per scorrere indietro) |
 | `GET /api/chat?after=ID` | i successivi a ID (per un bot: a ogni evento `change` di `/api/events`) |
-| `POST /api/chat` `{text}` | scrive (max 4000 caratteri) → `{id}` |
+| `POST /api/chat` `{text, channel}` | scrive (max 4000 caratteri) → `{id, channel_id}`; 403 dove si può solo leggere |
 | `PATCH /api/chat/:id` `{text}` | modifica un proprio messaggio |
-| `DELETE /api/chat/:id` | elimina (i propri, o qualunque se admin) |
-| `POST /api/chat/read` `{id}` | letto fino a `id`: azzera i non letti (`chatUnread` in `/api/sync`) |
+| `DELETE /api/chat/:id` | elimina (i propri, o qualunque se admin o gestore dei canali) |
+| `POST /api/chat/read` `{id, channel}` | letto fino a `id` nel canale |
+| `POST /api/chat/channels` `{name, everyone, members}` | crea un canale (admin o permesso `canali`) |
+| `PATCH /api/chat/channels/:id` | nome, `everyone`, `members` |
+| `DELETE /api/chat/channels/:id` | elimina il canale |
+
+## Feedback
+
+| | |
+|---|---|
+| `POST /api/feedback` `{text, page, version, client}` | → `{id}` |
+| `POST /api/feedback/:id/files?name=…` | un'immagine (corpo grezzo, PNG/JPEG/GIF/WebP, max 15 MB, 6 per feedback), entro un'ora |
+| `GET /api/feedback?status=open\|all` | elenco con `files` (solo chi gestisce l'istanza) |
+| `PATCH /api/feedback/:id` `{status: "open"\|"done"}` | |
+| `GET /api/feedback/files/:id` | l'immagine |
 
 Un ponte verso Telegram: segui `/api/events`, a ogni `change` leggi `/api/chat?after=ULTIMO` e inoltra; nella direzione opposta `POST /api/chat`. Dal terminale c'è `org chat -f`.
 

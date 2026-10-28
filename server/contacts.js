@@ -1,6 +1,7 @@
-// Rubrica condivisa: persone e aziende a cui si mandano mail.
+// Rubrica: persone e aziende a cui si mandano mail. Ogni contatto è privato di chi lo crea e si condivide con
+// delle persone o con tutti (pannello "Condiviso con", vedi PUT /api/shares/contact/:id).
 import { db } from './db.js';
-import { route, insertId } from './api.js';
+import { route, insertId, CVIS_ANY } from './api.js';
 import { fail, now, str } from './util.js';
 
 const FIELDS = { name: 120, email: 200, phone: 60, company: 120, role: 120, timeslot: 60, notes: 20000 };
@@ -17,7 +18,8 @@ function fields(b) {
   return f;
 }
 
-const getContact = id => db.prepare('SELECT * FROM contacts WHERE id = ? AND deleted_at IS NULL').get(+id) || fail(404, 'Contatto non trovato');
+const getContact = (id, user) => db.prepare(`SELECT * FROM contacts c WHERE c.id = $id AND c.deleted_at IS NULL AND ${CVIS_ANY}`)
+  .get({ id: +id, uid: user.id }) || fail(404, 'Contatto non trovato');
 
 route('POST', '/api/contacts', async ({ user, body }) => {
   const f = fields(await body());
@@ -29,8 +31,8 @@ route('POST', '/api/contacts', async ({ user, body }) => {
   return { id };
 }, { area: 'contatti' });
 
-route('PATCH', '/api/contacts/:id', async ({ params, body }) => {
-  const c = getContact(params.id);
+route('PATCH', '/api/contacts/:id', async ({ params, user, body }) => {
+  const c = getContact(params.id, user);
   const f = fields(await body());
   f.updated_at = now();
   const cols = Object.keys(f);
@@ -38,6 +40,6 @@ route('PATCH', '/api/contacts/:id', async ({ params, body }) => {
 }, { area: 'contatti' });
 
 route('DELETE', '/api/contacts/:id', ({ params, user }) => {
-  const c = getContact(params.id);
+  const c = getContact(params.id, user);
   db.prepare('UPDATE contacts SET deleted_at = ?, deleted_by = ? WHERE id = ?').run(now(), user.id, c.id);
 }, { area: 'contatti' });

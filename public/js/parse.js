@@ -77,7 +77,9 @@ export function extractCodes(text) {
 
 export function parseQuick(text, { today: base = today(), kind = 'todo' } = {}) {
   let s = String(text || '').trim();
-  const out = { kind, kindExplicit: false, title: '', due: undefined, project: null, projects: [], assignee: null, contact: null, codes: [] };
+  // shares: +persona (la vede anche lei); shareAll: +all (la vedono tutti); assignee: ++persona (la vede e
+  // gliela assegni). Senza nessuno dei tre la voce è privata di chi la scrive.
+  const out = { kind, kindExplicit: false, title: '', due: undefined, project: null, projects: [], assignee: null, shares: [], shareAll: false, contact: null, codes: [] };
 
   const pm = s.match(/^([a-z]+)\s*:\s*/i);
   if (pm && KIND_PREFIX[pm[1].toLowerCase()]) {
@@ -97,8 +99,14 @@ export function parseQuick(text, { today: base = today(), kind = 'todo' } = {}) 
       if (!out.projects.some(t => t.toLowerCase() === m[1].toLowerCase())) out.projects.push(m[1]);
       out.project ||= m[1];
       continue;
-    } else if ((m = w.match(/^\+(\p{L}[\p{L}\d_.-]*)$/u))) {
-      out.assignee = m[1]; continue;
+    } else if ((m = w.match(/^(\+\+?)(\p{L}[\p{L}\d_.-]*)$/u))) {
+      const share = shareToken(m[2]);
+      if (share === ALL) out.shareAll = true;
+      else {
+        if (m[1] === '++') out.assignee = share;
+        if (!out.shares.some(n => n.toLowerCase() === share.toLowerCase())) out.shares.push(share);
+      }
+      continue;
     } else if ((m = w.match(/^>([\p{L}\d]\S*)$/u))) {
       out.contact = m[1]; continue;
     }
@@ -128,15 +136,36 @@ export function parseItemLine(text) {
   return out;
 }
 
-// Barra in alto nella pagina Progetti:  Firmware motori @rover  (→ sottoprogetto di @rover)
+// Barra in alto nella pagina Progetti:  Firmware motori @rover +marco  (→ sottoprogetto di @rover, condiviso)
 export function parseProjectLine(text) {
-  const out = { name: '', parent: null };
+  const out = { name: '', parent: null, share: [] };
   const rest = [];
   for (const w of String(text || '').trim().split(/\s+/).filter(Boolean)) {
     const m = w.match(/^@([\p{L}\d_][\p{L}\d_-]*)$/u);
+    const s = w.match(/^\+\+?(\p{L}[\p{L}\d_.-]*)$/u);
     if (m) out.parent = m[1];
+    else if (s) out.share.push(shareToken(s[1]));
     else rest.push(w);
   }
   out.name = rest.join(' ');
+  return out;
+}
+
+// +all (o +tutti) vuol dire "tutti": per questo "all" non può essere un nome utente.
+export const ALL = 'all';
+export const shareToken = name => (/^(all|tutti)$/i.test(name) ? ALL : name);
+
+// +persona e +all in un testo libero (note sui documenti): i nomi e il testo senza.
+export function parseShares(text) {
+  const out = { text: '', names: [], all: false };
+  const keep = [];
+  for (const w of String(text || '').split(/(\s+)/)) {
+    const m = w.match(/^\+\+?(\p{L}[\p{L}\d_.-]*)$/u);
+    if (!m) { keep.push(w); continue; }
+    const s = shareToken(m[1]);
+    if (s === ALL) out.all = true;
+    else out.names.push(s);
+  }
+  out.text = keep.join('').replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+\n/g, '\n').trim();
   return out;
 }

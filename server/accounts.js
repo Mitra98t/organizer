@@ -94,6 +94,30 @@ const MIGRATIONS = [
   CREATE INDEX mail_inbox_user ON mail_inbox(user_id, date);
   ALTER TABLE users ADD COLUMN mail_addresses TEXT NOT NULL DEFAULT '[]';
   `,
+  // Feedback sull'app (errori, idee) con screenshot: li rivede chi gestisce l'istanza (server/feedback.js).
+  `
+  CREATE TABLE feedback (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER REFERENCES users ON DELETE SET NULL,
+    workspace_id INTEGER,
+    text TEXT NOT NULL,
+    page TEXT NOT NULL DEFAULT '',
+    version TEXT NOT NULL DEFAULT '',
+    client TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'done')),
+    created_at TEXT NOT NULL,
+    resolved_at TEXT
+  );
+  CREATE TABLE feedback_files (
+    id INTEGER PRIMARY KEY,
+    feedback_id INTEGER NOT NULL REFERENCES feedback ON DELETE CASCADE,
+    stored TEXT NOT NULL,
+    name TEXT NOT NULL,
+    mime TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  `,
 ];
 
 {
@@ -321,3 +345,12 @@ export function inboxOf(userId) {
   return acc.prepare(`SELECT id, from_addr, to_addr, cc, subject, substr(body, 1, 300) AS snippet, attachments != '[]' AS has_att, date,
     thread_ws, thread_entry, read_at FROM mail_inbox WHERE user_id = ? AND archived_at IS NULL ORDER BY date DESC LIMIT 300`).all(userId);
 }
+
+// Chi gestisce l'istanza (per i feedback): gli admin del primo workspace, quello creato all'installazione.
+export function isOwner(userId) {
+  const first = acc.prepare('SELECT id FROM workspaces ORDER BY id LIMIT 1').get();
+  return !!first && roleIn(first.id, userId) === 'admin';
+}
+
+// Per /api/sync: chi gestisce l'istanza vede la pagina Feedback con il numero di quelli aperti (gli altri null).
+export const openFeedback = userId => (isOwner(userId) ? acc.prepare("SELECT COUNT(*) AS n FROM feedback WHERE status = 'open'").get().n : null);

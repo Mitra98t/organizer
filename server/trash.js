@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { db, tx, UPLOAD_DIR } from './db.js';
-import { route, VIS_ANY, PVIS_ANY } from './api.js';
+import { route, VIS_ANY, PVIS_ANY, CVIS_ANY, NVIS_ANY } from './api.js';
 import { fail } from './util.js';
 import { allows, assertCan, entryArea, readableKinds } from './perms.js';
 
@@ -31,11 +31,11 @@ const TYPES = {
     },
   },
   docnote: {
-    find: id => db.prepare('SELECT * FROM doc_notes WHERE id = ? AND deleted_at IS NOT NULL').get(id),
+    find: (id, uid) => db.prepare(`SELECT n.* FROM doc_notes n WHERE n.id = $id AND n.deleted_at IS NOT NULL AND ${NVIS_ANY}`).get({ id, uid }),
     restore: n => db.prepare('UPDATE doc_notes SET deleted_at = NULL, deleted_by = NULL WHERE id = ?').run(n.id),
   },
   contact: {
-    find: id => db.prepare('SELECT * FROM contacts WHERE id = ? AND deleted_at IS NOT NULL').get(id),
+    find: (id, uid) => db.prepare(`SELECT c.* FROM contacts c WHERE c.id = $id AND c.deleted_at IS NOT NULL AND ${CVIS_ANY}`).get({ id, uid }),
     restore: c => db.prepare('UPDATE contacts SET deleted_at = NULL, deleted_by = NULL WHERE id = ?').run(c.id),
   },
 };
@@ -68,9 +68,9 @@ route('GET', '/api/trash', ({ user }) => {
     docs: all('documenti', `SELECT d.id, d.item_id, d.kind, d.label, d.version, d.filename, d.url, d.size, d.created_by, d.deleted_at, d.deleted_by,
       i.code AS item_code FROM documents d JOIN items i ON i.id = d.item_id
       WHERE d.deleted_at IS NOT NULL AND i.deleted_at IS NULL ORDER BY d.deleted_at DESC`),
-    contacts: all('contatti', 'SELECT * FROM contacts WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC'),
+    contacts: all('contatti', `SELECT c.* FROM contacts c WHERE c.deleted_at IS NOT NULL AND ${CVIS_ANY} ORDER BY c.deleted_at DESC`, { uid }),
     docNotes: all('documenti', `SELECT n.*, d.filename, d.label, d.url FROM doc_notes n JOIN documents d ON d.id = n.doc_id
-      WHERE n.deleted_at IS NOT NULL AND d.deleted_at IS NULL ORDER BY n.deleted_at DESC`),
+      WHERE n.deleted_at IS NOT NULL AND d.deleted_at IS NULL AND ${NVIS_ANY} ORDER BY n.deleted_at DESC`, { uid }),
   };
 });
 

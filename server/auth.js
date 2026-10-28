@@ -26,7 +26,8 @@ export function sessionCookie(req, token) {
   return `sid=${token || ''}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${isHttps(req) ? '; Secure' : ''}`;
 }
 
-export const validUsername = u => /^[a-z0-9_.-]{2,32}$/i.test(String(u || ''));
+// "all" e "tutti" non sono nomi: +all condivide con tutti.
+export const validUsername = u => /^[a-z0-9_.-]{2,32}$/i.test(String(u || '')) && !/^(all|tutti)$/i.test(String(u));
 export const validPassword = p => typeof p === 'string' && p.length >= 8 && p.length <= 200;
 
 export function randomCode(len = 10) {
