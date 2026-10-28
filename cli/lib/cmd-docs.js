@@ -24,9 +24,11 @@ const KIND_BY_EXT = {
 };
 const guessKind = file => Object.keys(KIND_BY_EXT).find(k => KIND_BY_EXT[k].includes(path.extname(file).toLowerCase())) || 'altro';
 
-function checkKind(k) {
+// Tipi del workspace (i fissi più quelli aggiunti nell'app o con org doc kinds --add).
+async function checkKind(ctx, k) {
   if (k === undefined) return undefined;
-  return DOC_KINDS.includes(k.toLowerCase()) ? k.toLowerCase() : fail(`Tipo: ${DOC_KINDS.join(', ')}`);
+  const kinds = (await ctx.data()).docKinds || DOC_KINDS;
+  return kinds.includes(k.toLowerCase()) ? k.toLowerCase() : fail(`Tipo: ${kinds.join(', ')} (nuovi tipi: org doc kinds --add NOME)`);
 }
 
 const docName = d => d.label || d.filename || d.url;
@@ -64,7 +66,7 @@ export default {
       const D = await ctx.data();
       // Il primo argomento è un articolo se esiste quel codice, altrimenti è un filtro sul testo.
       const item = pos.length && D.itemByCode.get(pos[0].replace(/^#/, '').toLowerCase()) ? itemRef(D, pos.shift()) : null;
-      const kind = checkKind(o.kind);
+      const kind = await checkKind(ctx, o.kind);
       const q = pos.join(' ').toLowerCase();
       const list = D.docs.filter(d => (!item || d.item_id === item.id) && (!kind || d.kind === kind)
         && (!q || `${d.label} ${d.filename} ${d.url} ${d.version}`.toLowerCase().includes(q)));
@@ -80,7 +82,7 @@ export default {
 
   up: {
     usage: 'doc up CODICE FILE… [-k TIPO] [-V VERSIONE] [--label NOME]',
-    summary: `carica file su un articolo; tipi: ${DOC_KINDS.join(', ')} (senza -k si deduce dall'estensione)`,
+    summary: 'carica file su un articolo; tipo con -k (org doc kinds per l\'elenco), senza -k si deduce dall\'estensione',
     options: { kind: { type: 'string', short: 'k' }, version: { type: 'string', short: 'V' }, label: { type: 'string' } },
     async run(ctx, [ref, ...files], o) {
       const it = itemRef(await ctx.data(), ref ?? fail('Su quale articolo?'));
@@ -88,7 +90,7 @@ export default {
       for (const f of files) if (!fs.existsSync(f) || !fs.statSync(f).isFile()) fail(`${f}: file inesistente`);
       const ids = [];
       for (const file of files) {
-        const kind = checkKind(o.kind) ?? guessKind(file);
+        const kind = (await checkKind(ctx, o.kind)) ?? guessKind(file);
         const q = new URLSearchParams({ kind, name: path.basename(file) });
         if (o.version) q.set('version', o.version);
         if (o.label && files.length === 1) q.set('label', o.label);
@@ -112,7 +114,7 @@ export default {
     async run(ctx, [ref, url], o) {
       const it = itemRef(await ctx.data(), ref ?? fail('Su quale articolo?'));
       if (!url) fail('Manca il link');
-      const { id } = await ctx.api().post(`/items/${it.id}/docs`, { url, kind: checkKind(o.kind) ?? 'altro', label: o.label, version: o.version });
+      const { id } = await ctx.api().post(`/items/${it.id}/docs`, { url, kind: (await checkKind(ctx, o.kind)) ?? 'altro', label: o.label, version: o.version });
       if (ctx.json) return ctx.out({ id });
       console.log(`${c.green('+')} ${c.dim(id)} ${o.label || url} → ${c.cyan(it.code)}`);
     },
@@ -196,7 +198,7 @@ export default {
       const d = await docRef(ctx, ref);
       const patch = {};
       if (o.label !== undefined) patch.label = o.label;
-      if (o.kind !== undefined) patch.kind = checkKind(o.kind);
+      if (o.kind !== undefined) patch.kind = await checkKind(ctx, o.kind);
       if (o.version !== undefined) patch.version = o.version;
       if (!Object.keys(patch).length) fail('Niente da cambiare: org doc set --help');
       await ctx.api().patch(`/docs/${d.id}`, patch);
@@ -212,6 +214,26 @@ export default {
       const label = name.join(' ') || fail('Quale nome?');
       await ctx.api().patch(`/docs/${d.id}`, { label });
       console.log(`${c.green('✓')} ${c.dim(d.id)} ${docName(d)} → ${label}`);
+    },
+  },
+
+  kinds: {
+    usage: 'doc kinds [--add NOME] [--rm NOME]',
+    summary: 'tipi di documento con quanti documenti ha ognuno; --add ne aggiunge uno, --rm lo elimina (i suoi documenti diventano "altro")',
+    options: { add: { type: 'string' }, rm: { type: 'string' } },
+    async run(ctx, _pos, o) {
+      if (o.add) {
+        const { name } = await ctx.api().post('/doc-kinds', { name: o.add });
+        return console.log(`${c.green('+')} tipo ${name}`);
+      }
+      if (o.rm) {
+        await ctx.api().del(`/doc-kinds/${encodeURIComponent(o.rm)}`);
+        return console.log(`${c.green('✓')} tipo ${o.rm} eliminato`);
+      }
+      const D = await ctx.data();
+      const kinds = D.docKinds || DOC_KINDS;
+      if (ctx.json) return ctx.out(kinds.map(k => ({ name: k, custom: (D.customDocKinds || []).includes(k), docs: D.docs.filter(d => d.kind === k).length })));
+      table(kinds.map(k => [k, String(D.docs.filter(d => d.kind === k).length), (D.customDocKinds || []).includes(k) ? c.dim('aggiunto') : '']), { right: [1] });
     },
   },
 

@@ -49,6 +49,7 @@ export const ui = {
   docGroup: load('org.docGroup', 'item'),
   docSel: new Set(),
   catPicker: null,
+  projPicker: null, // progetto con il popup del colore aperto
   itemStatusF: null,
   hideDiscarded: load('org.hideDiscarded', false),
   contactGroup: load('org.contactGroup', 'none'),
@@ -196,6 +197,7 @@ function indexData(d) {
   d.docNotes ||= [];
   d.entryProjects ||= [];
   d.categoryColors ||= [];
+  d.customDocKinds ||= [];
   d.chat ||= [];
   d.chatUnread ??= 0;
   d.chatReadId ??= 0;
@@ -456,6 +458,17 @@ export function renameDoc(d) {
 }
 
 export const DOC_KINDS = ['firmware', 'datasheet', 'schema', 'footprint', 'manuale', 'foto', 'altro'];
+// Tutti i tipi del workspace: i fissi più quelli aggiunti (che hanno un colore calcolato dal nome).
+export const docKinds = () => S.data?.docKinds || DOC_KINDS;
+export const dkAttrs = k => (DOC_KINDS.includes(k) ? { class: `k-${k}` } : { class: 'k-custom', style: `--h:${hue(k)}` });
+
+// Nuovo tipo di documento: chiede il nome, lo crea e lo restituisce (null se annullato o in errore).
+export async function newDocKind() {
+  const name = prompt('Nuovo tipo di documento (una parola, es. "certificato", "gerber", "bom"):');
+  if (!name?.trim()) return null;
+  const r = await act(() => api('POST', '/doc-kinds', { name: name.trim() }));
+  return r?.name ?? null;
+}
 
 // URL del file di un documento. L'impronta (sha256) nell'indirizzo evita che il browser mostri dalla cache
 // un file vecchio con lo stesso numero di documento (dopo un reset o il ripristino di un backup).

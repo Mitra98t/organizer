@@ -28,14 +28,43 @@ function parseMail(text, e) {
 export default {
   ls: {
     usage: 'mail [--all]',
-    summary: 'mail da mandare (--all anche quelle già mandate negli ultimi 30 giorni)',
+    summary: 'mail da mandare e thread in attesa di risposta (--all anche le mandate degli ultimi 30 giorni)',
     options: { all: { type: 'boolean', short: 'a' } },
     async run(ctx, _pos, o) {
       const D = await ctx.data();
-      const list = D.entries.filter(e => e.kind === 'mail' && (o.all || !e.done_at));
-      if (ctx.json) return ctx.out(list);
-      if (!list.length) return console.log(c.dim('Nessuna mail da mandare'));
-      printTree(D, list);
+      const mails = D.entries.filter(e => e.kind === 'mail');
+      const open = mails.filter(e => !e.done_at);
+      const waiting = mails.filter(e => e.done_at && e.awaiting_reply).sort((a, b) => a.done_at.localeCompare(b.done_at));
+      const sent = o.all ? mails.filter(e => e.done_at && !e.awaiting_reply) : [];
+      if (ctx.json) return ctx.out({ open, waiting, sent });
+      if (!open.length && !waiting.length && !sent.length) return console.log(c.dim('Nessuna mail da mandare né in attesa di risposta'));
+      if (open.length) {
+        heading('Da mandare');
+        printTree(D, open);
+      }
+      if (waiting.length) {
+        heading('In attesa di risposta');
+        const days = e => Math.floor((Date.now() - Date.parse(e.done_at)) / 864e5);
+        table(waiting.map(e => [c.dim(e.id), c.yellow(days(e) ? `da ${days(e)}g` : 'da oggi'), `✉ ${e.title}${e.contact ? c.dim(` → ${e.contact}`) : ''}`]));
+        console.log(c.dim('  Quando arriva la risposta: org mail replied ID'));
+      }
+      if (sent.length) {
+        heading('Mandate');
+        printTree(D, sent);
+      }
+    },
+  },
+
+  replied: {
+    usage: 'mail replied ID…',
+    summary: 'la risposta è arrivata: il thread esce da "in attesa di risposta" (--undo lo rimette)',
+    options: { undo: { type: 'boolean' } },
+    async run(ctx, refs, o) {
+      if (!refs.length) fail('Manca il numero della mail');
+      for (const id of refs.map(r => numRef(r))) {
+        await ctx.api().patch(`/entries/${id}`, { awaiting: !!o.undo });
+        await printEntry(ctx, id);
+      }
     },
   },
 

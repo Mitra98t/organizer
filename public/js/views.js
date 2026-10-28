@@ -1,7 +1,7 @@
 import {
   h, icon, S, ui, RS, api, act, render, richText, dueInfo, dayDiff, fmtDay, fmtLongDay, fmtTime, fmtSize,
   userName, toast, save, patchEntry, addEntry, isMine, localDay, autosize, stop, copy, hue, trashIt, contactLabel,
-  descendants, ancestors, catStyle, itemAttrs, docFileUrl, projectsOf, DOC_KINDS, projHue, catHue, huePicker,
+  descendants, ancestors, catStyle, itemAttrs, docFileUrl, projectsOf, DOC_KINDS, docKinds, newDocKind, projHue, catHue, huePicker,
   switchWorkspace, newWorkspace, docName, renameDoc, richField, backlinks, plainRefs,
 } from './core.js';
 import { docMeta } from './docview.js';
@@ -52,8 +52,21 @@ function toggleOpen(id) {
 function toggleDone(e) {
   const done = !e.done_at;
   patchEntry(e, { done });
-  if (done) toast(e.kind === 'mail' ? 'Mail segnata come inviata' : 'Fatto', { action: { label: 'Annulla', fn: () => patchEntry(e, { done: false }) } });
+  if (!done) return;
+  // Una mail mandata finisce "in attesa di risposta" (Mail): se non serve una risposta lo si dice subito.
+  if (e.kind === 'mail') toast('Mail inviata: in attesa di risposta', { action: { label: 'Nessuna risposta', fn: () => patchEntry(e, { awaiting: false }) } });
+  else toast('Fatto', { action: { label: 'Annulla', fn: () => patchEntry(e, { done: false }) } });
 }
+
+// Da quanto si aspetta una risposta (giorni dall'invio).
+const waitingFor = e => {
+  const days = Math.floor((Date.now() - Date.parse(e.done_at)) / 864e5);
+  return days < 1 ? 'da oggi' : days === 1 ? 'da ieri' : `da ${days} giorni`;
+};
+const awaitingBtn = e => h('button.chip.await', {
+  title: 'Segna che la risposta è arrivata (il thread si chiude)',
+  onclick: ev => { stop(ev); patchEntry(e, { awaiting: false }); toast('Thread chiuso', { action: { label: 'Annulla', fn: () => patchEntry(e, { awaiting: true }) } }); },
+}, icon('check'), 'risposta arrivata');
 
 function enterAdd(handler) {
   return ev => {
@@ -81,6 +94,7 @@ export function entryRow(e, opt = {}) {
     meta.push(h('span.due', { class: e.kind === 'note' ? null : d.cls }, icon('cal'), e.kind === 'note' ? fmtDay(e.due) : d.label));
   }
   if (e.done_at && e.kind !== 'note') meta.push(h('span.muted', `${e.kind === 'mail' ? 'inviata' : 'fatta'} ${fmtTime(e.done_at)}`));
+  if (e.kind === 'mail' && e.done_at && e.awaiting_reply) meta.push(h('span.awaiting', icon('mail'), `in attesa di risposta ${waitingFor(e)}`), awaitingBtn(e));
   for (const p of projs) meta.push(projTag(p));
   if (e.kind === 'mail' && e.contact) meta.push(h('span.contact', { title: e.contact }, `→ ${contactLabel(e.contact)}`));
   const atts = S.data.attachmentsOf.get(e.id);
@@ -102,7 +116,7 @@ export function entryRow(e, opt = {}) {
     }, e.done_at ? icon('check') : e.kind === 'mail' ? icon('mail') : null);
 
   return h('div.entry', {
-    class: [`k-${e.kind}`, e.done_at && 'done', open && 'open', e.pinned && 'pinned', opt.nested && 'nested'].filter(Boolean).join(' '),
+    class: [`k-${e.kind}`, e.done_at && 'done', e.done_at && e.awaiting_reply && 'waiting', open && 'open', e.pinned && 'pinned', opt.nested && 'nested'].filter(Boolean).join(' '),
   },
   h('div.row', check,
     h('div.body', { onclick: () => toggleOpen(e.id) },
@@ -160,6 +174,10 @@ function entryEditor(e) {
           v => patchEntry(e, { assignee_id: v ? +v : null }))),
       h('button.chip', { class: e.pinned && 'on', onclick: () => patchEntry(e, { pinned: !e.pinned }) }, icon('star'), 'evidenza'),
       e.created_by === me.id && h('button.chip', { class: e.private && 'on', onclick: () => patchEntry(e, { private: !e.private }) }, icon('lock'), 'privata'),
+      e.kind === 'mail' && e.done_at && h('button.chip', {
+        class: e.awaiting_reply && 'on', title: 'La mail compare in "In attesa di risposta" finché non arriva la risposta',
+        onclick: () => patchEntry(e, { awaiting: !e.awaiting_reply }),
+      }, icon('mail'), 'attende risposta'),
     ),
     e.kind === 'mail' ? mailComposer(e) : richField({
       fk: `notes-${e.id}`, cls: 'ed-notes', rows: 1, value: e.notes, placeholder: 'Dettagli (facoltativo; #codice, [[ per collegare altro)…',
@@ -239,7 +257,7 @@ const BL_PILL = { todo: 'todo', mail: 'mail', note: 'nota' };
 
 function blRow(e) {
   const when = e.kind === 'mail'
-    ? (e.done_at ? `mandata ${fmtTime(e.done_at)}` : e.due ? dueInfo(e.due).label : '')
+    ? (e.done_at ? `mandata ${fmtTime(e.done_at)}${e.awaiting_reply ? ', attende risposta' : ''}` : e.due ? dueInfo(e.due).label : '')
     : e.done_at ? `fatta ${fmtTime(e.done_at)}` : e.due ? (e.kind === 'note' ? fmtDay(e.due) : dueInfo(e.due).label) : '';
   return h('a.bl-row', { href: `#/v/${e.id}`, class: e.done_at && e.kind !== 'mail' ? 'done' : null },
     h('span.kpill', { class: `k-${e.kind}` }, BL_PILL[e.kind]),
@@ -473,7 +491,8 @@ export function viewProject(id) {
   const todos = top.filter(e => e.kind === 'todo' && !e.done_at).sort(byDue);
   const mails = top.filter(e => e.kind === 'mail' && !e.done_at).sort(byDue);
   const notes = top.filter(e => e.kind === 'note').sort(byNoteDesc);
-  const done = top.filter(e => e.kind !== 'note' && e.done_at).sort(byDoneDesc);
+  const waiting = top.filter(e => e.kind === 'mail' && e.done_at && e.awaiting_reply).sort((a, b) => a.done_at.localeCompare(b.done_at));
+  const done = top.filter(e => e.kind !== 'note' && e.done_at && !(e.kind === 'mail' && e.awaiting_reply)).sort(byDoneDesc);
   const patch = f => act(() => api('PATCH', `/projects/${p.id}`, f));
   const rows = (arr, showKind = false) => arr.map(e => entryRow(e, { hideProject: p.id, showKind }));
 
@@ -494,12 +513,18 @@ export function viewProject(id) {
     ancestors(p.id).length > 0 && h('div.crumbs', ancestors(p.id).map(a => [projTag(a), h('span.muted', ' › ')])),
     h('div.head',
       h('a.icon-btn', { href: '#/progetti', title: 'Progetti (Esc)' }, icon('back')),
+      // Colore del progetto dietro al pallino, come per le categorie del magazzino.
+      h('button.cdot.big.pick.cat', {
+        style: `--h:${projHue(p)}`, title: `Colore di @${p.tag}`,
+        onclick: () => { ui.projPicker = ui.projPicker === p.id ? null : p.id; render(); },
+      }),
       h('input.h-title', { value: p.name, 'data-fk': `pname-${p.id}`, onchange: ev => patch({ name: ev.target.value }) })),
+    ui.projPicker === p.id && h('div.cat-pick', h('span.muted', `Colore di @${p.tag}: `),
+      huePicker(p.hue ?? null, hue(p.tag), x => { ui.projPicker = null; patch({ hue: x }); })),
     h('div.fields',
       h('label.f', h('span', 'Tag @'), h('input.mono', { value: p.tag, size: 14, 'data-fk': `ptag-${p.id}`, onchange: ev => patch({ tag: ev.target.value }) })),
       h('label.f', h('span', 'Stato'), selectOf(p.status, [['open', 'Aperto'], ['paused', 'In pausa'], ['closed', 'Chiuso']], v => patch({ status: v }))),
       h('label.f', h('span', 'Dentro'), selectOf(p.parent_id ? String(p.parent_id) : '', parentOptions, v => patch({ parent_id: v ? +v : null }))),
-      h('div.f', h('span', 'Colore'), huePicker(p.hue ?? null, hue(p.tag), x => patch({ hue: x }))),
       p.created_by === me.id && h('button.chip', { class: p.private && 'on', onclick: () => patch({ private: !p.private }) }, icon('lock'), 'privato'),
       h('span.grow'),
       (p.created_by === me.id || me.is_admin) && h('button.btn.sm.danger', {
@@ -524,6 +549,7 @@ export function viewProject(id) {
         icon('folder'), 'includi le voci dei sottoprogetti')),
     section(`p${p.id}-todo`, 'Da fare', todos.length ? rows(todos) : [empty(h('p', 'Scrivi nella barra in alto: le voci finiscono in ', kbd(`@${p.tag}`), '.'))], { count: todos.length }),
     mails.length > 0 && section(`p${p.id}-mail`, 'Mail da mandare', rows(mails)),
+    waiting.length > 0 && section(`p${p.id}-wait`, 'In attesa di risposta', rows(waiting), { cls: 'waiting' }),
     notes.length > 0 && section(`p${p.id}-notes`, 'Diario', rows(notes)),
     section(`p${p.id}-items`, 'Magazzino del progetto', [
       h('div.comp',
@@ -544,11 +570,14 @@ export function viewProject(id) {
 export function viewMail() {
   const D = S.data;
   const open = D.entries.filter(e => e.kind === 'mail' && !e.done_at).sort(byDue);
-  const sent = D.entries.filter(e => e.kind === 'mail' && e.done_at).sort(byDoneDesc);
+  // Thread aperti: mandate e in attesa di risposta, dalla più vecchia (anche oltre i 30 giorni).
+  const waiting = D.entries.filter(e => e.kind === 'mail' && e.done_at && e.awaiting_reply).sort((a, b) => a.done_at.localeCompare(b.done_at));
+  const sent = D.entries.filter(e => e.kind === 'mail' && e.done_at && !e.awaiting_reply).sort(byDoneDesc);
   return h('div.view',
     pendingRows(p => p.kind === 'mail'),
     !open.length && empty(h('p', 'Nessuna mail da mandare.'), h('p', 'Esempio: ', kbd('offerta 50 schede >acquisti@ditta.it !ven'))),
     open.length > 0 && section('mail-open', 'Da mandare', open.map(e => entryRow(e, { showKind: false }))),
+    waiting.length > 0 && section('mail-wait', 'In attesa di risposta', waiting.map(e => entryRow(e, { showKind: false })), { cls: 'waiting' }),
     sent.length > 0 && section('mail-sent', 'Inviate (ultimi 30 giorni)', sent.map(e => entryRow(e, { showKind: false })), { collapsed: true }));
 }
 
@@ -795,7 +824,10 @@ function docSection(it) {
   };
   const body = [
     h('div.upload',
-      selectOf(ui.docKind, DOC_KINDS.map(k => [k, k]), v => { ui.docKind = v; }),
+      selectOf(ui.docKind, [...docKinds().map(k => [k, k]), ['+', '+ nuovo tipo…']], async v => {
+        ui.docKind = v === '+' ? (await newDocKind()) || ui.docKind : v;
+        render();
+      }),
       h('input', { placeholder: 'versione', size: 9, value: ui.docVer, 'data-fk': `docver-${it.id}`, oninput: ev => { ui.docVer = ev.target.value; } }),
       h('button.btn', { onclick: () => fileInput.click() }, icon('upload'), 'File'),
       h('button.btn.ghost', { onclick: addLink }, icon('link'), 'Link'),

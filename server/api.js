@@ -17,7 +17,11 @@ import { currentWorkspace } from './db.js';
 
 const KINDS = ['todo', 'mail', 'note'];
 const STATUSES = ['open', 'paused', 'closed'];
+// Tipi di documento: quelli fissi più quelli creati nel workspace (tabella doc_kinds); "altro" sempre in fondo.
 const DOC_KINDS = ['firmware', 'datasheet', 'schema', 'footprint', 'manuale', 'foto', 'altro'];
+export const docKinds = () => [...DOC_KINDS.slice(0, -1),
+  ...db.prepare('SELECT name FROM doc_kinds ORDER BY name').all().map(r => r.name), 'altro'];
+const docKind = k => (docKinds().includes(String(k)) ? String(k) : 'altro');
 const ARCHIVE_DAYS = 30;
 const CHAT_IN_SYNC = 100;
 const MAX_UPLOAD = (+process.env.MAX_UPLOAD_MB || 200) * 1048576;
@@ -281,7 +285,8 @@ route('GET', '/api/sync', ({ req, res, user }) => {
   }
   const uid = user.id;
   const p = { uid, cutoff: new Date(Date.now() - ARCHIVE_DAYS * 864e5).toISOString() };
-  const where = `${VIS} AND (e.done_at IS NULL OR e.done_at > $cutoff)`;
+  // Le mail in attesa di risposta restano nei dati anche dopo 30 giorni: sono thread ancora aperti.
+  const where = `${VIS} AND (e.done_at IS NULL OR e.done_at > $cutoff OR e.awaiting_reply = 1)`;
   sendJson(res, 200, {
     rev: rev(),
     me: getUser(uid),
@@ -304,6 +309,8 @@ route('GET', '/api/sync', ({ req, res, user }) => {
       FROM documents WHERE deleted_at IS NULL ORDER BY created_at DESC`).all(),
     contacts: db.prepare('SELECT * FROM contacts WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE, email').all(),
     categoryColors: db.prepare('SELECT name, hue FROM category_colors').all(),
+    docKinds: docKinds(),
+    customDocKinds: db.prepare('SELECT name FROM doc_kinds ORDER BY name').all().map(r => r.name),
     docNotes: db.prepare(`SELECT n.* FROM doc_notes n JOIN documents d ON d.id = n.doc_id
       WHERE n.deleted_at IS NULL AND d.deleted_at IS NULL ORDER BY n.id`).all(),
     attachments: db.prepare(`SELECT a.id, a.entry_id, a.doc_id, a.filename, a.mime, a.size FROM mail_attachments a
@@ -424,7 +431,15 @@ export function updateEntry(e, b, user) {
   if (b.mail_subject !== undefined) f.mail_subject = str(b.mail_subject, 300) || null;
   if (b.project_id !== undefined) f.project_id = b.project_id ? getProject(b.project_id, user.id).id : null;
   if (b.assignee_id !== undefined) f.assignee_id = b.assignee_id ? getUser(b.assignee_id).id : null;
-  if (b.done !== undefined) f.done_at = b.done ? e.done_at || now() : null;
+  if (b.done !== undefined) {
+    f.done_at = b.done ? e.done_at || now() : null;
+    // Una mail mandata aspetta una risposta (finché non si dice che è arrivata o che non serve); riaperta, no.
+    if ((f.kind ?? e.kind) === 'mail') f.awaiting_reply = b.done ? (e.done_at ? e.awaiting_reply : 1) : 0;
+  }
+  if (b.awaiting !== undefined) {
+    f.awaiting_reply = bool(b.awaiting);
+    if (e.awaiting_reply && !b.awaiting && e.done_at) addLog(e.id, user.id, 'risposta arrivata', true);
+  }
   if (b.pinned !== undefined) f.pinned = bool(b.pinned);
   if (b.private !== undefined) {
     if (e.created_by !== user.id) fail(403, 'Solo chi ha creato la voce può cambiarne la visibilità');
@@ -478,7 +493,7 @@ route('GET', '/api/backlinks/:kind/:id', ({ params, user }) => {
         .all(`%,${email.toLowerCase()},%`).map(r => r.id));
     }
   }
-  return db.prepare(`SELECT e.id, e.kind, e.title, e.due, e.done_at, e.contact, e.mail_subject, e.project_id, e.parent_id, e.updated_at
+  return db.prepare(`SELECT e.id, e.kind, e.title, e.due, e.done_at, e.awaiting_reply, e.contact, e.mail_subject, e.project_id, e.parent_id, e.updated_at
     FROM entries e WHERE e.id IN (SELECT value FROM json_each($ids)) AND ${VIS} ORDER BY e.updated_at DESC`)
     .all({ ids: JSON.stringify([...new Set(ids)]), uid: user.id });
 });
@@ -765,14 +780,14 @@ export async function saveUpload(req) {
 // Con Content-Type JSON invece si registra un link esterno (repo, wiki, drive...).
 route('POST', '/api/items/:id/docs', async ({ req, params, query, user, body }) => {
   const it = getItem(params.id);
-  const kind = DOC_KINDS.includes(query.kind) ? query.kind : 'altro';
+  const kind = docKind(query.kind);
   const t = now();
 
   if ((req.headers['content-type'] || '').startsWith('application/json')) {
     const b = await body();
     const url = str(b.url, 2000);
     if (!/^https?:\/\//i.test(url)) fail(400, 'Il link deve iniziare con http:// o https://');
-    const k = DOC_KINDS.includes(b.kind) ? b.kind : 'altro';
+    const k = docKind(b.kind);
     const id = insertId(db.prepare(`INSERT INTO documents (item_id, kind, label, version, url, created_by, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)`).run(it.id, k, str(b.label, 200), str(b.version, 60), url, user.id, t));
     return { id };
@@ -816,7 +831,7 @@ route('PATCH', '/api/docs/:id', async ({ params, body }) => {
   const f = {};
   if (b.label !== undefined) f.label = str(b.label, 200);
   if (b.version !== undefined) f.version = str(b.version, 60);
-  if (b.kind !== undefined) f.kind = DOC_KINDS.includes(b.kind) ? b.kind : 'altro';
+  if (b.kind !== undefined) f.kind = docKind(b.kind);
   tx(() => {
     setFields('documents', d.id, f);
     // Come al caricamento: il firmware più recente con versione dà la versione all'articolo.
@@ -826,6 +841,24 @@ route('PATCH', '/api/docs/:id', async ({ params, body }) => {
     if (((f.kind ?? d.kind) === 'firmware' || d.kind === 'firmware') && latest) {
       db.prepare('UPDATE items SET firmware = ?, updated_at = ? WHERE id = ?').run(latest.version, now(), d.item_id);
     }
+  });
+});
+
+// Nuovo tipo di documento: una parola (lettere, numeri, - _), minuscolo.
+route('POST', '/api/doc-kinds', async ({ user, body }) => {
+  const name = str((await body()).name, 24).toLowerCase().replace(/\s+/g, '-');
+  if (!/^[\p{L}\d_-]+$/u.test(name)) fail(400, 'Tipo: una parola, con lettere, numeri, - e _');
+  if (docKinds().includes(name)) fail(409, `Il tipo "${name}" esiste già`);
+  db.prepare('INSERT INTO doc_kinds (name, created_by, created_at) VALUES (?, ?, ?)').run(name, user.id, now());
+  return { name };
+});
+
+// Eliminando un tipo creato a mano i suoi documenti passano ad "altro" (quelli fissi non si eliminano).
+route('DELETE', '/api/doc-kinds/:name', ({ params }) => {
+  if (!db.prepare('SELECT 1 FROM doc_kinds WHERE name = ?').get(params.name)) fail(404, 'Si possono eliminare solo i tipi aggiunti');
+  tx(() => {
+    db.prepare("UPDATE documents SET kind = 'altro' WHERE kind = ?").run(params.name);
+    db.prepare('DELETE FROM doc_kinds WHERE name = ?').run(params.name);
   });
 });
 

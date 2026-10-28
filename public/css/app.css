@@ -856,3 +856,28 @@ a.ref:hover { border-color: var(--accent); }
 .dv-hit.on { background: rgb(255 120 0 / 55%); outline: 2px solid rgb(255 120 0 / 90%); }
 .dv-text mark { background: rgb(255 200 0 / 45%); color: inherit; border-radius: 2px; }
 .dv-text mark.on { background: rgb(255 120 0 / 70%); }
+
+/* ---------- tipi di documento aggiunti e documenti per categoria ---------- */
+.dk.k-custom, .dk-sel.k-custom { color: hsl(var(--h) 60% var(--tag-l)); background: hsl(var(--h) 65% 50% / 0.14); }
+.dgroup.cat { border-top: 3px solid hsl(var(--h) 60% 52%); }
+.dgroup-cat { text-transform: uppercase; letter-spacing: 0.04em; font-size: 13px; font-weight: 700; }
+.dgroup.cat .dgroup-cat { color: hsl(var(--h) 60% var(--tag-l)); }
+.dgroup-item { display: flex; align-items: baseline; gap: 8px; padding: 8px 12px 4px; border-top: 1px solid var(--line); font-size: 13px; min-width: 0; }
+.dgroup-h + .dgroup-item { border-top: 0; }
+.dgroup-item .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dgroup-item ~ .drow { padding-left: 22px; }
+.dgroup-empty { padding: 10px 12px; margin: 0; font-size: 13px; }
+.dgroup-h .icon-btn { margin-left: -4px; }
+
+/* ---------- mail in attesa di risposta ---------- */
+.awaiting { display: inline-flex; align-items: center; gap: 4px; color: var(--today); font-weight: 600; }
+.awaiting .ic { width: 14px; height: 14px; }
+.chip.await { padding: 1px 8px; font-size: 12px; }
+.sec.waiting .sec-t { color: var(--today); }
+/* Colonne strette: dimensione e data vanno a capo invece di uscire dalla colonna. */
+.doc-groups .drow { flex-wrap: wrap; row-gap: 2px; }
+.doc-groups .drow-name { flex: 1 1 120px; }
+.doc-groups .drow .grow { display: none; }
+/* Mandata ma in attesa di risposta: il thread è ancora aperto, il titolo non è barrato. */
+.entry.done.waiting .title { color: var(--text); text-decoration: none; }
+.entry.done.waiting { border-left-color: var(--today); }

@@ -98,7 +98,8 @@ Altri campi facoltativi: `kind`, `parent_id`, `project_id`, `assignee_id`, `priv
 - `notes`, `kind`, `done` (true/false), `pinned`, `private` (solo chi l'ha creata);
 - `due`: `"2026-11-25"`, una data della barra rapida (`"ven"`, `"3g"`, `"25/11"`), `"no"` o `null` per toglierla. Uno spostamento lascia traccia nello storico;
 - `assignee_id` (o `null`), `project_id` (o `null`);
-- per le mail: `contact` (A), `mail_cc`, `mail_subject` (`null` = segue il titolo).
+- per le mail: `contact` (A), `mail_cc`, `mail_subject` (`null` = segue il titolo);
+- `awaiting` (true/false): la mail mandata aspetta una risposta. Segnando una mail come fatta (`done: true`) diventa automaticamente `awaiting_reply = 1`; `awaiting: false` chiude il thread (nello storico resta "risposta arrivata"). Le mail in attesa stanno in `/api/sync` anche dopo 30 giorni.
 
 Altro:
 
@@ -137,7 +138,7 @@ Campi di un articolo: `code` (unico; lettere, numeri e `. _ - /`), `name`, `cate
 
 ## Documenti
 
-Tipi (`kind`): `firmware`, `datasheet`, `schema`, `footprint`, `manuale`, `foto`, `altro`.
+Tipi (`kind`): `firmware`, `datasheet`, `schema`, `footprint`, `manuale`, `foto`, `altro`, più quelli aggiunti dal workspace (`docKinds` in `/api/sync`, l'elenco completo; `customDocKinds` quelli aggiunti). `POST /api/doc-kinds` `{name}` ne aggiunge uno (una parola, minuscolo); `DELETE /api/doc-kinds/:nome` lo elimina e i suoi documenti diventano `altro`. Un tipo sconosciuto diventa `altro`.
 
 **Caricare un file**: il corpo della richiesta è il file così com'è, i dati vanno nella query string. Il `Content-Type` del corpo diventa il tipo del file (`application/pdf` per vederlo nel visualizzatore).
 

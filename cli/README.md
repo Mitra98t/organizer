@@ -52,12 +52,14 @@ org doc get 7 -o ~/Downloads
 org doc open 7                             # con il visualizzatore di sistema
 org doc notes 7                            # le note scritte sul PDF, per pagina (--all anche le risolte)
 org doc rename 7 G5V datasheet
+org doc kinds --add gerber                 # nuovo tipo di documento
 
 org mail new 'invio firmware #SCH-060 >acquisti@pcbfab.example @rover'
 org mail edit 22                           # A, Cc, Oggetto e testo in $EDITOR
 org mail attach 22 report.pdf --doc 7      # file dal computer o documenti del magazzino
 org mail send 22 --done                    # aperta in Thunderbird con gli allegati (make mail-helper)
 org mail eml 22                            # oppure come .eml
+org mail replied 22                        # la risposta è arrivata: esce da "in attesa di risposta"
 
 org chat                                   # ultimi messaggi della chat del workspace
 org chat -f                                # e resta in ascolto

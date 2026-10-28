@@ -178,3 +178,28 @@ test('collegamenti: backlink delle mail (da mandare / mandate) e testo della mai
   const body = Buffer.from(b64.replace(/\r\n/g, ''), 'base64').toString();
   assert.equal(body, 'Vi mando il firmware di SCH-042, dopo verificare saldature.');
 });
+
+test('mail mandate in attesa di risposta e tipi di documento aggiunti', async () => {
+  await org(['login', url, '-u', 'fede', '--password-stdin'], { input: 'password-di-prova\n' }); // il test dei token fa logout
+  const login = await call('POST', '/login', { body: { username: 'fede', password: 'password-di-prova' } });
+  const cookie = login.headers.get('set-cookie').split(';')[0];
+  const mail = (await (await call('POST', '/entries', { cookie, body: { text: 'm: richiesta campioni >fab@ditta.example' } })).json()).id;
+  const entry = async () => (await (await call('GET', '/sync', { cookie })).json()).entries.find(e => e.id === mail);
+  await call('PATCH', `/entries/${mail}`, { cookie, body: { done: true } });
+  assert.equal((await entry()).awaiting_reply, 1); // mandata: aspetta una risposta
+  await org(['mail', 'replied', String(mail)]);
+  assert.equal((await entry()).awaiting_reply, 0);
+  const shown = JSON.parse(await org(['show', String(mail), '--json']));
+  assert.ok(shown.logs.some(l => l.system && l.text === 'risposta arrivata'));
+
+  // Tipo nuovo: si usa nei documenti; eliminandolo i documenti tornano "altro".
+  await org(['doc', 'kinds', '--add', 'Gerber']);
+  const src = path.join(dir, 'board.zip');
+  fs.writeFileSync(src, 'zip');
+  const [doc] = JSON.parse(await org(['doc', 'up', 'SCH-042', src, '-k', 'gerber', '--json']));
+  const kindOf = async () => (await (await call('GET', '/sync', { cookie })).json()).docs.find(d => d.id === doc).kind;
+  assert.equal(await kindOf(), 'gerber');
+  assert.equal((await call('POST', '/doc-kinds', { cookie, body: { name: 'gerber' } })).status, 409);
+  await org(['doc', 'kinds', '--rm', 'gerber']);
+  assert.equal(await kindOf(), 'altro');
+});

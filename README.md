@@ -105,6 +105,8 @@ Ogni nota si può modificare, segnare come risolta (sparisce, si rivede con il f
 
 Una voce di tipo mail è una mail vera: destinatari (A, Cc) con suggerimenti dalla rubrica, oggetto (se vuoto usa il titolo), testo e allegati. Gli allegati possono essere file caricati (anche trascinandoli) o documenti già presenti in magazzino, per esempio il firmware da mandare al cliente. Nel testo `#` suggerisce gli articoli del magazzino e inserisce il codice senza `#` (es. `#sch051` → `SCH-051`).
 
+Una mail segnata come mandata resta nella sezione **In attesa di risposta** finché non premi "risposta arrivata": così i thread ancora aperti non si perdono. Se una mail non richiede risposta, "Nessuna risposta" subito dopo averla segnata mandata.
+
 **Manda** apre la mail già compilata in Thunderbird, allegati compresi. Un link `mailto:` non può portare allegati, quindi serve un piccolo helper locale da installare una volta per computer:
 
 ```bash

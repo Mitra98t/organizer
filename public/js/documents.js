@@ -1,6 +1,9 @@
 // Pagina Documenti: tutti i file del magazzino in un posto solo, pensata per la revisione.
-// Si filtrano, si raggruppano per articolo o per tipo, e se ne scelgono fino a 3 da aprire affiancati.
-import { h, icon, S, ui, render, save, toast, fmtSize, fmtTime, itemAttrs, DOC_KINDS, docName, renameDoc } from './core.js';
+// Si filtrano, si raggruppano per categoria dell'articolo (come il magazzino a colonne) o per tipo di documento,
+// e se ne scelgono fino a 3 da aprire affiancati. Qui si aggiungono anche i tipi di documento.
+import {
+  h, icon, S, ui, api, act, render, save, toast, fmtSize, fmtTime, itemAttrs, catStyle, docKinds, dkAttrs, newDocKind, docName, renameDoc,
+} from './core.js';
 import { docMeta } from './docview.js';
 
 const MAX_REVIEW = 3;
@@ -32,12 +35,47 @@ function docRow(d, { showItem }) {
     h('span.muted.drow-date', fmtTime(d.created_at)));
 }
 
+// Colonne come il magazzino per categoria: in ognuna gli articoli della categoria con i loro documenti.
+function byCategory(docs) {
+  const D = S.data;
+  const cats = new Map();
+  for (const d of docs) {
+    const it = D.itemById.get(d.item_id);
+    if (!cats.has(it.category)) cats.set(it.category, new Map());
+    const items = cats.get(it.category);
+    if (!items.has(it.id)) items.set(it.id, []);
+    items.get(it.id).push(d);
+  }
+  return [...cats].sort(([a], [b]) => (!a) - (!b) || a.localeCompare(b)).map(([cat, items]) => h('section.dgroup', { class: cat ? 'cat' : null, style: catStyle(cat) },
+    h('div.dgroup-h', h('span.dgroup-cat', cat || 'senza categoria'), h('span.count', [...items.values()].flat().length)),
+    [...items].map(([id]) => D.itemById.get(id)).sort((a, b) => a.code.localeCompare(b.code)).map(it => [
+      h('div.dgroup-item', h('a.code', { href: `#/i/${it.id}`, ...itemAttrs(it) }, it.code), h('span.muted', it.name || '')),
+      items.get(it.id).map(d => docRow(d, { showItem: false })),
+    ])));
+}
+
+// Colonne per tipo di documento. Senza filtri si vedono anche i tipi aggiunti ancora vuoti (e si eliminano).
+function byKind(docs, filtered) {
+  const D = S.data;
+  const groups = new Map(docKinds().map(k => [k, []]));
+  for (const d of docs) (groups.get(d.kind) || groups.get('altro')).push(d);
+  const custom = new Set(D.customDocKinds);
+  const remove = (k, n) => {
+    if (confirm(`Eliminare il tipo "${k}"?${n ? ` I suoi ${n} documenti diventano "altro".` : ''}`)) act(() => api('DELETE', `/doc-kinds/${encodeURIComponent(k)}`));
+  };
+  return [...groups].filter(([k, list]) => list.length || (custom.has(k) && !filtered)).map(([k, list]) => h('section.dgroup',
+    h('div.dgroup-h', h('span.dk', dkAttrs(k), k), h('span.count', list.length),
+      custom.has(k) && h('button.icon-btn.sm', { title: 'Elimina questo tipo', onclick: () => remove(k, list.length) }, icon('x'))),
+    list.length ? list.map(d => docRow(d, { showItem: true })) : h('p.muted.dgroup-empty', 'Nessun documento di questo tipo.')));
+}
+
 export function viewDocuments() {
   const D = S.data;
   const all = D.docs.filter(d => D.itemById.has(d.item_id));
   for (const id of [...ui.docSel]) if (!D.docById.has(id)) ui.docSel.delete(id);
   const f = lc(ui.docFilter.trim());
-  const counts = new Map(DOC_KINDS.map(k => [k, all.filter(d => d.kind === k).length]));
+  const kinds = docKinds();
+  const counts = new Map(kinds.map(k => [k, all.filter(d => d.kind === k).length]));
   const docs = all
     .filter(d => !ui.docKindF || d.kind === ui.docKindF)
     .filter(d => !ui.docOnlyNotes || openNotes(d.id) > 0)
@@ -47,16 +85,8 @@ export function viewDocuments() {
       const notes = (D.docNotesOf.get(d.id) || []).map(n => n.text).join(' ');
       return lc([d.label, d.filename, d.url, d.version, d.kind, it.code, it.name, notes].join(' ')).includes(f);
     });
-  const byItem = ui.docGroup === 'item';
-  const groups = new Map();
-  for (const d of docs) {
-    const key = byItem ? d.item_id : d.kind;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(d);
-  }
-  const ordered = [...groups].sort(([a], [b]) => (byItem
-    ? D.itemById.get(a).code.localeCompare(D.itemById.get(b).code)
-    : DOC_KINDS.indexOf(a) - DOC_KINDS.indexOf(b)));
+  const byCat = ui.docGroup === 'item'; // valore salvato delle versioni precedenti ("per articolo")
+  const filtered = !!(f || ui.docKindF || ui.docOnlyNotes);
   const setGroup = g => { ui.docGroup = g; save('org.docGroup', g); render(); };
   const sel = [...ui.docSel];
 
@@ -67,30 +97,22 @@ export function viewDocuments() {
         oninput: ev => { ui.docFilter = ev.target.value; render(); },
       }),
       h('div.seg',
-        h('button', { class: byItem && 'on', onclick: () => setGroup('item'), title: 'Per articolo' }, icon('box')),
-        h('button', { class: !byItem && 'on', onclick: () => setGroup('kind'), title: 'Per tipo' }, icon('cols'))),
+        h('button', { class: byCat && 'on', onclick: () => setGroup('item'), title: 'Per categoria del magazzino' }, icon('box')),
+        h('button', { class: !byCat && 'on', onclick: () => setGroup('kind'), title: 'Per tipo di documento' }, icon('cols'))),
       h('a.btn.ghost', { href: '#/magazzino', title: 'Torna al magazzino' }, icon('box'), h('span.only-wide', 'Magazzino'))),
     h('div.toolbar.cats',
-      DOC_KINDS.filter(k => counts.get(k)).map(k =>
+      kinds.filter(k => counts.get(k)).map(k =>
         h('button.chip', { class: ui.docKindF === k && 'on', onclick: () => { ui.docKindF = ui.docKindF === k ? null : k; render(); } },
-          h('span.dk', { class: `k-${k}` }, k), h('span.n', counts.get(k)))),
+          h('span.dk', dkAttrs(k), k), h('span.n', counts.get(k)))),
       h('button.chip', { class: ui.docOnlyNotes && 'on', onclick: () => { ui.docOnlyNotes = !ui.docOnlyNotes; render(); } },
-        icon('log'), 'con note aperte')),
+        icon('log'), 'con note aperte'),
+      h('button.chip', { title: 'Aggiunge un tipo di documento (oltre a firmware, datasheet…)', onclick: newDocKind }, icon('plus'), 'nuovo tipo')),
     !all.length && h('div.empty',
       h('p', 'Nessun documento.'),
       h('p', 'I documenti si caricano dalla scheda di un articolo di magazzino (firmware, datasheet, schemi…).')),
     all.length > 0 && !docs.length && h('div.empty', h('p', 'Nessun documento corrisponde ai filtri.')),
     all.length > 0 && h('p.muted.dnd-hint', `Spunta fino a ${MAX_REVIEW} documenti per rivederli affiancati, con le loro note.`),
-    h('div.doc-groups', ordered.map(([key, list]) => {
-      const it = byItem && D.itemById.get(key);
-      return h('section.dgroup',
-        h('div.dgroup-h',
-          byItem
-            ? [h('a.code', { href: `#/i/${it.id}`, ...itemAttrs(it) }, it.code), h('span', it.name || '')]
-            : h('span.dk', { class: `k-${key}` }, key),
-          h('span.count', list.length)),
-        list.map(d => docRow(d, { showItem: !byItem })));
-    })),
+    h('div.doc-groups', byCat ? byCategory(docs) : byKind(docs, filtered)),
     sel.length > 0 && h('div.rv-bar',
       h('span', `${sel.length} ${sel.length === 1 ? 'documento selezionato' : 'documenti selezionati'}`),
       h('span.grow'),

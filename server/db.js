@@ -250,6 +250,15 @@ const MIGRATIONS = [
   );
   CREATE INDEX entry_links_target ON entry_links(kind, target_id);
   `,
+  // v11: tipi di documento aggiunti dal workspace (oltre a quelli fissi) e mail in attesa di risposta.
+  `
+  CREATE TABLE doc_kinds (
+    name TEXT PRIMARY KEY,
+    created_by INTEGER REFERENCES users ON DELETE SET NULL,
+    created_at TEXT NOT NULL
+  );
+  ALTER TABLE entries ADD COLUMN awaiting_reply INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

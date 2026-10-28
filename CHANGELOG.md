@@ -3,6 +3,23 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.8 — 2026-10-28
+
+**Mail in attesa di risposta**
+- Una mail segnata come mandata finisce in **In attesa di risposta** (pagina Mail e pagina del progetto), dalla più vecchia, con da quanti giorni aspetta. "Risposta arrivata" chiude il thread e lo scrive nello storico; se una mail non richiede risposta, "Nessuna risposta" nel messaggio che compare dopo l'invio (o il chip "attende risposta" nella mail).
+- I thread in attesa restano visibili anche dopo 30 giorni.
+- CLI: `org mail` mostra anche i thread in attesa; `org mail replied ID` li chiude.
+
+**Documenti**
+- Pagina Documenti, vista per articolo: ora le colonne sono le categorie del magazzino (come il magazzino a colonne), con dentro gli articoli e i loro documenti. L'altra vista resta per tipo di documento.
+- Nuovi tipi di documento oltre a quelli fissi: "+ nuovo tipo" nella pagina Documenti o "+ nuovo tipo…" in fondo a ogni menu del tipo. Ognuno ha il suo colore; i tipi aggiunti si eliminano dalla loro colonna (i documenti diventano "altro"). CLI: `org doc kinds [--add NOME] [--rm NOME]`.
+- Nelle colonne strette (Documenti su schermi medi) dimensione e data vanno a capo invece di essere tagliate.
+
+**Progetti**
+- Il colore del progetto si sceglie dal pallino accanto al nome, che apre il popup dei colori come per le categorie del magazzino (prima i colori stavano sempre in vista tra i campi).
+
+- Schema dati v11.
+
 ## 0.7.4 — 2026-10-27
 - Descrizione degli articoli, appunti di progetti e contatti, dettagli delle voci e testo delle mail si leggono come la chat: `#CODICE`, collegamenti `[[…]]` e link colorati e cliccabili dentro il testo. Un clic sul testo (o Invio) apre il campo per scrivere; uscendo si salva e si torna alla lettura.
 - Nel testo delle mail anche i codici di magazzino scritti senza `#` sono colorati e cliccabili.
