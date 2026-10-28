@@ -1,6 +1,6 @@
 // Chat del workspace: messaggi tra i membri, con collegamenti a progetti, articoli, documenti, voci e contatti
 // (autocompletamento con @ # + e "[["). Gli ultimi 100 messaggi arrivano con /api/sync, i precedenti a richiesta.
-import { h, icon, S, ui, api, act, render, userName, chatText, fmtTime, fmtLongDay, localDay, toast, plainRefs } from './core.js';
+import { h, icon, S, ui, api, act, render, userName, chatText, fmtTime, fmtLongDay, localDay, toast, plainRefs, can } from './core.js';
 
 const GROUP_MS = 5 * 60e3; // messaggi ravvicinati della stessa persona: un'intestazione sola
 let older = [];            // caricati con "Messaggi precedenti" (non stanno nei dati sincronizzati)
@@ -66,7 +66,7 @@ function message(m, D, head) {
   return h('div.msg', { class: [mine && 'mine', head && 'first'].filter(Boolean).join(' ') || null, 'data-id': m.id },
     head && h('div.msg-h', h('b', userName(m.user_id)), h('span.muted', fmtTime(m.created_at).split(' ').pop())),
     editing ? editBox(m) : h('div.msg-t', chatText(m.text), m.edited_at && h('span.muted.msg-ed', { title: `modificato ${fmtTime(m.edited_at)}` }, ' (modificato)')),
-    !editing && (mine || D.me.is_admin) && h('div.msg-a',
+    !editing && (mine || D.me.is_admin) && can('chat', 'write') && h('div.msg-a',
       mine && h('button.icon-btn.sm', { title: 'Modifica', onclick: () => { ui.chatEdit = m.id; render(); } }, icon('edit')),
       h('button.icon-btn.sm', {
         title: 'Elimina',
@@ -126,7 +126,8 @@ export function viewChat() {
 
   return h('div.view.chat',
     list,
-    h('div.chat-bar', input,
+    // Chi può solo leggere la chat non ha la barra per scrivere.
+    can('chat', 'write') && h('div.chat-bar', input,
       h('button.btn.primary', { title: 'Invia (Invio; Maiusc+Invio per andare a capo)', onclick: () => send(input) }, icon('send'))));
 }
 

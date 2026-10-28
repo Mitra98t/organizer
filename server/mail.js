@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { db, UPLOAD_DIR, currentWorkspace } from './db.js';
-import { route, getEntry, insertId, saveUpload, isJsonRequest } from './api.js';
+import { route, entryFor, insertId, saveUpload, isJsonRequest } from './api.js';
 import { fail, now, str } from './util.js';
 
 const TOKEN_MINUTES = 15;
@@ -58,7 +58,7 @@ function mailParts(e) {
 
 // ---------- allegati ----------
 route('POST', '/api/entries/:id/attachments', async ({ req, params, query, user, body }) => {
-  const e = getEntry(params.id, user.id);
+  const e = entryFor(params.id, user, 'read');
   const t = now();
   if (isJsonRequest(req, query)) { // { doc_id }: documento del magazzino; altrimenti un file (?name=)
     const b = await body();
@@ -70,11 +70,11 @@ route('POST', '/api/entries/:id/attachments', async ({ req, params, query, user,
   const { stored, size, mime } = await saveUpload(req);
   return { id: insertId(db.prepare(`INSERT INTO mail_attachments (entry_id, filename, mime, size, stored, created_by, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)`).run(e.id, str(query.name, 255) || 'allegato', mime, size, stored, user.id, t)) };
-});
+}, { area: 'mail' });
 
 function getAttachment(id, user) {
   const a = db.prepare('SELECT * FROM mail_attachments WHERE id = ?').get(+id) || fail(404, 'Allegato non trovato');
-  getEntry(a.entry_id, user.id);
+  entryFor(a.entry_id, user, 'read');
   return a;
 }
 
@@ -82,7 +82,7 @@ route('DELETE', '/api/attachments/:id', ({ params, user }) => {
   const a = getAttachment(params.id, user);
   db.prepare('DELETE FROM mail_attachments WHERE id = ?').run(a.id);
   if (a.stored) fs.rmSync(path.join(UPLOAD_DIR, a.stored), { force: true });
-});
+}, { area: 'mail' });
 
 route('GET', '/api/attachments/:id/file', ({ res, params, user }) => {
   const a = getAttachment(params.id, user);
@@ -90,7 +90,7 @@ route('GET', '/api/attachments/:id/file', ({ res, params, user }) => {
   const file = stored && path.join(UPLOAD_DIR, stored);
   if (!file || !fs.existsSync(file)) fail(404, 'File mancante');
   sendFile(res, file, a.filename, 'application/octet-stream');
-});
+}, { area: 'mail' });
 
 function sendFile(res, file, name, mime) {
   res.writeHead(200, {
@@ -131,7 +131,7 @@ function buildEml(p) {
 }
 
 route('GET', '/api/entries/:id/eml', ({ res, params, user }) => {
-  const e = getEntry(params.id, user.id);
+  const e = entryFor(params.id, user, 'read');
   const p = mailParts(e);
   const data = Buffer.from(buildEml(p));
   const name = `${safeNames([p.subject || 'mail'])[0].slice(0, 60)}.eml`;
@@ -142,18 +142,18 @@ route('GET', '/api/entries/:id/eml', ({ res, params, user }) => {
     'Cache-Control': 'no-store',
   });
   res.end(data);
-});
+}, { area: 'mail' });
 
 // ---------- pacchetto per l'helper locale ----------
 route('POST', '/api/entries/:id/send', ({ params, user }) => {
-  const e = getEntry(params.id, user.id);
+  const e = entryFor(params.id, user, 'read');
   db.prepare('DELETE FROM mail_tokens WHERE expires_at < ?').run(now());
   // Il token porta il numero del workspace (<id>x<casuale>): l'helper non ha sessione per saperlo.
   const token = `${currentWorkspace()}x${crypto.randomBytes(24).toString('base64url')}`;
   db.prepare('INSERT INTO mail_tokens (token_hash, entry_id, expires_at) VALUES (?, ?, ?)')
     .run(sha(token), e.id, new Date(Date.now() + TOKEN_MINUTES * 60e3).toISOString());
   return { token };
-});
+}, { area: 'mail', level: 'read' });
 
 // Questi endpoint non usano la sessione (l'helper non ha i cookie del browser): basta il token.
 function byToken(token) {

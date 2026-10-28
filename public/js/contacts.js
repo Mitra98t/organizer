@@ -1,5 +1,5 @@
 // Rubrica: elenco filtrabile, scheda modificabile, mail collegate a ogni contatto.
-import { h, icon, S, ui, api, act, render, copy, trashIt, save, richField, contactHue, contactStyle, CONTACT_COLOR, hue, huePicker, filterChip } from './core.js';
+import { h, icon, S, ui, api, act, render, copy, trashIt, save, richField, contactHue, contactStyle, CONTACT_COLOR, hue, huePicker, filterChip, can, roClass } from './core.js';
 import { backlinksBox } from './views.js';
 
 const lc = s => String(s || '').toLowerCase();
@@ -57,7 +57,7 @@ export function viewContacts(id) {
         n > 0 && h('span.badge', { title: 'mail da mandare' }, n)));
   };
 
-  return h('div.view',
+  return h('div.view', { class: roClass(can('contatti', 'write')) },
     h('div.toolbar',
       h('input.filter', {
         type: 'search', placeholder: 'Filtra per nome, email, azienda, telefono…', value: ui.contactFilter, 'data-fk': 'contactfilter',
@@ -109,7 +109,7 @@ function viewContact(id) {
   const field = (key, label, attrs = {}) => h('label.f', h('span', label),
     h('input', { value: c[key], 'data-fk': `c-${key}-${c.id}`, ...attrs, onchange: ev => patch({ [key]: ev.target.value }) }));
 
-  return h('div.view',
+  return h('div.view', { class: roClass(can('contatti', 'write')) },
     h('div.head',
       h('a.icon-btn', { href: '#/contatti', title: 'Contatti' }, icon('back')),
       // Colore del contatto (nome colorato nelle mail) dietro al pallino, come per progetti e categorie.

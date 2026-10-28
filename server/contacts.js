@@ -27,7 +27,7 @@ route('POST', '/api/contacts', async ({ user, body }) => {
   const id = insertId(db.prepare(`INSERT INTO contacts (${[...cols, 'created_by', 'created_at', 'updated_at'].join(', ')})
     VALUES (${[...cols, 'u', 't', 't'].map(c => `$${c}`).join(', ')})`).run({ ...f, u: user.id, t }));
   return { id };
-});
+}, { area: 'contatti' });
 
 route('PATCH', '/api/contacts/:id', async ({ params, body }) => {
   const c = getContact(params.id);
@@ -35,9 +35,9 @@ route('PATCH', '/api/contacts/:id', async ({ params, body }) => {
   f.updated_at = now();
   const cols = Object.keys(f);
   db.prepare(`UPDATE contacts SET ${cols.map(k => `${k} = $${k}`).join(', ')} WHERE id = $id`).run({ ...f, id: c.id });
-});
+}, { area: 'contatti' });
 
 route('DELETE', '/api/contacts/:id', ({ params, user }) => {
   const c = getContact(params.id);
   db.prepare('UPDATE contacts SET deleted_at = ?, deleted_by = ? WHERE id = ?').run(now(), user.id, c.id);
-});
+}, { area: 'contatti' });

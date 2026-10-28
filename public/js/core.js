@@ -1,5 +1,27 @@
 // Stato, rete, sincronizzazione e piccoli helper DOM condivisi dalle viste.
 import { today, ymd, fromYmd } from './parse.js';
+import { allows, entryArea } from './perms.js';
+
+// Permessi dell'utente nel workspace attivo (dal server; null = tutto). Vedi perms.js.
+export const can = (area, level = 'read') => allows(S.data?.perms, area, level);
+export const canEntry = (e, level = 'write') => can(entryArea(e.kind), level);
+
+// Sola lettura nella pagina: le parti marcate .ro (pagine, sezioni, voci) contengono controlli spenti,
+// le parti .rw dentro di esse no. Vale il contenitore più vicino.
+export const roClass = writable => (writable ? 'rw' : 'ro');
+export function isReadOnly(el) {
+  const scope = el?.closest?.('.ro, .rw');
+  return !!scope && scope.classList.contains('ro');
+}
+
+// Dopo ogni ridisegno: si spengono i controlli che modificano dentro le parti in sola lettura. Restano
+// filtri, barre degli strumenti, sezioni da aprire e la scelta dei documenti da rivedere.
+export function applyReadOnly(root) {
+  for (const el of root.querySelectorAll('.ro :is(input, textarea, select, button)')) {
+    if (el.closest('.toolbar') || el.matches('.filter, .keep, .sec-h, .sel-btn, .fchip, [type="search"]')) continue;
+    if (isReadOnly(el)) el.disabled = true;
+  }
+}
 
 export const load = (k, d) => {
   try {
@@ -204,6 +226,7 @@ function indexData(d) {
   d.categoryColors ||= [];
   d.customDocKinds ||= [];
   d.itemAliases ||= [];
+  d.perms ??= null;
   d.chat ||= [];
   d.chatUnread ??= 0;
   d.chatReadId ??= 0;
@@ -731,10 +754,12 @@ export function richField({ fk, value, placeholder, cls, rows = 2, attrs = {}, o
     el.setSelectionRange(el.value.length, el.value.length);
     autosize(el);
   };
+  // In sola lettura (vedi isReadOnly) il testo si legge e i link funzionano, ma non si apre il campo.
+  const editable = ev => !isReadOnly(ev.currentTarget);
   return h(`div.${cls}.rich-view`, {
     tabindex: 0, role: 'textbox', title: 'Clicca per modificare', style: `--rows:${rows}`,
-    onclick: ev => { if (!ev.target.closest('a, button') && !String(getSelection())) edit(); },
-    onkeydown: ev => { if (ev.key === 'Enter' && ev.target === ev.currentTarget) { ev.preventDefault(); edit(); } },
+    onclick: ev => { if (editable(ev) && !ev.target.closest('a, button') && !String(getSelection())) edit(); },
+    onkeydown: ev => { if (editable(ev) && ev.key === 'Enter' && ev.target === ev.currentTarget) { ev.preventDefault(); edit(); } },
   }, value ? richText(value, { bare }) : h('span.rich-ph', placeholder));
 }
 
@@ -745,8 +770,12 @@ const REF_RE = /\[\[(doc|voce|contatto|progetto):(\d+)\]\]/g;
 const ENTRY_ICON = { todo: 'check', mail: 'mail', note: 'diary' };
 const plainTitle = t => t.replace(/(^|\s)#/g, '$1');
 
+const REF_AREA = { doc: 'documenti', progetto: 'progetti', contatto: 'contatti' };
+
 export function refChip(kind, id) {
   const D = S.data;
+  // Collegamento a un'area che non si può vedere: si dice, senza nome (i dati non arrivano).
+  if (REF_AREA[kind] && !can(REF_AREA[kind])) return h('span.ref.gone', icon('lock'), 'non accessibile');
   if (kind === 'doc') {
     const d = D.docById.get(id);
     const it = d && D.itemById.get(d.item_id);

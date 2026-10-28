@@ -151,6 +151,8 @@ Un **workspace** è un insieme di dati separato (progetti, voci, magazzino, cont
 - **Admin del workspace**: invita, toglie persone, nomina altri admin, rinomina o elimina il workspace, fa backup e ripristino. Un workspace ha sempre almeno un admin.
 - Dentro un workspace tutto è condiviso tranne le voci e i progetti marcati **privati**. Le modifiche arrivano in tempo reale solo a chi è nello stesso workspace.
 
+**Permessi**: in Impostazioni → Permessi un admin sceglie per ogni persona (non admin) cosa vede e cosa può modificare in ogni area: todo e diario, mail, progetti, magazzino, documenti, contatti, chat. Per ogni area: nessun accesso (l'area sparisce dall'app), lettura o scrittura. Le aree collegate si sistemano da sole: dando la scrittura alle mail, contatti, documenti, magazzino e progetti diventano almeno leggibili. Il server controlla ogni richiesta, quindi i permessi valgono anche per la CLI e per i bot.
+
 Sul server: `accounts.db` contiene account, sessioni, workspace e inviti; ogni workspace ha il suo file (`organizer.db` il primo, `ws-<id>.db` gli altri). Aggiornando da una versione senza workspace, l'installazione esistente diventa il workspace "Principale" (nome cambiabile con `WORKSPACE_NAME`) con gli stessi utenti e ruoli.
 
 ## Chat

@@ -266,3 +266,43 @@ test('file .json: si caricano come documenti e come allegati, non come link', as
   const item = (await (await call('GET', '/sync', { token })).json()).items.find(i => i.code === 'SCH-042');
   assert.equal((await call('POST', `/items/${item.id}/docs`, { token, body: { url: 'example.com/x' } })).status, 400);
 });
+
+test('permessi per area: dati filtrati, scritture bloccate, dipendenze rispettate', async () => {
+  const login = async (username) => (await call('POST', '/login', { body: { username, password: 'password-di-prova' } })).headers.get('set-cookie').split(';')[0];
+  const admin = await login('fede');
+  const sync = async c => (await call('GET', '/sync', { cookie: c })).json();
+  // Una persona nuova nel workspace (invito).
+  const { code } = await (await call('POST', '/admin/invites', { cookie: admin })).json();
+  const reg = await call('POST', '/register', { body: { code, username: 'stagista', password: 'password-di-prova' } });
+  const intern = reg.headers.get('set-cookie').split(';')[0];
+  const id = (await sync(intern)).me.id;
+  await call('POST', '/entries', { cookie: admin, body: { text: 'm: offerta riservata >cliente@ditta.example' } });
+
+  // Mail e chat nascoste, magazzino in sola lettura, contatti nascosti.
+  const r = await (await call('PATCH', `/admin/users/${id}`, { cookie: admin, body: { perms: { mail: 'none', chat: 'none', magazzino: 'read', contatti: 'none' } } })).json();
+  // Le dipendenze si completano da sole: per scrivere todo serve leggere progetti e magazzino (già ok).
+  assert.equal(r.perms.voci, 'write');
+  const d = await sync(intern);
+  assert.equal(d.perms.mail, 'none');
+  assert.ok(!d.entries.some(e => e.kind === 'mail'));
+  assert.deepEqual([d.chat.length, d.contacts.length], [0, 0]);
+  assert.ok(d.items.length > 0);
+
+  // Scritture fuori dai permessi: 403. Un #CODICE nuovo in un todo resta testo (niente articolo creato).
+  assert.equal((await call('POST', '/entries', { cookie: intern, body: { text: 'm: provo a scrivere' } })).status, 403);
+  assert.equal((await call('POST', '/chat', { cookie: intern, body: { text: 'ciao' } })).status, 403);
+  const item = d.items[0];
+  assert.equal((await call('PATCH', `/items/${item.id}`, { cookie: intern, body: { name: 'x' } })).status, 403);
+  assert.equal((await call('POST', '/entries', { cookie: intern, body: { text: 'controllare #NUOVO-999' } })).status, 200);
+  assert.ok(!(await sync(admin)).items.some(i => i.code === 'NUOVO-999'));
+
+  // Dare la scrittura alle mail alza a lettura ciò che serve (contatti, documenti, magazzino, progetti).
+  const r2 = await (await call('PATCH', `/admin/users/${id}`, { cookie: admin, body: { perms: { ...r.perms, mail: 'write' } } })).json();
+  assert.equal(r2.perms.contatti, 'read');
+  assert.equal((await call('POST', '/entries', { cookie: intern, body: { text: 'm: ora posso' } })).status, 200);
+
+  // Agli admin non si tolgono permessi; null li riporta tutti.
+  assert.equal((await call('PATCH', `/admin/users/${(await sync(admin)).me.id}`, { cookie: admin, body: { perms: { mail: 'none' } } })).status, 400);
+  await call('PATCH', `/admin/users/${id}`, { cookie: admin, body: { perms: null } });
+  assert.equal((await sync(intern)).perms, null);
+});

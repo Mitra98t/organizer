@@ -1,7 +1,7 @@
 import {
   h, icon, S, ui, RS, api, sync, setRenderer, render, renderStatus, connectLive, disconnectLive, liveClosed,
   flushOutbox, addEntry, loadCache, clearLocal, dueInfo, autosize, toast, isMine, dayDiff, save, hue, act, catStyle, tagStyle,
-  switchWorkspace, newWorkspace, kindMenuCheck,
+  switchWorkspace, newWorkspace, kindMenuCheck, can, applyReadOnly,
 } from './core.js';
 import { initAutocomplete, acCheck } from './autocomplete.js';
 import { viewContacts } from './contacts.js';
@@ -46,6 +46,28 @@ const NAV = [
   ['magazzino', 'Magazzino', 'box'],
   ['contatti', 'Contatti', 'contacts'],
 ];
+
+// Permessi: l'area che serve leggere per vedere ogni pagina (e la sua voce nel menu).
+const PAGE_AREA = {
+  agenda: () => can('voci') || can('mail'), diario: () => can('voci'), mail: () => can('mail'),
+  progetti: () => can('progetti'), p: () => can('progetti'),
+  magazzino: () => can('magazzino'), i: () => can('magazzino'),
+  documenti: () => can('documenti'), d: () => can('documenti'), review: () => can('documenti'),
+  contatti: () => can('contatti'), chat: () => can('chat'),
+};
+const pageAllowed = name => !PAGE_AREA[name] || PAGE_AREA[name]();
+
+// La barra rapida c'è solo dove si può scrivere ciò che crea.
+function quickAllowed(ctx) {
+  if (ctx.mode === 'item') return can('magazzino', 'write');
+  if (ctx.mode === 'project') return can('progetti', 'write');
+  if (ctx.kind === 'mail') return can('mail', 'write');
+  if (ctx.kind) return can('voci', 'write');
+  return can('voci', 'write') || can('mail', 'write');
+}
+
+const noAccess = () => h('div.view', h('div.empty', h('p', h('b', 'Non hai accesso a quest\'area.')),
+  h('p', 'I permessi li decide un admin del workspace (Impostazioni → Permessi).')));
 
 function route() {
   const raw = location.hash.replace(/^#\/?/, '');
@@ -242,6 +264,8 @@ const searchInput = h('input#search', {
 
 const statusDot = h('span.status');
 const chatBadge = h('span.nbadge');
+let tabsNav = null; // tab in basso (telefono): si stringono se qualche area non si vede
+let topChat = null; // icona della chat in alto (telefono)
 const titleEl = h('h1.vtitle');
 const viewEl = h('div#view');
 const navLinks = new Map();
@@ -275,14 +299,14 @@ function buildShell() {
           h('label.search', icon('search'), searchInput),
           statusDot,
           // Su telefono le tab in basso sono già 6: la chat sta in alto, con il numero dei non letti.
-          h('a.icon-btn.only-mobile.top-chat', { href: '#/chat', title: 'Chat' }, icon('chat'), chatBadge),
+          topChat = h('a.icon-btn.only-mobile.top-chat', { href: '#/chat', title: 'Chat' }, icon('chat'), chatBadge),
           h('a.icon-btn.only-mobile', { href: '#/impostazioni', title: 'Impostazioni' }, icon('settings'))),
         h('div.quick',
           h('div.qrow', icon('plus', 'qplus'), quickInput, quickCtx,
             h('button.icon-btn', { title: 'Sintassi', type: 'button', onclick: () => { quickHelp.hidden = !quickHelp.hidden; } }, icon('help'))),
           quickPreview, quickHelp),
         viewEl),
-      h('nav.tabs', NAV.map(([k, l, i]) => navLink(k, l, i, tabLinks, 'tab')))),
+      tabsNav = h('nav.tabs', NAV.map(([k, l, i]) => navLink(k, l, i, tabLinks, 'tab')))),
     h('div#toasts'));
   shellBuilt = true;
 }
@@ -374,6 +398,12 @@ function renderApp() {
   if (!shellBuilt) buildShell();
   const r = route();
   const v = VIEWS[r.name] || VIEWS.agenda;
+  // Le aree che non si possono leggere spariscono dal menu (e dalle tab in basso, che si stringono).
+  if (S.data) {
+    for (const map of [navLinks, tabLinks]) for (const [k, { a }] of map) a.hidden = !pageAllowed(k);
+    tabsNav.style.gridTemplateColumns = `repeat(${[...tabLinks.values()].filter(t => !t.a.hidden).length}, 1fr)`;
+    topChat.hidden = !can('chat');
+  }
   for (const [k, { a }] of navLinks) a.classList.toggle('on', k === v.nav);
   // Su telefono Documenti non ha una tab: si evidenzia Magazzino, da cui ci si arriva.
   for (const [k, { a }] of tabLinks) a.classList.toggle('on', k === v.nav || (v.nav === 'documenti' && k === 'magazzino'));
@@ -395,17 +425,19 @@ function renderApp() {
     viewEl.replaceChildren(
       r.name === 'registrati' && r.query.code ? viewJoin(r.query.code)
         : S.noWorkspace ? viewNoWorkspace()
-          : S.data ? v.fn(r.id, r.query) : h('div.empty', 'Caricamento…'));
+          : !S.data ? h('div.empty', 'Caricamento…')
+            : pageAllowed(r.name) ? v.fn(r.id, r.query) : noAccess());
     document.body.classList.toggle('doc-page', !!S.data && (r.name === 'd' || r.name === 'review'));
     document.body.classList.toggle('chat-page', !!S.data && r.name === 'chat');
     // Pagine senza la barra rapida in alto (lì non c'è niente da aggiungere).
-    document.body.classList.toggle('no-quick', r.name === 'novita');
+    document.body.classList.toggle('no-quick', r.name === 'novita' || (!!S.data && !quickAllowed(quickContext())));
   } catch (e) {
     console.error(e);
     viewEl.replaceChildren(h('div.empty', `Errore di visualizzazione: ${e.message}`));
   } finally {
     RS.busy = false;
   }
+  applyReadOnly(viewEl);
   viewEl.querySelectorAll('textarea').forEach(autosize);
   acCheck();
   kindMenuCheck();

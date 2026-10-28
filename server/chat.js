@@ -18,7 +18,7 @@ route('GET', '/api/chat', ({ query }) => {
   }
   const before = +query.before || Number.MAX_SAFE_INTEGER;
   return db.prepare(`SELECT ${COLS} FROM chat_messages WHERE deleted_at IS NULL AND id < ? ORDER BY id DESC LIMIT ?`).all(before, limit).reverse();
-});
+}, { area: 'chat' });
 
 route('POST', '/api/chat', async ({ user, body }) => {
   const text = str((await body()).text, MAX_TEXT) || fail(400, 'Scrivi qualcosa');
@@ -26,24 +26,24 @@ route('POST', '/api/chat', async ({ user, body }) => {
   // Chi scrive ha letto tutto fino al proprio messaggio.
   db.prepare('UPDATE users SET chat_read_id = ? WHERE id = ?').run(id, user.id);
   return { id };
-});
+}, { area: 'chat' });
 
 route('PATCH', '/api/chat/:id', async ({ params, user, body }) => {
   const m = getMessage(params.id);
   if (m.user_id !== user.id) fail(403, 'Puoi modificare solo i tuoi messaggi');
   const text = str((await body()).text, MAX_TEXT) || fail(400, 'Il messaggio non può essere vuoto');
   db.prepare('UPDATE chat_messages SET text = ?, edited_at = ? WHERE id = ?').run(text, now(), m.id);
-});
+}, { area: 'chat' });
 
 route('DELETE', '/api/chat/:id', ({ params, user }) => {
   const m = getMessage(params.id);
   if (m.user_id !== user.id && !user.is_admin) fail(403, 'Puoi eliminare solo i tuoi messaggi');
   db.prepare('UPDATE chat_messages SET deleted_at = ? WHERE id = ?').run(now(), m.id);
-});
+}, { area: 'chat' });
 
 // Letto fino a ID (non si torna mai indietro). Riguarda solo chi legge: niente notifica agli altri.
 route('POST', '/api/chat/read', async ({ user, body }) => {
   const id = Number((await body()).id);
   if (!Number.isInteger(id) || id < 0) fail(400, 'Messaggio non valido');
   db.prepare('UPDATE users SET chat_read_id = MAX(chat_read_id, ?) WHERE id = ?').run(id, user.id);
-}, { quiet: true });
+}, { area: 'chat', level: 'read', quiet: true });

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { db, tx, UPLOAD_DIR } from './db.js';
 import { route, VIS_ANY, PVIS_ANY } from './api.js';
 import { fail } from './util.js';
+import { allows, assertCan, entryArea, readableKinds } from './perms.js';
 
 export const TRASH_DAYS = +process.env.TRASH_DAYS || 30;
 
@@ -46,32 +47,42 @@ function getTrashed(type, id, user) {
   return t.find(+id, user.id) || fail(404, 'Elemento non trovato nel cestino');
 }
 
+// Permessi: ogni tipo nel cestino appartiene a un'area (le voci secondo il tipo: todo/note o mail).
+const AREA_OF = { project: 'progetti', item: 'magazzino', doc: 'documenti', docnote: 'documenti', contact: 'contatti' };
+const areaOf = (type, el) => (type === 'entry' ? entryArea(el.kind) : AREA_OF[type]);
+
 route('GET', '/api/trash', ({ user }) => {
   const uid = user.id;
+  const can = area => allows(user.perms, area);
+  const kinds = JSON.stringify(readableKinds(user));
+  const all = (area, sql, args = {}) => (can(area) ? db.prepare(sql).all(args) : []);
   return {
     days: TRASH_DAYS,
     // Le sotto-attività eliminate insieme alla voce madre tornano con lei: si elencano solo le altre.
     entries: db.prepare(`SELECT e.* FROM entries e WHERE e.deleted_at IS NOT NULL AND ${VIS_ANY}
+      AND e.kind IN (SELECT value FROM json_each($kinds))
       AND (e.parent_id IS NULL OR NOT EXISTS (SELECT 1 FROM entries x WHERE x.id = e.parent_id AND x.deleted_at = e.deleted_at))
-      ORDER BY e.deleted_at DESC`).all({ uid }),
-    projects: db.prepare(`SELECT p.* FROM projects p WHERE p.deleted_at IS NOT NULL AND ${PVIS_ANY} ORDER BY p.deleted_at DESC`).all({ uid }),
-    items: db.prepare('SELECT * FROM items WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC').all(),
-    docs: db.prepare(`SELECT d.id, d.item_id, d.kind, d.label, d.version, d.filename, d.url, d.size, d.created_by, d.deleted_at, d.deleted_by,
+      ORDER BY e.deleted_at DESC`).all({ uid, kinds }),
+    projects: all('progetti', `SELECT p.* FROM projects p WHERE p.deleted_at IS NOT NULL AND ${PVIS_ANY} ORDER BY p.deleted_at DESC`, { uid }),
+    items: all('magazzino', 'SELECT * FROM items WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC'),
+    docs: all('documenti', `SELECT d.id, d.item_id, d.kind, d.label, d.version, d.filename, d.url, d.size, d.created_by, d.deleted_at, d.deleted_by,
       i.code AS item_code FROM documents d JOIN items i ON i.id = d.item_id
-      WHERE d.deleted_at IS NOT NULL AND i.deleted_at IS NULL ORDER BY d.deleted_at DESC`).all(),
-    contacts: db.prepare('SELECT * FROM contacts WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC').all(),
-    docNotes: db.prepare(`SELECT n.*, d.filename, d.label, d.url FROM doc_notes n JOIN documents d ON d.id = n.doc_id
-      WHERE n.deleted_at IS NOT NULL AND d.deleted_at IS NULL ORDER BY n.deleted_at DESC`).all(),
+      WHERE d.deleted_at IS NOT NULL AND i.deleted_at IS NULL ORDER BY d.deleted_at DESC`),
+    contacts: all('contatti', 'SELECT * FROM contacts WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC'),
+    docNotes: all('documenti', `SELECT n.*, d.filename, d.label, d.url FROM doc_notes n JOIN documents d ON d.id = n.doc_id
+      WHERE n.deleted_at IS NOT NULL AND d.deleted_at IS NULL ORDER BY n.deleted_at DESC`),
   };
 });
 
 route('POST', '/api/trash/:type/:id/restore', ({ params, user }) => {
   const el = getTrashed(params.type, params.id, user);
+  assertCan(user, areaOf(params.type, el), 'write');
   tx(() => TYPES[params.type].restore(el));
 });
 
 route('DELETE', '/api/trash/:type/:id', ({ params, user }) => {
   const el = getTrashed(params.type, params.id, user);
+  assertCan(user, areaOf(params.type, el), 'write');
   if (!user.is_admin && el.created_by !== user.id && el.deleted_by !== user.id) {
     fail(403, 'Può eliminare definitivamente solo chi l\'ha creato o eliminato (o un admin)');
   }

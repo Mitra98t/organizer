@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { routes, backfillLinks } from './api.js';
+import { assertCan } from './perms.js';
 import './contacts.js';
 import './mail.js';
 import './backup.js';
@@ -59,10 +60,13 @@ async function handleApi(req, res, url) {
   const user = auth && {
     id: auth.account.id, username: auth.account.username, name: auth.account.name,
     is_admin: auth.role === 'admin' ? 1 : 0, workspace_id: auth.ws?.id ?? null, api_token: auth.apiToken ?? null,
+    perms: auth.perms, // permessi per area (null = tutto)
   };
   if (r.auth !== 'none' && !user) throw new HttpError(401, 'Accesso richiesto');
   if (r.auth === 'admin' && !user.is_admin) throw new HttpError(403, 'Solo per gli admin del workspace');
   if (r.ws && !user?.workspace_id) throw new HttpError(409, 'Non fai parte di nessun workspace');
+  // Area dell'app a cui appartiene la route: lettura per GET, scrittura per il resto (salvo level).
+  if (r.area) assertCan(user, r.area, r.level || (req.method === 'GET' ? 'read' : 'write'));
 
   // I link per l'helper delle mail non hanno sessione: il workspace è scritto nel token (<id>x<casuale>).
   let ws = auth?.ws ?? null;

@@ -3,6 +3,12 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.10 — 2026-10-28
+- **Permessi**: in Impostazioni → Permessi un admin sceglie per ogni persona del workspace il livello di ogni area (todo e diario, mail, progetti, magazzino, documenti, contatti, chat): nessun accesso, lettura o scrittura. Le aree collegate si sistemano da sole (scrivere le mail richiede di leggere contatti, documenti, magazzino e progetti…; l'elenco è nella stessa sezione).
+- Senza accesso un'area sparisce dal menu e dalle tab; in sola lettura si vede tutto ma i controlli per modificare sono spenti. Il server controlla ogni richiesta e manda solo i dati che si possono leggere: valgono anche per CLI e bot.
+- Chi ha limitazioni vede i propri permessi in Impostazioni.
+- Account v3.
+
 ## 0.9.2 — 2026-10-28
 - Magazzino: **codici alternativi** per gli articoli, oltre al codice principale con cui sono noti. Si aggiungono e si tolgono nella scheda dell'articolo; `#ALTERNATIVO` nelle voci porta all'articolo, filtri, ricerca, suggerimenti e scheda rapida li trovano. Ogni codice appartiene a un solo articolo; scrivendo un alternativo come nuovo codice diventa il principale e il vecchio resta tra gli alternativi. CLI: `org item alias`.
 - Tipo di documento: il menu che si apre ha le voci con il loro colore (il menu di sistema sul Mac non le colorava); si usa anche con la tastiera (↑↓, Invio, Esc).

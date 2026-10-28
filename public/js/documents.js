@@ -2,7 +2,7 @@
 // Si filtrano, si raggruppano per categoria dell'articolo (come il magazzino a colonne) o per tipo di documento,
 // e se ne scelgono fino a 3 da aprire affiancati. Qui si aggiungono anche i tipi di documento.
 import {
-  h, icon, S, ui, api, act, render, save, toast, fmtSize, fmtTime, itemAttrs, catStyle, docKinds, dkAttrs, newDocKind, docName, renameDoc, masonry, filterChip, aliasCodes,
+  h, icon, S, ui, api, act, render, save, toast, fmtSize, fmtTime, itemAttrs, catStyle, docKinds, dkAttrs, newDocKind, docName, renameDoc, masonry, filterChip, aliasCodes, can, roClass,
 } from './core.js';
 import { docMeta, docPeek } from './docview.js';
 import { peekable } from './views.js';
@@ -97,7 +97,7 @@ export function viewDocuments() {
   const setGroup = g => { ui.docGroup = g; save('org.docGroup', g); render(); };
   const sel = [...ui.docSel];
 
-  return h('div.view.documents',
+  return h('div.view.documents', { class: roClass(can('documenti', 'write')) },
     h('div.toolbar',
       h('input.filter', {
         type: 'search', placeholder: 'Filtra per nome, versione, articolo, testo delle note…', value: ui.docFilter, 'data-fk': 'docfilter',
@@ -114,7 +114,7 @@ export function viewDocuments() {
         onclick: () => { ui.docKindF = ui.docKindF === k ? null : k; render(); },
       })),
       filterChip({ on: ui.docOnlyNotes, label: [icon('log'), 'con note aperte'], onclick: () => { ui.docOnlyNotes = !ui.docOnlyNotes; render(); } }),
-      h('button.chip', { title: 'Aggiunge un tipo di documento (oltre a firmware, datasheet…)', onclick: newDocKind }, icon('plus'), 'nuovo tipo')),
+      can('documenti', 'write') && h('button.chip', { title: 'Aggiunge un tipo di documento (oltre a firmware, datasheet…)', onclick: newDocKind }, icon('plus'), 'nuovo tipo')),
     !all.length && h('div.empty',
       h('p', 'Nessun documento.'),
       h('p', 'I documenti si caricano dalla scheda di un articolo di magazzino (firmware, datasheet, schemi…).')),
@@ -124,6 +124,6 @@ export function viewDocuments() {
     sel.length > 0 && h('div.rv-bar',
       h('span', `${sel.length} ${sel.length === 1 ? 'documento selezionato' : 'documenti selezionati'}`),
       h('span.grow'),
-      h('button.btn.ghost', { onclick: () => { ui.docSel.clear(); render(); } }, 'Deseleziona'),
+      h('button.btn.ghost.keep', { onclick: () => { ui.docSel.clear(); render(); } }, 'Deseleziona'),
       h('a.btn.primary', { href: `#/review?d=${sel.join(',')}` }, icon('cols'), sel.length === 1 ? 'Apri' : 'Rivedi affiancati')));
 }

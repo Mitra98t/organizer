@@ -30,6 +30,15 @@ X-Workspace: 2          (facoltativo)
 - Con il token non serve l'header `X-Requested-With`: è la protezione CSRF dell'app, che usa un cookie. Le richieste senza token (come `/api/auth/token`) invece lo devono avere.
 - I token si revocano dall'app, con `DELETE /api/tokens/:id`, e tutti insieme quando un admin reimposta la password della persona. Un token non può crearne altri.
 
+## Permessi
+
+Ogni membro di un workspace ha un livello per area: `none` (non la vede), `read`, `write`. Aree: `voci` (todo e note), `mail`, `progetti`, `magazzino`, `documenti`, `contatti`, `chat`. Gli admin hanno sempre tutto; chi non ha impostazioni ha scrittura ovunque. Le regole (e le dipendenze: per scrivere le mail serve leggere contatti, documenti, magazzino e progetti, ecc.) stanno in `public/js/perms.js`, condiviso tra app e server.
+
+- `/api/sync` restituisce `perms` (i tuoi; `null` = tutto) e manda solo i dati delle aree che puoi leggere; agli admin anche `memberPerms` (`{ idUtente: perms | null }`).
+- Una richiesta fuori dai permessi risponde `403` con il motivo ("Non hai il permesso di modificare l'area Mail…"). Le voci appartengono all'area del loro tipo (le mail a `mail`, todo e note a `voci`).
+- Senza scrittura su progetti e magazzino, `@nuovo` in una voce non crea il progetto (403) e `#NUOVO` non crea l'articolo (resta testo).
+- `PATCH /api/admin/users/:id` `{ perms: { mail: "read", chat: "none", … } }` (solo admin; `perms: null` = accesso pieno): le aree non indicate restano in scrittura e le dipendenze si completano alzando ciò che serve.
+
 ## Convenzioni
 
 - Corpo delle richieste e risposte in JSON (`Content-Type: application/json`), salvo upload e download di file.

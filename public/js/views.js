@@ -2,12 +2,13 @@ import {
   h, icon, S, ui, RS, api, act, render, richText, dueInfo, dayDiff, fmtDay, fmtLongDay, fmtTime, fmtSize,
   userName, toast, save, patchEntry, addEntry, isMine, localDay, autosize, stop, copy, hue, trashIt, contactNames,
   descendants, ancestors, catStyle, itemAttrs, docFileUrl, projectsOf, DOC_KINDS, projHue, catHue, huePicker,
-  switchWorkspace, newWorkspace, docName, renameDoc, richField, backlinks, plainRefs, CONTACT_COLOR, masonry, filterChip, aliasCodes, kindPicker,
+  switchWorkspace, newWorkspace, docName, renameDoc, richField, backlinks, plainRefs, CONTACT_COLOR, masonry, filterChip, aliasCodes, kindPicker, can, canEntry, roClass,
 } from './core.js';
 import { docMeta, docPeek } from './docview.js';
 import { today, addDays } from './parse.js';
 import { mailComposer } from './mail.js';
 import { THEMES, BASE_THEMES, currentTheme, setTheme } from './themes.js';
+import { AREAS, LEVELS, WRITE_NEEDS, READ_NEEDS, fullAccess, setLevel, isRestricted } from './perms.js';
 import { draggable } from './dnd.js';
 
 const KIND_LABEL = { todo: 'Todo', mail: 'Mail', note: 'Nota' };
@@ -144,7 +145,8 @@ export function entryRow(e, opt = {}) {
     }, step ? icon(step.icon) : e.done_at ? icon('check') : null);
 
   return h('div.entry', {
-    class: [`k-${e.kind}`, e.done_at && 'done', e.done_at && e.awaiting_reply && 'waiting', open && 'open', e.pinned && 'pinned', opt.nested && 'nested'].filter(Boolean).join(' '),
+    class: [`k-${e.kind}`, e.done_at && 'done', e.done_at && e.awaiting_reply && 'waiting', open && 'open', e.pinned && 'pinned', opt.nested && 'nested',
+      e.pending ? null : roClass(canEntry(e))].filter(Boolean).join(' '),
   },
   h('div.row', check,
     h('div.body', { onclick: () => toggleOpen(e.id) },
@@ -341,7 +343,7 @@ export function viewAgenda() {
 
   return h('div.view',
     h('div.toolbar',
-      [['all', 'Tutto'], ['todo', 'Todo'], ['mail', 'Mail']].map(([k, label]) => filterChip({
+      [['all', 'Tutto'], ['todo', 'Todo'], ['mail', 'Mail']].filter(([k]) => k === 'all' || can(k === 'mail' ? 'mail' : 'voci')).map(([k, label]) => filterChip({
         on: ui.agendaKind === k, label, n: kindCount[k], cls: k === 'all' ? null : `tint k-${k}`, onclick: () => setKind(k),
       })),
       D.members.length > 1 && h('span.tsep'),
@@ -431,7 +433,7 @@ export function viewProjects() {
       kids.length > 0 && h('div.pkids', kids.map(k => tree(k, depth + 1))));
   };
 
-  return h('div.view',
+  return h('div.view', { class: roClass(can('progetti', 'write')) },
     h('div.toolbar',
       Object.entries(STATUS_LABEL).map(([k, label]) =>
         filterChip({ on: ui.projStatus === k, label, n: counts[k], onclick: () => { ui.projStatus = k; render(); } }))),
@@ -538,7 +540,7 @@ export function viewProject(id) {
   const kids = (D.subprojects.get(p.id) || []).sort((a, b) => a.name.localeCompare(b.name));
   const stats = projectStats();
 
-  return h('div.view',
+  return h('div.view', { class: roClass(can('progetti', 'write')) },
     ancestors(p.id).length > 0 && h('div.crumbs', ancestors(p.id).map(a => [projTag(a), h('span.muted', ' › ')])),
     h('div.head',
       h('a.icon-btn', { href: '#/progetti', title: 'Progetti (Esc)' }, icon('back')),
@@ -793,7 +795,7 @@ export function viewItems() {
   }
   const ordered = [...groups].sort(([a], [b]) => (!a) - (!b) || a.localeCompare(b));
 
-  return h('div.view',
+  return h('div.view', { class: roClass(can('magazzino', 'write')) },
     h('div.toolbar',
       h('input.filter', {
         type: 'search', placeholder: 'Filtra per codice, nome, firmware, posizione, documento…', value: ui.itemFilter, 'data-fk': 'itemfilter',
@@ -891,7 +893,7 @@ function docSection(it) {
         onclick: () => trashIt('doc', `/docs/${d.id}`, d.label || d.filename || 'Link'),
       }, icon('trash')))),
   ];
-  const sec = section(`i-docs`, 'Documenti', body, { count: docs.length });
+  const sec = section(`i-docs`, 'Documenti', body, { count: docs.length, cls: roClass(can('documenti', 'write')) });
   sec.addEventListener('dragover', ev => { ev.preventDefault(); sec.classList.add('drag'); });
   sec.addEventListener('dragleave', () => sec.classList.remove('drag'));
   sec.addEventListener('drop', ev => {
@@ -926,7 +928,7 @@ export function viewItem(id) {
     act(() => api('POST', `/projects/${p.id}/items`, { code: it.code }));
   };
 
-  return h('div.view',
+  return h('div.view', { class: roClass(can('magazzino', 'write')) },
     h('div.head',
       h('a.icon-btn', { href: '#/magazzino', title: 'Magazzino (Esc)' }, icon('back')),
       it.category && h('button.cdot.big.pick', {
@@ -1098,6 +1100,51 @@ function themeSection() {
   ], { count: '', collapsed: true });
 }
 
+// ---------- permessi (Impostazioni) ----------
+// Admin: per ogni persona del workspace (non admin) il livello di ogni area. Cambiando un livello si
+// sistemano da sole le aree collegate (vedi perms.js): scrivere le mail fa leggere contatti, documenti…
+const LEVEL_SHORT = { none: '—', read: 'L', write: 'S' };
+const needsText = deps => deps.map(a => AREAS[a]).join(', ');
+
+function permsSection(D) {
+  const others = D.members.filter(u => !u.is_admin);
+  const setPerms = (u, perms) => act(() => api('PATCH', `/admin/users/${u.id}`, { perms }), `Permessi di ${u.name || u.username} aggiornati`);
+  const row = u => {
+    const cur = D.memberPerms?.[u.id] || fullAccess();
+    return h('tr',
+      h('th.pm-who', h('span', u.name || u.username), h('span.muted', `@${u.username}`),
+        isRestricted(D.memberPerms?.[u.id]) && h('button.btn.sm.ghost', { title: 'Accesso pieno a tutto', onclick: () => setPerms(u, null) }, 'tutto')),
+      Object.keys(AREAS).map(area => h('td',
+        h('div.pm-seg', Object.keys(LEVELS).map(l => h('button', {
+          class: [cur[area] === l && 'on', `l-${l}`].filter(Boolean).join(' '),
+          title: `${AREAS[area]}: ${LEVELS[l]}`,
+          onclick: () => { if (cur[area] !== l) setPerms(u, setLevel(cur, area, l)); },
+        }, LEVEL_SHORT[l]))))));
+  };
+  return section('set-perms', 'Permessi', [
+    h('p.muted', 'Per ogni persona del workspace scegli cosa vede e cosa può modificare: — nessun accesso (l\'area sparisce), L lettura, S scrittura. Gli admin hanno sempre tutto.'),
+    others.length
+      ? h('div.pm-wrap', h('table.pm',
+        h('thead', h('tr', h('th'), Object.values(AREAS).map(a => h('th', a)))),
+        h('tbody', others.map(row))))
+      : h('p', 'Non ci sono altre persone (non admin) in questo workspace: invitale da "Persone".'),
+    h('details.pm-rules', h('summary', 'Aree collegate'),
+      h('ul', Object.entries(WRITE_NEEDS).filter(([, deps]) => deps.length).map(([a, deps]) =>
+        h('li', h('b', `Scrivere ${AREAS[a]}`), ` richiede di leggere ${needsText(deps)}.`)),
+      Object.entries(READ_NEEDS).map(([a, deps]) => h('li', h('b', `Leggere ${AREAS[a]}`), ` richiede di leggere ${needsText(deps)}.`))),
+      h('p.muted', 'Alzando un livello si alzano da sole le aree che servono; togliendo un\'area si abbassano quelle che ne hanno bisogno.')),
+  ], { count: others.filter(u => isRestricted(D.memberPerms?.[u.id])).length || '', collapsed: true });
+}
+
+// Chi non è admin vede i propri permessi, se ha delle limitazioni.
+function myPermsSection(D) {
+  if (!isRestricted(D.perms)) return null;
+  return section('set-myperms', 'I tuoi permessi', [
+    h('div.pm-mine', Object.entries(AREAS).map(([a, label]) => h('span.chip', { class: `pm-l-${D.perms[a]}` }, label, ': ', LEVELS[D.perms[a]]))),
+    h('p.muted', 'Li decide un admin del workspace.'),
+  ], { count: '' });
+}
+
 export function viewSettings() {
   const D = S.data;
   const me = D.me;
@@ -1143,6 +1190,8 @@ export function viewSettings() {
     workspaceSection(D),
 
     tokensSection(),
+
+    me.is_admin ? permsSection(D) : myPermsSection(D),
 
     section('set-users', `Persone in "${D.workspace.name}"`, [
       D.members.map(u => h('div.user-row',

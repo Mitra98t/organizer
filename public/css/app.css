@@ -1020,3 +1020,29 @@ body.no-quick .quick { display: none; }
 .km-i.on { box-shadow: inset 0 0 0 1px var(--accent); }
 .km-i .ic { width: 14px; height: 14px; }
 .km-i.new { border-top: 1px solid var(--line); border-radius: 0 0 7px 7px; margin-top: 2px; padding-top: 7px; }
+
+/* ---------- permessi (Impostazioni) ---------- */
+.pm-wrap { overflow-x: auto; margin: 6px 0 10px; }
+.pm { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+.pm th, .pm td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: center; white-space: nowrap; }
+.pm thead th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); font-weight: 700; }
+.pm .pm-who { text-align: left; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.pm .pm-who .muted { font-weight: 400; }
+.pm-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.pm-seg button { border: 0; background: var(--panel); color: var(--muted); width: 26px; height: 24px; font-size: 12px; font-weight: 700; }
+.pm-seg button + button { border-left: 1px solid var(--line); }
+.pm-seg button.on.l-none { background: var(--danger-soft); color: var(--danger); }
+.pm-seg button.on.l-read { background: var(--code-bg); color: var(--code-ink); }
+.pm-seg button.on.l-write { background: var(--accent-soft); color: var(--accent); }
+.pm-rules { font-size: 13px; color: var(--muted); }
+.pm-rules summary { cursor: pointer; }
+.pm-rules ul { margin: 6px 0; padding-left: 18px; }
+.pm-mine { display: flex; flex-wrap: wrap; gap: 6px; }
+.pm-l-none { color: var(--danger); }
+.pm-l-read { color: var(--code-ink); }
+
+/* Sola lettura (permessi): i controlli spenti si vedono attenuati. */
+.ro :is(input, textarea, select, button):disabled { opacity: 0.55; cursor: not-allowed; }
+.ro .rich-view { cursor: default; }
+.ro .rich-view:hover { border-color: var(--line); }
+.ro .dv-page { cursor: default; }

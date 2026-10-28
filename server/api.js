@@ -9,10 +9,11 @@ import { hashPassword, verifyPassword, sessionCookie, validUsername, validPasswo
 import {
   acc, atx, userCount, getAccount, workspaceById, workspacesOf, membersOf, roleIn, adminCount,
   addMember, createWorkspace, removeMember, syncMirror, createSession, destroySession, defaultWorkspace, setSessionWorkspace,
-  revokeApiTokens,
+  revokeApiTokens, permsIn, setPerms,
 } from './accounts.js';
 import { HttpError, fail, now, bool, str, sendJson } from './util.js';
 import { rev, openStream, dropUser } from './events.js';
+import { allows, assertCan, entryArea, readableKinds } from './perms.js';
 import { currentWorkspace } from './db.js';
 
 const KINDS = ['todo', 'mail', 'note'];
@@ -31,10 +32,12 @@ export const routes = [];
 // auth: 'none' | 'user' | 'admin' (admin del workspace attivo). ws: false per le route che non usano
 // i dati di un workspace (account, elenco e creazione dei workspace). quiet: la modifica riguarda solo
 // chi la fa, quindi gli altri client non vengono avvisati di rileggere i dati.
-export function route(method, pattern, handler, { auth = 'user', ws = auth !== 'none', quiet = false } = {}) {
+// area: l'area dei permessi (vedi perms.js) che la route legge (GET) o scrive; level la forza (es. 'read'
+// per una POST che non cambia niente). Le voci hanno l'area secondo il tipo: le controllano le route stesse.
+export function route(method, pattern, handler, { auth = 'user', ws = auth !== 'none', quiet = false, area = null, level = null } = {}) {
   const keys = [];
   const re = new RegExp('^' + pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)'; }) + '$');
-  routes.push({ method, re, keys, handler, auth, ws, quiet });
+  routes.push({ method, re, keys, handler, auth, ws, quiet, area, level });
 }
 
 // ---------- visibilità ----------
@@ -45,6 +48,13 @@ export const VIS_ANY = `(e.private = 0 OR e.created_by = $uid OR e.assignee_id =
 export const PVIS_ANY = '(p.private = 0 OR p.created_by = $uid)';
 export const VIS = `e.deleted_at IS NULL AND ${VIS_ANY}`;
 const PVIS = `p.deleted_at IS NULL AND ${PVIS_ANY}`;
+
+// Voce visibile e nell'area (todo/note o mail) che l'utente può leggere o scrivere.
+export function entryFor(id, user, level = 'write') {
+  const e = getEntry(id, user.id);
+  assertCan(user, entryArea(e.kind), level);
+  return e;
+}
 
 export const getEntry = (id, uid) =>
   db.prepare(`SELECT e.* FROM entries e WHERE e.id = $id AND ${VIS}`).get({ id: +id, uid }) || fail(404, 'Voce non trovata');
@@ -77,6 +87,8 @@ function resolveProject(tag, user) {
   if (p?.deleted_at) db.prepare('UPDATE projects SET deleted_at = NULL, deleted_by = NULL WHERE id = ?').run(p.id);
   if (p) return p.id;
   if (db.prepare('SELECT 1 FROM projects WHERE tag = ?').get(tag)) fail(403, `@${tag} è un progetto privato di un altro utente`);
+  // Scrivere @nuovo crea il progetto: serve poter scrivere nei progetti.
+  if (!allows(user.perms, 'progetti', 'write')) fail(403, `Il progetto @${tag} non esiste e non hai il permesso di crearne`);
   const t = now();
   return insertId(db.prepare('INSERT INTO projects (name, tag, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
     .run(tag, tag, user.id, t, t));
@@ -98,6 +110,8 @@ function ensureItem(code, user) {
     : db.prepare('SELECT id, deleted_at FROM items WHERE code = ?').get(code);
   if (it?.deleted_at) db.prepare('UPDATE items SET deleted_at = NULL, deleted_by = NULL WHERE id = ?').run(it.id);
   if (it) return it.id;
+  // #CODICE sconosciuto crea l'articolo: solo per chi può scrivere nel magazzino (per gli altri resta testo).
+  if (!allows(user.perms, 'magazzino', 'write')) return null;
   const t = now();
   return insertId(db.prepare('INSERT INTO items (code, created_by, created_at, updated_at) VALUES (?, ?, ?, ?)')
     .run(code, user.id, t, t));
@@ -110,7 +124,10 @@ export function syncEntryItems(entryId, user) {
   const codes = extractCodes([e.title, e.notes, ...logs.map(l => l.text)].join('\n'));
   db.prepare('DELETE FROM entry_items WHERE entry_id = ?').run(entryId);
   const ins = db.prepare('INSERT OR IGNORE INTO entry_items (entry_id, item_id) VALUES (?, ?)');
-  for (const c of codes) ins.run(entryId, ensureItem(c, user));
+  for (const c of codes) {
+    const id = ensureItem(c, user);
+    if (id) ins.run(entryId, id);
+  }
   syncEntryLinks(entryId);
 }
 
@@ -291,67 +308,77 @@ route('GET', '/api/events', ({ req, res, user }) => openStream(req, res, user));
 route('GET', '/api/sync', ({ req, res, user }) => {
   // Il segno di lettura della chat cambia senza notifiche (riguarda solo chi legge): fa parte dell'ETag.
   const chatRead = db.prepare('SELECT chat_read_id FROM users WHERE id = ?').get(user.id)?.chat_read_id ?? 0;
-  const etag = `"${rev()}-${user.id}-${user.workspace_id}-${chatRead}"`;
+  const etag = `"${rev()}-${user.id}-${user.workspace_id}-${chatRead}-${user.perms ? Object.values(user.perms).join('') : ''}"`;
   if (req.headers['if-none-match'] === etag) {
     res.writeHead(304, { ETag: etag, 'Cache-Control': 'private, no-cache' });
     return res.end();
   }
   const uid = user.id;
   const p = { uid, cutoff: new Date(Date.now() - ARCHIVE_DAYS * 864e5).toISOString() };
+  // Permessi: delle aree che non si possono leggere non si manda niente (le voci per tipo: todo/note, mail).
+  const can = area => allows(user.perms, area);
+  const kinds = readableKinds(user).map(k => `'${k}'`).join(', ') || "''";
   // Le mail in attesa di risposta restano nei dati anche dopo 30 giorni: sono thread ancora aperti.
-  const where = `${VIS} AND (e.done_at IS NULL OR e.done_at > $cutoff OR e.awaiting_reply = 1)`;
+  const where = `${VIS} AND e.kind IN (${kinds}) AND (e.done_at IS NULL OR e.done_at > $cutoff OR e.awaiting_reply = 1)`;
+  const all = (area, stmt, ...args) => (can(area) ? db.prepare(stmt).all(...args) : []);
   sendJson(res, 200, {
+    perms: user.perms, // null = accesso pieno
+    // Per gli admin: i permessi di ogni membro (Impostazioni → Permessi).
+    memberPerms: user.is_admin ? Object.fromEntries(membersOf(user.workspace_id).map(m => [m.id, permsIn(user.workspace_id, m.id)])) : null,
     rev: rev(),
     me: getUser(uid),
     // Tutti quelli che compaiono nei dati (anche ex membri, per i nomi); member = 1 per i membri attuali.
     users: db.prepare('SELECT id, username, name, is_admin, member FROM users ORDER BY name COLLATE NOCASE').all(),
     workspace: wsInfo(user.workspace_id, uid),
     workspaces: workspacesOf(uid),
-    projects: db.prepare(`SELECT p.* FROM projects p WHERE ${PVIS} ORDER BY p.name COLLATE NOCASE`).all({ uid }),
+    projects: all('progetti', `SELECT p.* FROM projects p WHERE ${PVIS} ORDER BY p.name COLLATE NOCASE`, { uid }),
     entries: db.prepare(`SELECT e.* FROM entries e WHERE ${where} ORDER BY e.id`).all(p),
     logs: db.prepare(`SELECT l.* FROM entry_log l JOIN entries e ON e.id = l.entry_id WHERE ${where} ORDER BY l.id`).all(p),
-    entryItems: db.prepare(`SELECT ei.entry_id, ei.item_id FROM entry_items ei JOIN entries e ON e.id = ei.entry_id WHERE ${where}`).all(p),
-    items: db.prepare('SELECT * FROM items WHERE deleted_at IS NULL ORDER BY code COLLATE NOCASE').all(),
-    itemAliases: db.prepare(`SELECT a.item_id, a.code FROM item_aliases a JOIN items i ON i.id = a.item_id
-      WHERE i.deleted_at IS NULL ORDER BY a.code COLLATE NOCASE`).all(),
-    itemLinks: db.prepare('SELECT parent_id, child_id FROM item_links').all(),
-    entryProjects: db.prepare(`SELECT ep.entry_id, ep.project_id FROM entry_projects ep
+    entryItems: all('magazzino', `SELECT ei.entry_id, ei.item_id FROM entry_items ei JOIN entries e ON e.id = ei.entry_id WHERE ${where}`, p),
+    items: all('magazzino', 'SELECT * FROM items WHERE deleted_at IS NULL ORDER BY code COLLATE NOCASE'),
+    itemAliases: all('magazzino', `SELECT a.item_id, a.code FROM item_aliases a JOIN items i ON i.id = a.item_id
+      WHERE i.deleted_at IS NULL ORDER BY a.code COLLATE NOCASE`),
+    itemLinks: all('magazzino', 'SELECT parent_id, child_id FROM item_links'),
+    entryProjects: all('progetti', `SELECT ep.entry_id, ep.project_id FROM entry_projects ep
       JOIN entries e ON e.id = ep.entry_id JOIN projects p ON p.id = ep.project_id
-      WHERE ${where} AND p.deleted_at IS NULL AND (p.private = 0 OR p.created_by = $uid)`).all(p),
-    projectItems: db.prepare(`SELECT pi.project_id, pi.item_id FROM project_items pi
-      JOIN projects p ON p.id = pi.project_id WHERE ${PVIS}`).all({ uid }),
-    docs: db.prepare(`SELECT id, item_id, kind, label, version, filename, mime, size, sha256, url, created_by, created_at
-      FROM documents WHERE deleted_at IS NULL ORDER BY created_at DESC`).all(),
-    contacts: db.prepare('SELECT * FROM contacts WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE, email').all(),
-    categoryColors: db.prepare('SELECT name, hue FROM category_colors').all(),
+      WHERE ${where} AND p.deleted_at IS NULL AND (p.private = 0 OR p.created_by = $uid)`, p),
+    projectItems: can('magazzino') ? all('progetti', `SELECT pi.project_id, pi.item_id FROM project_items pi
+      JOIN projects p ON p.id = pi.project_id WHERE ${PVIS}`, { uid }) : [],
+    docs: all('documenti', `SELECT id, item_id, kind, label, version, filename, mime, size, sha256, url, created_by, created_at
+      FROM documents WHERE deleted_at IS NULL ORDER BY created_at DESC`),
+    contacts: all('contatti', 'SELECT * FROM contacts WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE, email'),
+    categoryColors: all('magazzino', 'SELECT name, hue FROM category_colors'),
     docKinds: docKinds(),
     customDocKinds: db.prepare('SELECT name FROM doc_kinds ORDER BY name').all().map(r => r.name),
-    docNotes: db.prepare(`SELECT n.* FROM doc_notes n JOIN documents d ON d.id = n.doc_id
-      WHERE n.deleted_at IS NULL AND d.deleted_at IS NULL ORDER BY n.id`).all(),
+    docNotes: all('documenti', `SELECT n.* FROM doc_notes n JOIN documents d ON d.id = n.doc_id
+      WHERE n.deleted_at IS NULL AND d.deleted_at IS NULL ORDER BY n.id`),
     attachments: db.prepare(`SELECT a.id, a.entry_id, a.doc_id, a.filename, a.mime, a.size FROM mail_attachments a
       JOIN entries e ON e.id = a.entry_id WHERE ${where} ORDER BY a.id`).all(p),
     // Chat: gli ultimi messaggi (i precedenti con /api/chat?before=) e quanti ne restano da leggere.
-    chat: db.prepare(`SELECT id, user_id, text, created_at, edited_at FROM chat_messages WHERE deleted_at IS NULL
-      ORDER BY id DESC LIMIT ${CHAT_IN_SYNC}`).all().reverse(),
+    chat: all('chat', `SELECT id, user_id, text, created_at, edited_at FROM chat_messages WHERE deleted_at IS NULL
+      ORDER BY id DESC LIMIT ${CHAT_IN_SYNC}`).reverse(),
     chatReadId: chatRead,
-    chatUnread: db.prepare('SELECT COUNT(*) AS n FROM chat_messages WHERE deleted_at IS NULL AND user_id != ? AND id > ?').get(uid, chatRead).n,
-    trashCount: db.prepare(`SELECT
-      (SELECT COUNT(*) FROM entries e WHERE e.deleted_at IS NOT NULL AND ${VIS_ANY}
-        AND (e.parent_id IS NULL OR NOT EXISTS (SELECT 1 FROM entries x WHERE x.id = e.parent_id AND x.deleted_at = e.deleted_at)))
-      + (SELECT COUNT(*) FROM projects p WHERE p.deleted_at IS NOT NULL AND ${PVIS_ANY})
-      + (SELECT COUNT(*) FROM items WHERE deleted_at IS NOT NULL)
-      + (SELECT COUNT(*) FROM documents d WHERE d.deleted_at IS NOT NULL
-        AND EXISTS (SELECT 1 FROM items i WHERE i.id = d.item_id AND i.deleted_at IS NULL))
-      + (SELECT COUNT(*) FROM contacts WHERE deleted_at IS NOT NULL)
-      + (SELECT COUNT(*) FROM doc_notes n WHERE n.deleted_at IS NOT NULL
-        AND EXISTS (SELECT 1 FROM documents d WHERE d.id = n.doc_id AND d.deleted_at IS NULL)) AS n`).get({ uid }).n,
+    chatUnread: can('chat') ? db.prepare('SELECT COUNT(*) AS n FROM chat_messages WHERE deleted_at IS NULL AND user_id != ? AND id > ?').get(uid, chatRead).n : 0,
+    // Nel cestino contano solo le aree che si possono leggere.
+    trashCount: [
+      `SELECT COUNT(*) AS n FROM entries e WHERE e.deleted_at IS NOT NULL AND ${VIS_ANY} AND e.kind IN (${kinds})
+        AND (e.parent_id IS NULL OR NOT EXISTS (SELECT 1 FROM entries x WHERE x.id = e.parent_id AND x.deleted_at = e.deleted_at))`,
+      can('progetti') && `SELECT COUNT(*) AS n FROM projects p WHERE p.deleted_at IS NOT NULL AND ${PVIS_ANY}`,
+      can('magazzino') && 'SELECT COUNT(*) AS n FROM items WHERE deleted_at IS NOT NULL',
+      can('documenti') && `SELECT COUNT(*) AS n FROM documents d WHERE d.deleted_at IS NOT NULL
+        AND EXISTS (SELECT 1 FROM items i WHERE i.id = d.item_id AND i.deleted_at IS NULL)`,
+      can('contatti') && 'SELECT COUNT(*) AS n FROM contacts WHERE deleted_at IS NOT NULL',
+      can('documenti') && `SELECT COUNT(*) AS n FROM doc_notes n WHERE n.deleted_at IS NOT NULL
+        AND EXISTS (SELECT 1 FROM documents d WHERE d.id = n.doc_id AND d.deleted_at IS NULL)`,
+    ].filter(Boolean).reduce((sum, q) => sum + db.prepare(q).get(q.includes('$uid') ? { uid } : {}).n, 0),
   }, { ETag: etag });
 });
 
 route('GET', '/api/archive', ({ user, query }) => {
   const q = `%${str(query.q, 200)}%`;
   const cutoff = new Date(Date.now() - ARCHIVE_DAYS * 864e5).toISOString();
-  return db.prepare(`SELECT e.* FROM entries e WHERE ${VIS} AND e.done_at IS NOT NULL AND e.done_at <= $cutoff
+  const kinds = readableKinds(user).map(k => `'${k}'`).join(', ') || "''";
+  return db.prepare(`SELECT e.* FROM entries e WHERE ${VIS} AND e.kind IN (${kinds}) AND e.done_at IS NOT NULL AND e.done_at <= $cutoff
     AND (e.title LIKE $q OR e.notes LIKE $q OR e.contact LIKE $q) ORDER BY e.done_at DESC LIMIT 200`)
     .all({ uid: user.id, cutoff, q });
 });
@@ -376,6 +403,7 @@ export function createEntry(b, user) {
   let parent = b.parent_id ? getEntry(b.parent_id, user.id) : null;
   if (parent?.parent_id) parent = getEntry(parent.parent_id, user.id); // un solo livello di sotto-attività
   const kind = p.kindExplicit || !parent ? p.kind : 'todo';
+  assertCan(user, entryArea(kind), 'write');
 
   // Tutti i progetti: quelli scritti con @ (il primo diventa il principale) più quello della pagina.
   const projectIds = [...new Set([
@@ -461,6 +489,9 @@ export function updateEntry(e, b, user) {
     f.private = bool(b.private);
   }
   if (!Object.keys(f).length) return;
+  // Permessi: si scrive nell'area della voce e, se cambia tipo (todo ↔ mail), anche in quella nuova.
+  assertCan(user, entryArea(e.kind), 'write');
+  if (f.kind && f.kind !== e.kind) assertCan(user, entryArea(f.kind), 'write');
   f.updated_at = now();
   setFields('entries', e.id, f);
 
@@ -478,7 +509,7 @@ route('POST', '/api/entries', async ({ user, body }) => {
 // Una voce con tutto ciò che le sta attorno (per la CLI e i programmi esterni: l'app usa /api/sync).
 // Funziona anche per le voci archiviate, che /api/sync non manda più.
 route('GET', '/api/entries/:id', ({ params, user }) => {
-  const e = getEntry(params.id, user.id);
+  const e = entryFor(params.id, user, 'read');
   return {
     ...e,
     projects: db.prepare(`SELECT p.id, p.tag, p.name FROM projects p WHERE p.id IN
@@ -509,8 +540,9 @@ route('GET', '/api/backlinks/:kind/:id', ({ params, user }) => {
     }
   }
   return db.prepare(`SELECT e.id, e.kind, e.title, e.due, e.done_at, e.awaiting_reply, e.contact, e.mail_subject, e.project_id, e.parent_id, e.updated_at
-    FROM entries e WHERE e.id IN (SELECT value FROM json_each($ids)) AND ${VIS} ORDER BY e.updated_at DESC`)
-    .all({ ids: JSON.stringify([...new Set(ids)]), uid: user.id });
+    FROM entries e WHERE e.id IN (SELECT value FROM json_each($ids)) AND ${VIS}
+    AND e.kind IN (SELECT value FROM json_each($kinds)) ORDER BY e.updated_at DESC`)
+    .all({ ids: JSON.stringify([...new Set(ids)]), kinds: JSON.stringify(readableKinds(user)), uid: user.id });
 });
 
 route('PATCH', '/api/entries/:id', async ({ params, user, body }) => {
@@ -523,7 +555,7 @@ route('PATCH', '/api/entries/:id', async ({ params, user, body }) => {
 // Progetti di una voce: il primo aggiunto diventa il principale; togliendo il principale lo diventa il successivo.
 route('POST', '/api/entries/:id/projects', async ({ params, user, body }) => {
   const b = await body();
-  const e = getEntry(params.id, user.id);
+  const e = entryFor(params.id, user);
   const pid = getProject(b.project_id, user.id).id;
   tx(() => {
     if (!e.project_id) {
@@ -534,7 +566,7 @@ route('POST', '/api/entries/:id/projects', async ({ params, user, body }) => {
 });
 
 route('DELETE', '/api/entries/:id/projects/:pid', ({ params, user }) => {
-  const e = getEntry(params.id, user.id);
+  const e = entryFor(params.id, user);
   const pid = +params.pid;
   tx(() => {
     if (pid === e.project_id) {
@@ -549,7 +581,7 @@ route('DELETE', '/api/entries/:id/projects/:pid', ({ params, user }) => {
 });
 
 route('DELETE', '/api/entries/:id', ({ params, user }) => {
-  const e = getEntry(params.id, user.id);
+  const e = entryFor(params.id, user);
   db.prepare('UPDATE entries SET deleted_at = $t, deleted_by = $u WHERE (id = $id OR parent_id = $id) AND deleted_at IS NULL')
     .run({ t: now(), u: user.id, id: e.id });
 });
@@ -558,7 +590,7 @@ route('DELETE', '/api/entries/:id', ({ params, user }) => {
 route('POST', '/api/entries/:id/log', async ({ params, user, body }) => {
   const b = await body();
   tx(() => {
-    const e = getEntry(params.id, user.id);
+    const e = entryFor(params.id, user);
     const p = parseQuick(str(b.text, 4000), { today: isYmd(b.today) ? b.today : today(), kind: e.kind });
     const patch = { today: b.today };
     if (p.due !== undefined) patch.due = p.due;
@@ -577,7 +609,7 @@ route('POST', '/api/entries/:id/log', async ({ params, user, body }) => {
 
 route('DELETE', '/api/logs/:id', ({ params, user }) => {
   const l = db.prepare('SELECT * FROM entry_log WHERE id = ?').get(+params.id) || fail(404, 'Aggiornamento non trovato');
-  getEntry(l.entry_id, user.id);
+  entryFor(l.entry_id, user);
   if (l.user_id !== user.id && !user.is_admin) fail(403, 'Puoi cancellare solo i tuoi aggiornamenti');
   tx(() => {
     db.prepare('DELETE FROM entry_log WHERE id = ?').run(l.id);
@@ -599,7 +631,7 @@ route('POST', '/api/projects', async ({ user, body }) => {
   const id = insertId(db.prepare('INSERT INTO projects (name, tag, private, parent_id, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
     .run(name, tag, bool(b.private), parentId, user.id, t, t));
   return { id, tag };
-});
+}, { area: 'progetti' });
 
 // Colore scelto a mano: tinta 0..359, oppure null per tornare al colore automatico.
 function checkHue(v) {
@@ -615,7 +647,7 @@ route('PUT', '/api/categories/color', async ({ body }) => {
   const hue = checkHue(b.hue);
   if (hue === null) db.prepare('DELETE FROM category_colors WHERE name = ?').run(name);
   else db.prepare('INSERT INTO category_colors (name, hue) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET hue = excluded.hue').run(name, hue);
-});
+}, { area: 'magazzino' });
 
 // Un progetto non può finire dentro se stesso o dentro un suo discendente.
 function checkParent(p, parentId) {
@@ -650,7 +682,7 @@ route('PATCH', '/api/projects/:id', async ({ params, user, body }) => {
   }
   f.updated_at = now();
   setFields('projects', p.id, f);
-});
+}, { area: 'progetti' });
 
 // Articoli di magazzino legati al progetto a mano (oltre a quelli citati con #CODICE nelle voci).
 route('POST', '/api/projects/:id/items', async ({ params, user, body }) => {
@@ -658,22 +690,22 @@ route('POST', '/api/projects/:id/items', async ({ params, user, body }) => {
   const p = getProject(params.id, user.id);
   const code = checkCode(str(b.code, 64).replace(/^#/, ''));
   return tx(() => {
-    const itemId = ensureItem(code, user);
+    const itemId = ensureItem(code, user) ?? fail(403, `L'articolo ${code} non esiste e non hai il permesso di crearlo`);
     db.prepare('INSERT OR IGNORE INTO project_items (project_id, item_id, created_at) VALUES (?, ?, ?)').run(p.id, itemId, now());
     return { item_id: itemId };
   });
-});
+}, { area: 'progetti' });
 
 route('DELETE', '/api/projects/:id/items/:item', ({ params, user }) => {
   const p = getProject(params.id, user.id);
   db.prepare('DELETE FROM project_items WHERE project_id = ? AND item_id = ?').run(p.id, +params.item);
-});
+}, { area: 'progetti' });
 
 route('DELETE', '/api/projects/:id', ({ params, user }) => {
   const p = getProject(params.id, user.id);
   if (p.created_by !== user.id && !user.is_admin) fail(403, 'Solo chi ha creato il progetto (o un admin) può eliminarlo');
   db.prepare('UPDATE projects SET deleted_at = ?, deleted_by = ? WHERE id = ?').run(now(), user.id, p.id);
-});
+}, { area: 'progetti' });
 
 // ---------- magazzino ----------
 function itemFields(b) {
@@ -713,7 +745,7 @@ route('POST', '/api/items', async ({ user, body }) => {
     if (projectId) db.prepare('INSERT INTO project_items (project_id, item_id, created_at) VALUES (?, ?, ?)').run(projectId, id, t);
     return { id };
   });
-});
+}, { area: 'magazzino' });
 
 route('PATCH', '/api/items/:id', async ({ params, body }) => {
   const b = await body();
@@ -734,7 +766,7 @@ route('PATCH', '/api/items/:id', async ({ params, body }) => {
     f.updated_at = now();
     setFields('items', it.id, f);
   });
-});
+}, { area: 'magazzino' });
 
 // Rinominando un codice si aggiornano anche i #riferimenti nel testo delle voci collegate.
 function renameCodeInEntries(it, code) {
@@ -754,7 +786,7 @@ function renameCodeInEntries(it, code) {
 route('DELETE', '/api/items/:id', ({ params, user }) => {
   const it = getItem(params.id);
   db.prepare('UPDATE items SET deleted_at = ?, deleted_by = ? WHERE id = ?').run(now(), user.id, it.id);
-});
+}, { area: 'magazzino' });
 
 // Codici alternativi: si aggiungono e si tolgono; nei testi #ALTERNATIVO porta all'articolo.
 route('POST', '/api/items/:id/aliases', async ({ params, user, body }) => {
@@ -771,12 +803,12 @@ route('POST', '/api/items/:id/aliases', async ({ params, user, body }) => {
       WHERE e.title LIKE $q ESCAPE '\\' OR e.notes LIKE $q ESCAPE '\\' OR l.text LIKE $q ESCAPE '\\'`).all({ q });
     for (const { id } of ids) syncEntryItems(id, user);
   });
-});
+}, { area: 'magazzino' });
 
 route('DELETE', '/api/items/:id/aliases/:code', ({ params }) => {
   const it = getItem(params.id);
   if (!db.prepare('DELETE FROM item_aliases WHERE code = ? AND item_id = ?').run(params.code, it.id).changes) fail(404, 'Codice alternativo non trovato');
-});
+}, { area: 'magazzino' });
 
 route('POST', '/api/items/:id/children', async ({ params, user, body }) => {
   const b = await body();
@@ -787,11 +819,11 @@ route('POST', '/api/items/:id/children', async ({ params, user, body }) => {
     if (childId === it.id) fail(400, 'Un articolo non può contenere se stesso');
     db.prepare('INSERT OR IGNORE INTO item_links (parent_id, child_id) VALUES (?, ?)').run(it.id, childId);
   });
-});
+}, { area: 'magazzino' });
 
 route('DELETE', '/api/items/:id/children/:child', ({ params }) => {
   db.prepare('DELETE FROM item_links WHERE parent_id = ? AND child_id = ?').run(+params.id, +params.child);
-});
+}, { area: 'magazzino' });
 
 // ---------- documenti ----------
 // Salva il corpo della richiesta (file grezzo) in uploads/ con un nome casuale.
@@ -846,7 +878,7 @@ route('POST', '/api/items/:id/docs', async ({ req, params, query, user, body }) 
     .run(it.id, kind, str(query.label, 200), version, str(query.name, 255) || 'file', mime, size, sha256, stored, user.id, t));
   if (kind === 'firmware' && version) db.prepare('UPDATE items SET firmware = ?, updated_at = ? WHERE id = ?').run(version, t, it.id);
   return { id };
-});
+}, { area: 'documenti' });
 
 export const INLINE_OK = /^(application\/pdf|image\/(png|jpeg|gif|webp)|text\/plain)$/;
 
@@ -869,7 +901,7 @@ route('GET', '/api/docs/:id/file', ({ res, params, query }) => {
     ...(d.mime === 'application/pdf' ? {} : { 'Content-Security-Policy': "sandbox; default-src 'none'; img-src 'self'" }),
   });
   fs.createReadStream(file).pipe(res);
-});
+}, { area: 'documenti' });
 
 route('PATCH', '/api/docs/:id', async ({ params, body }) => {
   const b = await body();
@@ -888,7 +920,7 @@ route('PATCH', '/api/docs/:id', async ({ params, body }) => {
       db.prepare('UPDATE items SET firmware = ?, updated_at = ? WHERE id = ?').run(latest.version, now(), d.item_id);
     }
   });
-});
+}, { area: 'documenti' });
 
 // Nuovo tipo di documento: una parola (lettere, numeri, - _), minuscolo.
 route('POST', '/api/doc-kinds', async ({ user, body }) => {
@@ -897,7 +929,7 @@ route('POST', '/api/doc-kinds', async ({ user, body }) => {
   if (docKinds().includes(name)) fail(409, `Il tipo "${name}" esiste già`);
   db.prepare('INSERT INTO doc_kinds (name, created_by, created_at) VALUES (?, ?, ?)').run(name, user.id, now());
   return { name };
-});
+}, { area: 'documenti' });
 
 // Eliminando un tipo creato a mano i suoi documenti passano ad "altro" (quelli fissi non si eliminano).
 route('DELETE', '/api/doc-kinds/:name', ({ params }) => {
@@ -906,7 +938,7 @@ route('DELETE', '/api/doc-kinds/:name', ({ params }) => {
     db.prepare("UPDATE documents SET kind = 'altro' WHERE kind = ?").run(params.name);
     db.prepare('DELETE FROM doc_kinds WHERE name = ?').run(params.name);
   });
-});
+}, { area: 'documenti' });
 
 // ---------- note sui documenti ----------
 function notePosition(b) {
@@ -928,7 +960,7 @@ route('POST', '/api/docs/:id/notes', async ({ params, user, body }) => {
   const t = now();
   return { id: insertId(db.prepare(`INSERT INTO doc_notes (doc_id, page, x, y, text, created_by, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(d.id, page, x, y, text, user.id, t, t)) };
-});
+}, { area: 'documenti' });
 
 route('PATCH', '/api/doc-notes/:id', async ({ params, body }) => {
   const b = await body();
@@ -939,17 +971,17 @@ route('PATCH', '/api/doc-notes/:id', async ({ params, body }) => {
   if (b.page !== undefined) Object.assign(f, notePosition(b));
   f.updated_at = now();
   setFields('doc_notes', n.id, f);
-});
+}, { area: 'documenti' });
 
 route('DELETE', '/api/doc-notes/:id', ({ params, user }) => {
   const n = getNote(params.id);
   db.prepare('UPDATE doc_notes SET deleted_at = ?, deleted_by = ? WHERE id = ?').run(now(), user.id, n.id);
-});
+}, { area: 'documenti' });
 
 route('DELETE', '/api/docs/:id', ({ params, user }) => {
   const d = db.prepare('SELECT id FROM documents WHERE id = ? AND deleted_at IS NULL').get(+params.id) || fail(404, 'Documento non trovato');
   db.prepare('UPDATE documents SET deleted_at = ?, deleted_by = ? WHERE id = ?').run(now(), user.id, d.id);
-});
+}, { area: 'documenti' });
 
 // ---------- amministrazione del workspace attivo ----------
 const activeWs = () => workspaceById(currentWorkspace()) || fail(404, 'Workspace non trovato');
@@ -980,6 +1012,13 @@ route('PATCH', '/api/admin/users/:id', async ({ params, user, body }) => {
     if (targetId === user.id && !b.is_admin && adminCount(ws.id) === 1) fail(400, 'Sei l\'unico admin: prima nomina un altro admin');
     acc.prepare('UPDATE memberships SET role = ? WHERE workspace_id = ? AND user_id = ?').run(b.is_admin ? 'admin' : 'member', ws.id, targetId);
     syncMirror(ws, targetId);
+  }
+  // Permessi per area (vedi public/js/perms.js); null = accesso pieno. Gli admin hanno sempre tutto.
+  if (b.perms !== undefined) {
+    if (roleIn(ws.id, targetId) === 'admin') fail(400, 'Gli admin hanno sempre accesso a tutto: togli prima il ruolo di admin');
+    if (b.perms !== null && typeof b.perms !== 'object') fail(400, 'Permessi non validi');
+    setPerms(ws.id, targetId, b.perms);
+    return { perms: permsIn(ws.id, targetId) };
   }
   if (b.reset_password) {
     // La password vale per tutti i workspace della persona: la può reimpostare solo chi è admin in ognuno.

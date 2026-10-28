@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DATA_DIR, openSqlite, openDataDb } from './db.js';
 import { fail, now } from './util.js';
+import { normalize } from '../public/js/perms.js';
 
 export const acc = openSqlite('accounts.db');
 
@@ -63,6 +64,10 @@ const MIGRATIONS = [
     last_used_at TEXT
   );
   CREATE INDEX api_tokens_user ON api_tokens(user_id);
+  `,
+  // Permessi per area dei membri (JSON, vedi public/js/perms.js); NULL = accesso pieno.
+  `
+  ALTER TABLE memberships ADD COLUMN perms TEXT;
   `,
 ];
 
@@ -134,6 +139,22 @@ importLegacy();
 export const userCount = () => acc.prepare('SELECT COUNT(*) AS n FROM users').get().n;
 export const getAccount = id => acc.prepare('SELECT id, username, name, last_workspace_id FROM users WHERE id = ?').get(+id);
 export const workspaceById = id => acc.prepare('SELECT * FROM workspaces WHERE id = ? AND deleted_at IS NULL').get(+id);
+// Permessi di un membro nel workspace: null = accesso pieno (admin, o nessuna restrizione impostata).
+export function permsIn(wsId, userId) {
+  const m = acc.prepare('SELECT role, perms FROM memberships WHERE workspace_id = ? AND user_id = ?').get(wsId, userId);
+  if (!m || m.role === 'admin' || !m.perms) return null;
+  try {
+    return normalize(JSON.parse(m.perms));
+  } catch {
+    return null;
+  }
+}
+
+export function setPerms(wsId, userId, perms) {
+  acc.prepare('UPDATE memberships SET perms = ? WHERE workspace_id = ? AND user_id = ?')
+    .run(perms ? JSON.stringify(normalize(perms)) : null, wsId, userId);
+}
+
 export const roleIn = (wsId, userId) => acc.prepare('SELECT role FROM memberships WHERE workspace_id = ? AND user_id = ?').get(wsId, userId)?.role ?? null;
 
 export function workspacesOf(userId) {
@@ -229,7 +250,7 @@ export function resolveAuth(token) {
     acc.prepare('UPDATE sessions SET workspace_id = ? WHERE token_hash = ?').run(wsId, sha(token));
   }
   const ws = wsId ? workspaceById(wsId) : null;
-  return { account, ws, role: ws ? roleIn(ws.id, account.id) : null };
+  return { account, ws, role: ws ? roleIn(ws.id, account.id) : null, perms: ws ? permsIn(ws.id, account.id) : null };
 }
 
 // ---------- token API ----------
@@ -261,5 +282,5 @@ export function resolveApiToken(token, wsHeader) {
     if (!workspaceById(wsId) || !roleIn(wsId, account.id)) fail(403, `Non fai parte del workspace ${wsHeader}`);
   }
   const ws = wsId ? workspaceById(wsId) : null;
-  return { account, ws, role: ws ? roleIn(ws.id, account.id) : null, apiToken: t.id };
+  return { account, ws, role: ws ? roleIn(ws.id, account.id) : null, perms: ws ? permsIn(ws.id, account.id) : null, apiToken: t.id };
 }

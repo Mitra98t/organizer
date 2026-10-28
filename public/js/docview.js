@@ -5,7 +5,7 @@
 // il visualizzatore (canvas compresi) resta in memoria e viene solo riagganciato; si aggiornano i segnaposto.
 // Più visualizzatori possono essere aperti insieme (revisione affiancata, #/review?d=1,2,3).
 import { backlinksBox } from './views.js';
-import { h, icon, S, ui, api, act, render, richText, fmtTime, fmtSize, userName, toast, trashIt, autosize, itemAttrs, save, docFileUrl, dkAttrs, kindPicker, docName, renameDoc } from './core.js';
+import { h, icon, S, ui, api, act, render, richText, fmtTime, fmtSize, userName, toast, trashIt, autosize, itemAttrs, save, docFileUrl, dkAttrs, kindPicker, docName, renameDoc, can, roClass, isReadOnly } from './core.js';
 import { today } from './parse.js';
 
 const PDFJS = new URL('../vendor/pdfjs/', import.meta.url).href;
@@ -429,6 +429,7 @@ function drawMatches(v) {
 }
 
 function clickPage(v, num, wrap, ev) {
+  if (isReadOnly(wrap)) return; // in sola lettura non si aggiungono note
   if (ev.target.closest('.dv-pin')) return;
   const r = wrap.getBoundingClientRect();
   const x = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width));
@@ -512,7 +513,7 @@ function updatePins(v) {
 // documento scorre. Al rilascio si salva la nuova posizione; un clic senza movimento seleziona la nota.
 function pinDrag(v, n, pin) {
   pin.addEventListener('pointerdown', ev => {
-    if (ev.button !== 0) return;
+    if (ev.button !== 0 || isReadOnly(pin)) return; // in sola lettura un clic seleziona e basta
     ev.stopPropagation();
     ev.preventDefault();
     pin.dragged = false;
@@ -725,7 +726,7 @@ export function viewDoc(id, query = {}) {
     scrollToNote(v, fromLink);
   }
   const focus = document.body.classList.contains('doc-focus');
-  return h('div.view.docview',
+  return h('div.view.docview', { class: roClass(can('documenti', 'write')) },
     h('div.head',
       h('a.icon-btn', { href: it ? `#/i/${it.id}` : '#/magazzino', title: 'Torna all\'articolo (Esc)' }, icon('back')),
       it && h('a.code', { href: `#/i/${it.id}`, ...itemAttrs(it) }, it.code),
@@ -806,7 +807,7 @@ export function viewReview(_id, query = {}) {
   const focus = document.body.classList.contains('doc-focus');
   const addable = D.docs.filter(d => !ids.includes(d.id) && D.itemById.has(d.item_id));
 
-  return h('div.view.review',
+  return h('div.view.review', { class: roClass(can('documenti', 'write')) },
     h('div.head',
       h('a.icon-btn', { href: '#/documenti', title: 'Documenti (Esc)' }, icon('back')),
       h('h2.dv-title', 'Revisione'),

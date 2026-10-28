@@ -3,7 +3,7 @@
 //
 // draggable({ handle, bodyClass, data(el), ghost(data), target(el, data) → { el, ok, value } | null, drop(data, target) })
 //   handle: selettore degli elementi trascinabili; target: dato l'elemento sotto il puntatore, dove si rilascerebbe.
-import { h, RS, render } from './core.js';
+import { h, RS, render, isReadOnly } from './core.js';
 
 const specs = [];
 let drag = null;
@@ -48,7 +48,7 @@ document.addEventListener('pointerdown', ev => {
   if (ev.button !== 0) return;
   for (const spec of specs) {
     const el = ev.target.closest(spec.handle);
-    if (!el) continue;
+    if (!el || isReadOnly(el)) continue; // in sola lettura non si sposta niente
     drag = { spec, el, data: spec.data(el), x: ev.clientX, y: ev.clientY, touch: ev.pointerType !== 'mouse', active: false };
     if (drag.touch) drag.timer = setTimeout(() => drag && start(), 380);
     return;

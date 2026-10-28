@@ -77,4 +77,4 @@ route('GET', '/api/docs/:id/remote', async ({ res, params }) => {
     'X-Content-Type-Options': 'nosniff',
   });
   res.end(buf);
-});
+}, { area: 'documenti' });
