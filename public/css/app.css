@@ -995,3 +995,7 @@ body.no-quick .quick { display: none; }
 /* Descrizione dell'articolo: più larga degli altri campi (2 colonne, 3 su schermo grande). */
 @media (min-width: 640px) { .grid > .f.wide { grid-column: span 2; } }
 @media (min-width: 1300px) { .grid > .f.wide { grid-column: span 3; } }
+/* Segnaposto delle note: si trascinano (anche con il dito: niente scorrimento sopra il segnaposto). */
+.dv-pin { touch-action: none; }
+.dv-pin:active { cursor: grabbing; }
+.dv-pin.dragging { cursor: grabbing; z-index: 5; transform: translate(-1px, -100%) scale(1.3); box-shadow: 0 6px 18px rgb(0 0 0 / 45%); }

@@ -93,7 +93,7 @@ Un progetto può stare dentro un altro (campo "Dentro" nella sua pagina, o `@pad
 
 Cliccando un documento nella scheda di un articolo si apre il visualizzatore con le note a lato. Il documento usa tutta la larghezza della pagina; con **note** nascondi la barra delle note (la preferenza resta), con **espandi** sparisce anche il resto dell'app e il documento occupa tutta la finestra (Esc per tornare).
 
-- **PDF** (con PDF.js, incluso nel progetto in `public/vendor/pdfjs`, nessuna connessione esterna) e **immagini**: clicchi un punto e lasci una nota lì; il segnaposto numerato resta al suo posto a ogni zoom. Cliccando una nota il documento scorre al punto, e viceversa.
+- **PDF** (con PDF.js, incluso nel progetto in `public/vendor/pdfjs`, nessuna connessione esterna) e **immagini**: clicchi un punto e lasci una nota lì; il segnaposto numerato resta al suo posto a ogni zoom e si trascina per spostarlo, anche su un’altra pagina. Cliccando una nota il documento scorre al punto, e viceversa.
 - **File di testo**: anteprima del contenuto.
 - **Cerca nel documento**: ⌘F (Ctrl+F su Linux) apre la ricerca nel PDF o nel file di testo aperto; Invio e Maiusc+Invio passano da un risultato all'altro, Esc chiude. Nella revisione affiancata cerca nel documento toccato per ultimo. Funziona sui PDF con testo vero (non sulle scansioni).
 - **Link a un PDF** (es. un datasheet su mouser.com): il server lo scarica al momento e lo mostra come un PDF caricato, con le stesse note. Solo indirizzi internet pubblici (mai la rete locale), solo PDF, massimo 60 MB (`REMOTE_MAX_MB`); se il sito mostra una pagina o una protezione anti-bot al posto del file, compare il motivo e il link originale.

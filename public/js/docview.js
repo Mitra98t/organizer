@@ -87,7 +87,7 @@ function getViewer(d) {
         v.pageLabel,
       ],
       h('span.grow'),
-      h('span.muted.dv-hint', pinnable(v) ? 'Clicca sul documento per aggiungere una nota in quel punto' : ''),
+      h('span.muted.dv-hint', pinnable(v) ? 'Clicca sul documento per aggiungere una nota in quel punto, trascina un segnaposto per spostarlo' : ''),
       searchable(v) && h('button.icon-btn', { title: `Cerca nel documento (${MOD}F)`, onclick: () => openSearch(v) }, icon('search'))),
     searchBar(v),
     v.scroller);
@@ -489,18 +489,75 @@ function numbered(docId) {
 }
 
 function updatePins(v) {
-  if (!pinnable(v) || v.status !== 'ready') return;
+  if (!pinnable(v) || v.status !== 'ready' || v.dragging) return; // durante un trascinamento non si ridisegna
   const list = numbered(v.id);
   for (const p of v.pages) {
-    const pins = list.filter(x => x.n.page === p.num).map(({ n, num }) => h('button.dv-pin', {
+    const pins = list.filter(x => x.n.page === p.num).map(({ n, num }) => pinDrag(v, n, h('button.dv-pin', {
       class: [ui.docNote === n.id && 'on', n.resolved_at && 'resolved'].filter(Boolean).join(' ') || null,
       style: `left:${n.x * 100}%;top:${n.y * 100}%`,
-      title: n.text,
-      onclick: ev => { ev.stopPropagation(); openNotes(v); selectNote(n.id, false); },
-    }, num));
+      title: `${n.text}\n(trascina per spostare)`,
+      onclick: ev => {
+        ev.stopPropagation();
+        if (ev.currentTarget.dragged) return; // fine di un trascinamento, non un clic
+        openNotes(v);
+        selectNote(n.id, false);
+      },
+    }, num)));
     if (v.draft?.page === p.num) pins.push(h('span.dv-pin.draft', { style: `left:${v.draft.x * 100}%;top:${v.draft.y * 100}%` }, '+'));
     p.pins.replaceChildren(...pins);
   }
+}
+
+// Segnaposto trascinabili: si spostano nel punto giusto, anche su un'altra pagina; vicino ai bordi il
+// documento scorre. Al rilascio si salva la nuova posizione; un clic senza movimento seleziona la nota.
+function pinDrag(v, n, pin) {
+  pin.addEventListener('pointerdown', ev => {
+    if (ev.button !== 0) return;
+    ev.stopPropagation();
+    ev.preventDefault();
+    pin.dragged = false;
+    const r0 = pin.closest('.dv-page').getBoundingClientRect();
+    // Distanza tra il puntatore e la punta del segnaposto (il punto salvato), mantenuta durante il trascinamento.
+    const off = { x: ev.clientX - (r0.left + n.x * r0.width), y: ev.clientY - (r0.top + n.y * r0.height) };
+    const start = { x: ev.clientX, y: ev.clientY };
+    let target = null;
+    pin.setPointerCapture(ev.pointerId);
+    const move = e => {
+      if (!pin.dragged && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 4) return;
+      pin.dragged = true;
+      v.dragging = true;
+      pin.classList.add('dragging');
+      const sr = v.scroller.getBoundingClientRect();
+      if (e.clientY < sr.top + 40) v.scroller.scrollTop -= 14;
+      else if (e.clientY > sr.bottom - 40) v.scroller.scrollTop += 14;
+      const ax = e.clientX - off.x;
+      const ay = e.clientY - off.y;
+      // La pagina sotto la punta (o la più vicina, negli spazi tra le pagine).
+      const dist = p => { const r = p.wrap.getBoundingClientRect(); return ay < r.top ? r.top - ay : ay > r.bottom ? ay - r.bottom : 0; };
+      const p = v.pages.reduce((a, b) => (dist(b) < dist(a) ? b : a));
+      const r = p.wrap.getBoundingClientRect();
+      const clamp = x => Math.min(1, Math.max(0, x));
+      target = { page: p.num, x: clamp((ax - r.left) / r.width), y: clamp((ay - r.top) / r.height) };
+      if (pin.parentElement !== p.pins) p.pins.append(pin);
+      pin.style.left = `${target.x * 100}%`;
+      pin.style.top = `${target.y * 100}%`;
+    };
+    const end = () => {
+      pin.removeEventListener('pointermove', move);
+      pin.removeEventListener('pointerup', end);
+      pin.removeEventListener('pointercancel', end);
+      pin.classList.remove('dragging');
+      v.dragging = false;
+      if (!pin.dragged || !target) return;
+      Object.assign(n, target); // subito al suo posto, il server conferma con la sincronizzazione
+      act(() => api('PATCH', `/doc-notes/${n.id}`, target));
+      setTimeout(() => { pin.dragged = false; }, 0); // il click che segue il rilascio va ignorato
+    };
+    pin.addEventListener('pointermove', move);
+    pin.addEventListener('pointerup', end);
+    pin.addEventListener('pointercancel', end);
+  });
+  return pin;
 }
 
 // Lo scorrimento verso una nota si applica dopo che il visualizzatore è stato riagganciato alla pagina

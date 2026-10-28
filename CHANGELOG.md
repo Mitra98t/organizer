@@ -3,6 +3,9 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.9.1 — 2026-10-28
+- Note sui PDF e sulle immagini: i segnaposto si trascinano in un altro punto, anche su un'altra pagina (vicino ai bordi il documento scorre). Un clic senza trascinare seleziona la nota come prima.
+
 ## 0.9 — 2026-10-28
 
 **Temi**
