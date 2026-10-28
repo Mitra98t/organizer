@@ -3,6 +3,9 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.12.1 — 2026-10-28
+- **Avviso di nuova versione**: se Organizer viene aggiornato mentre l'app è aperta, in alto compare "È disponibile Organizer X" con **Ricarica** (e il link alle Novità). Si controlla quando la connessione col server si riattiva, quando torni sull'app e ogni 30 minuti.
+
 ## 0.12 — 2026-10-28
 - **Estensione Organizer per Thunderbird** (Impostazioni → Mail e Thunderbird: si scarica già impostata per il tuo indirizzo, poi un token). Con Thunderbird aperto, **Manda** apre la mail lì con gli allegati, anche se premi dal telefono; Thunderbird resta l'unico a conoscere le password della posta.
 - **Stato automatico**: quando la mail parte da Thunderbird diventa "mandata" e "in attesa di risposta" da sola; quando arriva la risposta esce da "in attesa".

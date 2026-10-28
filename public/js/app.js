@@ -294,6 +294,7 @@ function buildShell() {
         // In fondo alla barra: le novità della versione (il changelog), con "nuovo" finché non si leggono.
         h('div.side-foot', navLink('novita', 'Novità', 'news', navLinks, 'nav'))),
       h('main.main',
+        updateBar,
         h('header.top',
           titleEl,
           h('label.search', icon('search'), searchInput),
@@ -507,10 +508,42 @@ async function logout() {
   render();
 }
 
+// ---------- versione nuova ----------
+// La versione con cui si è aperta l'app è quella del codice caricato: se il server ne ha una diversa (aggiornato
+// mentre l'app era aperta), compare l'avviso con "Ricarica". Si controlla quando il tempo reale si riconnette
+// (a ogni aggiornamento il server riparte), quando l'app torna in primo piano e ogni 30 minuti.
+let loadedVersion = null;
+const updateText = h('span');
+const updateBar = h('div.update-bar', { hidden: true, role: 'status' },
+  icon('news'), updateText, h('span.grow'),
+  h('a.btn.sm.ghost', { href: '#/novita' }, 'Novità'),
+  h('button.btn.sm.primary', { onclick: reloadApp }, icon('restore'), 'Ricarica'));
+
+async function reloadApp() {
+  try {
+    await (await navigator.serviceWorker?.getRegistration())?.update();
+  } catch {
+    // senza service worker basta ricaricare
+  }
+  location.reload();
+}
+
+function checkVersion() {
+  return api('GET', '/info').then(i => {
+    const first = S.version == null;
+    S.version = i.version;
+    loadedVersion ??= i.version;
+    updateBar.hidden = i.version === loadedVersion;
+    updateText.textContent = `È disponibile Organizer ${i.version} (stai usando la ${loadedVersion}).`;
+    if (first) render(); // per la pagina Novità e il suo "nuovo" nella barra
+  }).catch(() => {});
+}
+window.addEventListener('org:live', () => { if (loadedVersion) checkVersion(); });
+setInterval(() => { if (S.me && document.visibilityState === 'visible') checkVersion(); }, 30 * 60e3);
+
 function start() {
   render();
-  // Versione dell'app: per la pagina Novità e il suo "nuovo" nella barra.
-  api('GET', '/info').then(i => { S.version = i.version; render(); }).catch(() => {});
+  checkVersion();
   sync();
   connectLive();
   flushOutbox();
@@ -536,6 +569,7 @@ window.addEventListener('offline', () => { S.online = false; S.live = false; ren
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible' || !S.me) return;
   sync();
+  checkVersion();
   if (liveClosed()) connectLive();
   render(); // le etichette "oggi/domani" cambiano a mezzanotte
 });

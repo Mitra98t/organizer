@@ -364,6 +364,7 @@ export function connectLive() {
     setOnline(true);
     renderStatus();
     flushOutbox();
+    window.dispatchEvent(new Event('org:live')); // il server può essere ripartito con una versione nuova
   };
   es.onerror = () => {
     S.live = false;
