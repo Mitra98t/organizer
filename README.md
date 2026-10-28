@@ -73,6 +73,10 @@ Nelle altre pagine la barra rapida tiene conto di dove sei: in un progetto le vo
 
 Scorciatoie da tastiera: `n` o `/` per scrivere, `Ctrl/⌘ K` per cercare.
 
+## Temi
+
+Impostazioni → Tema: Organizer (automatico, chiaro, scuro) e temi ispirati a quelli più usati in Neovim e VS Code (Tokyo Night, Catppuccin, Gruvbox, Nord, Dracula, One Dark, Rosé Pine, Kanagawa, Everforest, GitHub, Solarized). Il tema vale per il dispositivo.
+
 ## Collegamenti e backlink
 
 In qualunque campo di testo `[[` apre i suggerimenti per collegare una voce (todo, mail, nota), un documento, un articolo, un progetto o un contatto; ogni suggerimento ha l'etichetta del suo tipo. Nel testo resta un token (`[[voce:12]]`) che l'app mostra come link con il nome sempre aggiornato; nelle mail mandate diventa il nome in chiaro.

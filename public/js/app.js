@@ -10,6 +10,7 @@ import { viewDoc, viewReview, docCancelDraft, setDocFocus, docSearchKey } from '
 import { viewDocuments } from './documents.js';
 import { viewChat, notifyNew } from './chat.js';
 import { viewChangelog, hasNews, appVersion } from './changelog.js';
+import { applyTheme, currentTheme } from './themes.js';
 import { parseQuick, extractCodes, today, parseItemLine, parseProjectLine } from './parse.js';
 import {
   viewAgenda, viewProjects, viewProject, viewMail, viewDiary, viewItems, viewItem, viewSearch, viewSettings, viewEntryPage,
@@ -397,6 +398,8 @@ function renderApp() {
           : S.data ? v.fn(r.id, r.query) : h('div.empty', 'Caricamento…'));
     document.body.classList.toggle('doc-page', !!S.data && (r.name === 'd' || r.name === 'review'));
     document.body.classList.toggle('chat-page', !!S.data && r.name === 'chat');
+    // Pagine senza la barra rapida in alto (lì non c'è niente da aggiungere).
+    document.body.classList.toggle('no-quick', r.name === 'novita');
   } catch (e) {
     console.error(e);
     viewEl.replaceChildren(h('div.empty', `Errore di visualizzazione: ${e.message}`));
@@ -482,7 +485,7 @@ function start() {
 // ---------- avvio ----------
 setRenderer(renderApp, updateStatus);
 initAutocomplete(() => { const c = quickContext(); return c.mode || c.kind; });
-document.documentElement.dataset.theme = localStorage.getItem('org.theme') || 'auto';
+applyTheme(currentTheme());
 window.addEventListener('hashchange', () => { window.scrollTo(0, 0); render(); });
 window.addEventListener('org:logout', logout);
 window.addEventListener('org:data', ev => notifyNew(ev.detail.prev, ev.detail.data, route().name === 'chat'));

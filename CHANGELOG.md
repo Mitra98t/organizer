@@ -3,6 +3,19 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.9 — 2026-10-28
+
+**Temi**
+- Impostazioni → Tema: oltre a Organizer (automatico, chiaro, scuro) temi ispirati a Neovim e VS Code: Tokyo Night, Catppuccin Mocha e Latte, Gruvbox scuro e chiaro, Nord, Dracula, One Dark, Rosé Pine, Kanagawa, Everforest, GitHub scuro e chiaro, Solarized scuro e chiaro. Ogni tema ha l'anteprima dei suoi colori; vale per il dispositivo.
+
+**Interfaccia più uniforme**
+- Campi, menu, pulsanti e chip hanno la stessa altezza: nei dettagli di una voce tipo, scadenza, pulsanti della scadenza, progetti e assegnatario stanno sulla stessa linea. I progetti di una voce sono in un riquadro come gli altri campi.
+- Filtri uguali in ogni pagina: la parola sullo sfondo del suo colore (categorie del magazzino, tipi di documento, todo/mail in Agenda, stato degli articoli), con il bordo pieno quando è attivo; la riga dei filtri usa tutta la larghezza e le spiegazioni stanno sempre sotto i filtri.
+- Pagina Documenti: per la revisione affiancata un pulsante disegnato apposta al posto della casella, che mostra la posizione (1, 2, 3) in cui si aprirà il documento.
+- Documenti: passando il mouse sul nome di un documento (pagina Documenti e scheda dell'articolo) compare una scheda con tipo, articolo, versione, dimensione e un'anteprima piccola (prima pagina dei PDF, immagini, prime righe dei file di testo).
+- Scheda dell'articolo: la descrizione è più larga degli altri campi.
+- Nella pagina Novità non c'è più la barra per aggiungere.
+
 ## 0.8.3 — 2026-10-28
 - Pagina **Novità** con questo changelog, una scheda per versione e quella in uso segnata: su computer dal pulsante in fondo alla barra laterale (con "nuovo" finché non la apri dopo un aggiornamento), su telefono da Impostazioni.
 

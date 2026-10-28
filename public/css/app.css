@@ -908,3 +908,90 @@ a.ref:hover { border-color: var(--accent); }
 .cl-ver p { margin: 8px 0 2px; }
 .cl-list { margin: 4px 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; line-height: 1.5; }
 .cl-ver code.k { white-space: normal; overflow-wrap: anywhere; }
+
+/* ---------- temi (Impostazioni) ---------- */
+.th-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.th-h { margin: 14px 0 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.th-card { display: flex; flex-direction: column; gap: 6px; padding: 6px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); text-align: left; }
+.th-card:hover { border-color: var(--muted); }
+.th-card.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.th-name { font-size: 13px; font-weight: 500; padding: 0 2px 2px; }
+.th-prev { display: block; height: 62px; border-radius: 6px; padding: 9px; }
+.th-panel { display: flex; flex-direction: column; gap: 6px; height: 100%; border: 1px solid; border-radius: 5px; padding: 7px; }
+.th-line { display: block; height: 5px; width: 75%; border-radius: 3px; }
+.th-line.short { width: 45%; }
+.th-dots { display: flex; gap: 4px; margin-top: auto; }
+.th-dots span { width: 9px; height: 9px; border-radius: 50%; }
+/* Anteprime dei temi di Organizer (colori del CSS di base). */
+.th-prev.base-light, .th-prev.base-auto { background: #f5f6f8; }
+.th-prev.base-dark { background: #0e1014; }
+.th-prev.base-auto { background: linear-gradient(135deg, #f5f6f8 50%, #0e1014 50%); }
+.th-prev.base-light .th-panel, .th-prev.base-auto .th-panel { background: #fff; border-color: #e2e5ea; }
+.th-prev.base-dark .th-panel { background: #161920; border-color: #262b35; }
+.th-prev.base-light .th-line, .th-prev.base-auto .th-line { background: #15181e; }
+.th-prev.base-dark .th-line { background: #e5e8ee; }
+.th-prev .th-line.short { opacity: 0.5; }
+.th-prev[class*="base-"] .th-dots span:nth-child(1) { background: #0d9b74; }
+.th-prev[class*="base-"] .th-dots span:nth-child(2) { background: #2a6fdb; }
+.th-prev[class*="base-"] .th-dots span:nth-child(3) { background: #8a46d1; }
+.th-prev[class*="base-"] .th-dots span:nth-child(4) { background: #c76a00; }
+
+/* ---------- misure uniformi dei controlli (0.9) ----------
+   Un'altezza sola per campi, menu, pulsanti e chip dei moduli: in una riga stanno tutti allineati.
+   :where() ha specificità zero, così i controlli piccoli qui sotto (e nelle loro regole) la cambiano. */
+:root { --ctl: 34px; --ctl-sm: 28px; }
+:where(input:not([type="checkbox"]):not([type="file"]):not([type="radio"]):not([type="range"]), select) { height: var(--ctl); padding-block: 0; }
+:where(.btn) { min-height: var(--ctl); padding-block: 0; }
+.btn.sm, select.sm { min-height: var(--ctl-sm); height: var(--ctl-sm); }
+.chip { min-height: var(--ctl-sm); }
+.h-title { height: auto; min-height: var(--ctl); }
+.ver-in, .dk-sel, .dv-search-in { height: 26px; }
+/* Nei moduli (dettagli di una voce, di un progetto…) i chip sono alti come i campi accanto. */
+.fields .chip, .fields .chips .chip { height: var(--ctl); border-radius: 8px; padding: 0 12px; }
+.fields .chips { align-items: flex-end; }
+/* Progetti di una voce: un riquadro come un campo, con i progetti e l'aggiunta dentro. */
+.f.projs .projs-b { min-height: var(--ctl); border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 3px 4px; gap: 4px; }
+.f.projs .projs-b .sub-in { border: 0 !important; height: 26px; padding: 0 6px; }
+
+/* ---------- filtri (0.9): stesso chip in ogni pagina ----------
+   Colorati ("tint"): la parola sullo sfondo del suo colore, come i tipi di documento; acceso = bordo pieno. */
+.toolbar.cats { width: 100%; gap: 6px; }
+.fchip.tint {
+  --c: var(--muted); --cb: var(--panel-2);
+  color: var(--c); background: var(--cb); border-color: transparent;
+  font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em;
+}
+.fchip.tint:hover { border-color: color-mix(in srgb, var(--c) 50%, transparent); }
+.fchip.tint.on { background: color-mix(in srgb, var(--c) 24%, var(--panel)); border-color: var(--c); box-shadow: inset 0 0 0 1px var(--c); color: var(--c); }
+.fchip.tint .n { opacity: 0.75; font-weight: 500; }
+.fchip.by-hue, .fchip.k-custom { --c: hsl(var(--h) 60% var(--tag-l)); --cb: hsl(var(--h) 65% 50% / 0.14); }
+.fchip.k-firmware, .fchip.k-todo { --c: var(--accent); --cb: var(--accent-soft); }
+.fchip.k-datasheet, .fchip.k-schema { --c: var(--code-ink); --cb: var(--code-bg); }
+.fchip.k-footprint { --c: var(--note); --cb: color-mix(in srgb, var(--note) 15%, transparent); }
+.fchip.k-mail { --c: var(--mail); --cb: color-mix(in srgb, var(--mail) 15%, transparent); }
+.fchip.s-outdated { --c: var(--today); --cb: color-mix(in srgb, var(--today) 15%, transparent); }
+.fchip.s-discarded { --c: var(--danger); --cb: var(--danger-soft); }
+.dnd-hint { margin: 0 0 10px; font-size: 13px; }
+
+/* Selettore della revisione affiancata (pagina Documenti). */
+.sel-btn {
+  flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px;
+  border: 1.5px dashed var(--line); border-radius: 8px; background: transparent; color: var(--muted);
+  font-weight: 700; font-size: 14px; font-family: var(--mono);
+}
+.sel-btn .ic { width: 16px; height: 16px; }
+.sel-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.sel-btn.on { border: 1.5px solid var(--accent); background: var(--accent); color: var(--accent-ink); }
+
+/* Scheda di un documento al passaggio del mouse (pagina Documenti): con l'anteprima del file. */
+.peek.peek-doc { width: 340px; }
+.peek-doc .peek-h { justify-content: flex-start; }
+.peek-thumb { margin-top: 10px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); max-height: 280px; display: flex; justify-content: center; background: var(--panel-2); min-height: 40px; align-items: center; }
+.peek-thumb > .muted { padding: 10px; font-size: 12px; overflow-wrap: anywhere; }
+.peek-img { display: block; max-width: 100%; max-height: 280px; object-fit: contain; }
+.peek-img.pdf { width: 100%; max-height: none; background: #fff; align-self: flex-start; }
+.peek-text { margin: 0; padding: 8px 10px; width: 100%; font-family: var(--mono); font-size: 11px; line-height: 1.4; white-space: pre-wrap; overflow: hidden; color: var(--text); align-self: flex-start; }
+body.no-quick .quick { display: none; }
+/* Descrizione dell'articolo: più larga degli altri campi (2 colonne, 3 su schermo grande). */
+@media (min-width: 640px) { .grid > .f.wide { grid-column: span 2; } }
+@media (min-width: 1300px) { .grid > .f.wide { grid-column: span 3; } }

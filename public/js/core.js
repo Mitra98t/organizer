@@ -499,6 +499,12 @@ export function huePicker(current, auto, onPick) {
     HUES.map(x => h('button.hue', { class: current === x ? 'on' : null, style: `--h:${x}`, title: `Tinta ${x}`, onclick: () => onPick(x) })),
     h('button.hue.auto', { class: current == null ? 'on' : null, style: `--h:${auto}`, title: 'Colore automatico', onclick: () => onPick(null) }, 'A'));
 }
+// Chip di filtro, uguale in tutte le pagine. Con "tint" è la parola su sfondo del suo colore (categoria,
+// tipo di documento, tipo di voce, stato); acceso ha il bordo pieno. Senza "tint" è un chip neutro.
+export function filterChip({ on, onclick, label, n, cls, style, title }) {
+  return h('button.chip.fchip', { class: [on && 'on', cls].filter(Boolean).join(' ') || null, style, title, onclick }, label, n != null && h('span.n', n));
+}
+
 export const itemAttrs = it => (it?.category ? { class: 'cat', style: catStyle(it.category) } : {});
 
 // Progetti di una voce: prima il principale, poi gli altri (solo quelli visibili e non nel cestino).

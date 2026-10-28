@@ -2,11 +2,12 @@ import {
   h, icon, S, ui, RS, api, act, render, richText, dueInfo, dayDiff, fmtDay, fmtLongDay, fmtTime, fmtSize,
   userName, toast, save, patchEntry, addEntry, isMine, localDay, autosize, stop, copy, hue, trashIt, contactNames,
   descendants, ancestors, catStyle, itemAttrs, docFileUrl, projectsOf, DOC_KINDS, docKinds, newDocKind, projHue, catHue, huePicker,
-  switchWorkspace, newWorkspace, docName, renameDoc, richField, backlinks, plainRefs, CONTACT_COLOR, masonry,
+  switchWorkspace, newWorkspace, docName, renameDoc, richField, backlinks, plainRefs, CONTACT_COLOR, masonry, filterChip,
 } from './core.js';
-import { docMeta } from './docview.js';
+import { docMeta, docPeek } from './docview.js';
 import { today, addDays } from './parse.js';
 import { mailComposer } from './mail.js';
+import { THEMES, BASE_THEMES, currentTheme, setTheme } from './themes.js';
 import { draggable } from './dnd.js';
 
 const KIND_LABEL = { todo: 'Todo', mail: 'Mail', note: 'Nota' };
@@ -340,11 +341,11 @@ export function viewAgenda() {
 
   return h('div.view',
     h('div.toolbar',
-      [['all', 'Tutto'], ['todo', 'Todo'], ['mail', 'Mail']].map(([k, label]) =>
-        h('button.chip', { class: ui.agendaKind === k && 'on', onclick: () => setKind(k) },
-          k !== 'all' && h('span.kdot', { class: `k-${k}` }), label, h('span.n', kindCount[k]))),
+      [['all', 'Tutto'], ['todo', 'Todo'], ['mail', 'Mail']].map(([k, label]) => filterChip({
+        on: ui.agendaKind === k, label, n: kindCount[k], cls: k === 'all' ? null : `tint k-${k}`, onclick: () => setKind(k),
+      })),
       D.members.length > 1 && h('span.tsep'),
-      D.members.length > 1 && h('button.chip', { class: ui.mine && 'on', onclick: () => { ui.mine = !ui.mine; save('org.mine', ui.mine); render(); } }, icon('user'), 'solo mie')),
+      D.members.length > 1 && filterChip({ on: ui.mine, label: [icon('user'), 'solo mie'], onclick: () => { ui.mine = !ui.mine; save('org.mine', ui.mine); render(); } })),
     pendingRows(),
     !list.length && ui.agendaKind !== 'all' && kindCount.all > 0 && empty(h('p', 'Niente di questo tipo. ', h('a', { href: '#/agenda', onclick: ev => { ev.preventDefault(); setKind('all'); } }, 'Mostra tutto'))),
     !kindCount.all && !S.outbox.length && empty(
@@ -433,7 +434,7 @@ export function viewProjects() {
   return h('div.view',
     h('div.toolbar',
       Object.entries(STATUS_LABEL).map(([k, label]) =>
-        h('button.chip', { class: ui.projStatus === k && 'on', onclick: () => { ui.projStatus = k; render(); } }, label, h('span.n', counts[k])))),
+        filterChip({ on: ui.projStatus === k, label, n: counts[k], onclick: () => { ui.projStatus = k; render(); } }))),
     !roots.length && empty(h('p', ui.projStatus === 'open'
       ? ['Nessun progetto aperto. Crealo dalla barra in alto (', kbd('Nome @padre'), ' per un sottoprogetto) o al volo scrivendo ', kbd('@nome'), ' in una voce.']
       : 'Nessun progetto qui.')),
@@ -661,7 +662,10 @@ function catColorPicker(cat) {
 }
 
 // ---------- scheda rapida al passaggio del mouse (solo con il mouse: su touch si apre la pagina) ----------
+// Serve agli articoli (qui) e ai documenti (pagina Documenti, con l'anteprima del file).
 const peekBox = h('div.peek', { hidden: true });
+// Il contenuto può crescere dopo (anteprima di un PDF che arriva): la scheda si riposiziona.
+new ResizeObserver(() => { if (peekAnchor && !peekBox.hidden) placePeek(); }).observe(peekBox);
 let peekTimer = null;
 let peekAnchor = null;
 
@@ -720,7 +724,8 @@ function placePeek() {
   }
 }
 
-function peekable(el, it) {
+// content: funzione che costruisce il contenuto (chiamata solo quando la scheda si apre).
+export function peekable(el, content, cls = null) {
   el.addEventListener('pointerenter', ev => {
     if (ev.pointerType !== 'mouse') return;
     clearTimeout(peekTimer);
@@ -728,7 +733,8 @@ function peekable(el, it) {
       if (!el.isConnected) return;
       if (!peekBox.isConnected) document.body.append(peekBox);
       peekAnchor = el;
-      peekBox.replaceChildren(...peekContent(it));
+      peekBox.className = ['peek', cls].filter(Boolean).join(' ');
+      peekBox.replaceChildren(...[content()].flat());
       peekBox.hidden = false;
       placePeek();
     }, 250);
@@ -756,7 +762,7 @@ function itemRow(i) {
       i.location && h('span.loc', i.location),
       i.qty != null && h('span.qty', `×${i.qty}`),
       docs > 0 && h('span.docs', icon('link'), docs),
-      n > 0 && h('span.badge', n))), i);
+      n > 0 && h('span.badge', n))), () => peekContent(i));
 }
 
 export function viewItems() {
@@ -794,19 +800,22 @@ export function viewItems() {
         h('button', { class: ui.itemView === 'list' && 'on', onclick: () => setView('list'), title: 'Elenco' }, icon('log')),
         h('button', { class: ui.itemView === 'groups' && 'on', onclick: () => setView('groups'), title: 'Per categoria' }, icon('cols'))),
       h('a.btn.ghost', { href: '#/documenti', title: 'Tutti i documenti, per la revisione' }, icon('file'), h('span.only-wide', 'Documenti'))),
-    ui.itemView === 'groups' && D.items.length > 1 && h('p.muted.dnd-hint', 'Trascina un articolo in un\'altra colonna per cambiargli categoria; clicca il pallino colorato per cambiarne il colore.'),
     cats.size > 1 && h('div.toolbar.cats',
-      [...cats].sort(([a], [b]) => (!a) - (!b) || a.localeCompare(b)).map(([c, n]) =>
-        h('button.chip', { class: ui.itemCat === c && 'on', onclick: () => { ui.itemCat = ui.itemCat === c ? null : c; render(); } },
-          h('span.cdot', { class: c ? 'cat' : null, style: catStyle(c) }), c || NO_CAT, h('span.n', n)))),
+      [...cats].sort(([a], [b]) => (!a) - (!b) || a.localeCompare(b)).map(([c, n]) => filterChip({
+        on: ui.itemCat === c, label: c || NO_CAT, n, cls: c ? 'tint by-hue' : 'tint', style: catStyle(c),
+        onclick: () => { ui.itemCat = ui.itemCat === c ? null : c; render(); },
+      }))),
     (statusCount.outdated > 0 || statusCount.discarded > 0) && h('div.toolbar.cats',
-      Object.entries(ITEM_STATUS).filter(([k]) => statusCount[k]).map(([k, label]) =>
-        h('button.chip', { class: ui.itemStatusF === k && 'on', title: `Solo gli articoli ${label}`, onclick: () => { ui.itemStatusF = ui.itemStatusF === k ? null : k; render(); } },
-          h('span.sdot', { class: `s-${k}` }), label, h('span.n', statusCount[k]))),
-      statusCount.discarded > 0 && h('button.chip', {
-        class: ui.hideDiscarded && 'on',
+      Object.entries(ITEM_STATUS).filter(([k]) => statusCount[k]).map(([k, label]) => filterChip({
+        on: ui.itemStatusF === k, label, n: statusCount[k], cls: `tint s-${k}`, title: `Solo gli articoli ${label}`,
+        onclick: () => { ui.itemStatusF = ui.itemStatusF === k ? null : k; render(); },
+      })),
+      statusCount.discarded > 0 && filterChip({
+        on: ui.hideDiscarded, label: 'nascondi scartati',
         onclick: () => { ui.hideDiscarded = !ui.hideDiscarded; save('org.hideDiscarded', ui.hideDiscarded); render(); },
-      }, 'nascondi scartati')),
+      })),
+    // Le spiegazioni stanno sempre sotto i filtri.
+    ui.itemView === 'groups' && D.items.length > 1 && h('p.muted.dnd-hint', 'Trascina un articolo in un\'altra colonna per cambiargli categoria; clicca il pallino colorato per cambiarne il colore.'),
     !D.items.length && empty(
       h('p', 'Il magazzino è vuoto.'),
       h('p', 'Aggiungi articoli dalla barra in alto: ', kbd('SCH-042 scheda motori /scheda'), '.'),
@@ -824,7 +833,7 @@ export function viewItems() {
           h('span.code', itemAttrs(i), i.code),
           h('span.name', i.name || ''),
           i.firmware && h('span.fw', i.firmware),
-          openCountOf(i.id) > 0 && h('span.badge', openCountOf(i.id))), i)))))
+          openCountOf(i.id) > 0 && h('span.badge', openCountOf(i.id))), () => peekContent(i))))))
         // Visibile solo durante il trascinamento: rilasciando qui si crea una categoria nuova.
         .concat(h('section.cat-col.cat-new', { 'data-cat': '', 'data-new': '' }, h('div.cat-h', icon('plus'), 'Nuova categoria'))))
       : h('div.items', items.map(itemRow)));
@@ -865,7 +874,7 @@ function docSection(it) {
       docMeta(d),
       h('div.doc-main',
         h('span.doc-name',
-          h('a', { href: `#/d/${d.id}`, title: 'Apri con le note' }, docName(d)),
+          peekable(h('a', { href: `#/d/${d.id}` }, docName(d)), () => docPeek(d), 'peek-doc'),
           h('button.icon-btn.sm', { title: 'Rinomina', onclick: () => renameDoc(d) }, icon('edit'))),
         h('div.meta',
           d.label && d.filename && h('span', d.filename),
@@ -898,7 +907,7 @@ export function viewItem(id) {
   const it = D.itemById.get(+id);
   if (!it) return empty(h('p', 'Articolo non trovato.'), h('a', { href: '#/magazzino' }, 'Torna al magazzino'));
   const patch = f => act(() => api('PATCH', `/items/${it.id}`, f));
-  const field = (key, label, attrs = {}) => h('label.f', h('span', label),
+  const field = (key, label, attrs = {}, cls = null) => h('label.f', { class: cls }, h('span', label),
     h('input', { value: it[key] ?? '', 'data-fk': `it-${key}-${it.id}`, ...attrs, onchange: ev => patch({ [key]: ev.target.value }) }));
 
   const children = (D.childItems.get(it.id) || []).map(l => D.itemById.get(l.child_id)).filter(Boolean);
@@ -931,7 +940,7 @@ export function viewItem(id) {
           h('button', { class: (it.status || '') === k && 'on', onclick: () => patch({ status: k }) }, k && h('span.sdot', { class: `s-${k}` }), label)))),
     it.category && ui.catPicker === it.category && h('div.cat-pick', h('span.muted', `Colore della categoria "${it.category}" (vale per tutti i suoi articoli): `), catColorPicker(it.category)),
     h('div.grid',
-      field('name', 'Descrizione', { placeholder: 'es. scheda controllo motori' }),
+      field('name', 'Descrizione', { placeholder: 'es. scheda controllo motori' }, 'wide'),
       field('category', 'Categoria', { placeholder: 'scheda, prodotto, cavo…', list: 'item-cats' }),
       field('firmware', 'Firmware', { placeholder: 'versione attuale', class: 'mono' }),
       field('location', 'Posizione', { placeholder: 'scaffale, cassetto…' }),
@@ -1055,21 +1064,39 @@ function tokensSection() {
 
 const inviteLink = code => `${location.origin}${location.pathname}#/registrati?code=${code}`;
 
+// Temi: una scheda con l'anteprima dei colori per ognuno; si applica subito (vale per questo dispositivo).
+function themeCard(id, name, t) {
+  const on = currentTheme() === id;
+  const prev = t
+    ? h('span.th-prev', { style: `background:${t.bg}` },
+      h('span.th-panel', { style: `background:${t.panel};border-color:${t.line}` },
+        h('span.th-line', { style: `background:${t.text}` }), h('span.th-line.short', { style: `background:${t.muted}` }),
+        h('span.th-dots', [t.accent, t.blue, t.purple, t.orange].map(c => h('span', { style: `background:${c}` })))))
+    : h('span.th-prev', { class: `base-${id}` }, h('span.th-panel', h('span.th-line'), h('span.th-line.short'), h('span.th-dots', h('span'), h('span'), h('span'), h('span'))));
+  return h('button.th-card', { class: on ? 'on' : null, title: name, onclick: () => { setTheme(id); render(); } }, prev, h('span.th-name', name));
+}
+
+function themeSection() {
+  const all = Object.entries(THEMES);
+  return section('set-theme', 'Tema', [
+    h('div.th-grid', Object.entries(BASE_THEMES).map(([id, name]) => themeCard(id, name, null))),
+    h('div.th-h', 'Scuri'),
+    h('div.th-grid', all.filter(([, t]) => t.dark).map(([id, t]) => themeCard(id, t.name, t))),
+    h('div.th-h', 'Chiari'),
+    h('div.th-grid', all.filter(([, t]) => !t.dark).map(([id, t]) => themeCard(id, t.name, t))),
+    h('p.muted', 'Ispirati agli schemi di colori più usati in Neovim e VS Code. Il tema vale per questo dispositivo.'),
+  ], { count: '', collapsed: true });
+}
+
 export function viewSettings() {
   const D = S.data;
   const me = D.me;
   if (me.is_admin && ui.invites == null) loadInvites();
-  const theme = localStorage.getItem('org.theme') || 'auto';
-
   return h('div.view.settings',
     section('set-me', 'Profilo', [
       h('div.grid',
         h('label.f', h('span', 'Username'), h('input', { value: me.username, disabled: true })),
-        h('label.f', h('span', 'Nome visualizzato'), h('input', { value: me.name, 'data-fk': 'myname', onchange: ev => act(() => api('PATCH', '/me', { name: ev.target.value }), 'Nome aggiornato') })),
-        h('label.f', h('span', 'Tema'), selectOf(theme, [['auto', 'Automatico'], ['light', 'Chiaro'], ['dark', 'Scuro']], v => {
-          localStorage.setItem('org.theme', v);
-          document.documentElement.dataset.theme = v;
-        }))),
+        h('label.f', h('span', 'Nome visualizzato'), h('input', { value: me.name, 'data-fk': 'myname', onchange: ev => act(() => api('PATCH', '/me', { name: ev.target.value }), 'Nome aggiornato') }))),
       h('form.grid', {
         onsubmit: ev => {
           ev.preventDefault();
@@ -1081,6 +1108,8 @@ export function viewSettings() {
       h('label.f', h('span', 'Nuova password'), h('input', { name: 'password', type: 'password', autocomplete: 'new-password', minlength: 8 })),
       h('button.btn', { type: 'submit' }, 'Cambia password')),
     ], { count: '' }),
+
+    themeSection(),
 
     h('a.trash-link', { href: '#/cestino' }, icon('trash'), 'Cestino', h('span.muted', D.trashCount ? `${D.trashCount} elementi` : 'vuoto')),
     // Su telefono la barra laterale non c'è: le novità (changelog) si aprono da qui.

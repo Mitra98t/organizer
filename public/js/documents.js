@@ -2,9 +2,10 @@
 // Si filtrano, si raggruppano per categoria dell'articolo (come il magazzino a colonne) o per tipo di documento,
 // e se ne scelgono fino a 3 da aprire affiancati. Qui si aggiungono anche i tipi di documento.
 import {
-  h, icon, S, ui, api, act, render, save, toast, fmtSize, fmtTime, itemAttrs, catStyle, docKinds, dkAttrs, newDocKind, docName, renameDoc, masonry,
+  h, icon, S, ui, api, act, render, save, toast, fmtSize, fmtTime, itemAttrs, catStyle, docKinds, dkAttrs, newDocKind, docName, renameDoc, masonry, filterChip,
 } from './core.js';
-import { docMeta } from './docview.js';
+import { docMeta, docPeek } from './docview.js';
+import { peekable } from './views.js';
 
 const MAX_REVIEW = 3;
 const lc = s => String(s ?? '').toLowerCase();
@@ -23,10 +24,16 @@ function docRow(d, { showItem }) {
   const it = D.itemById.get(d.item_id);
   const n = openNotes(d.id);
   const sel = ui.docSel.has(d.id);
+  // Selettore per la revisione affiancata: vuoto mostra le colonne, scelto mostra in quale posizione si aprirà.
+  const slot = [...ui.docSel].indexOf(d.id) + 1;
   return h('div.drow', { class: sel ? 'sel' : null },
-    h('input', { type: 'checkbox', checked: sel, title: 'Seleziona per la revisione affiancata', onchange: () => toggleSel(d.id) }),
+    h('button.sel-btn', {
+      class: sel ? 'on' : null, 'aria-pressed': sel ? 'true' : 'false',
+      title: sel ? `Nella revisione affiancata (posizione ${slot}): clicca per toglierlo` : `Aggiungi alla revisione affiancata (fino a ${MAX_REVIEW})`,
+      onclick: () => toggleSel(d.id),
+    }, sel ? String(slot) : icon('cols')),
     docMeta(d),
-    h('a.drow-name', { href: `#/d/${d.id}`, title: 'Apri con le note' }, docName(d)),
+    peekable(h('a.drow-name', { href: `#/d/${d.id}` }, docName(d)), () => docPeek(d), 'peek-doc'),
     h('button.icon-btn.sm.drow-edit', { title: 'Rinomina', onclick: () => renameDoc(d) }, icon('edit')),
     showItem && it && h('a.code', { href: `#/i/${it.id}`, ...itemAttrs(it) }, it.code),
     h('span.grow'),
@@ -102,17 +109,17 @@ export function viewDocuments() {
         h('button', { class: byCat && 'on', onclick: () => setGroup('item'), title: 'Per categoria del magazzino, con gli articoli' }, icon('cols'))),
       h('a.btn.ghost', { href: '#/magazzino', title: 'Torna al magazzino' }, icon('box'), h('span.only-wide', 'Magazzino'))),
     h('div.toolbar.cats',
-      kinds.filter(k => counts.get(k)).map(k =>
-        h('button.chip', { class: ui.docKindF === k && 'on', onclick: () => { ui.docKindF = ui.docKindF === k ? null : k; render(); } },
-          h('span.dk', dkAttrs(k), k), h('span.n', counts.get(k)))),
-      h('button.chip', { class: ui.docOnlyNotes && 'on', onclick: () => { ui.docOnlyNotes = !ui.docOnlyNotes; render(); } },
-        icon('log'), 'con note aperte'),
+      kinds.filter(k => counts.get(k)).map(k => filterChip({
+        on: ui.docKindF === k, label: k, n: counts.get(k), cls: `tint ${dkAttrs(k).class}`, style: dkAttrs(k).style,
+        onclick: () => { ui.docKindF = ui.docKindF === k ? null : k; render(); },
+      })),
+      filterChip({ on: ui.docOnlyNotes, label: [icon('log'), 'con note aperte'], onclick: () => { ui.docOnlyNotes = !ui.docOnlyNotes; render(); } }),
       h('button.chip', { title: 'Aggiunge un tipo di documento (oltre a firmware, datasheet…)', onclick: newDocKind }, icon('plus'), 'nuovo tipo')),
     !all.length && h('div.empty',
       h('p', 'Nessun documento.'),
       h('p', 'I documenti si caricano dalla scheda di un articolo di magazzino (firmware, datasheet, schemi…).')),
     all.length > 0 && !docs.length && h('div.empty', h('p', 'Nessun documento corrisponde ai filtri.')),
-    all.length > 0 && h('p.muted.dnd-hint', `Spunta fino a ${MAX_REVIEW} documenti per rivederli affiancati, con le loro note.`),
+    all.length > 0 && h('p.muted.dnd-hint', `Scegli fino a ${MAX_REVIEW} documenti con il pulsante a sinistra per rivederli affiancati, con le loro note.`),
     masonry('doc-groups', byCat ? byCategory(docs) : byKind(docs, filtered)),
     sel.length > 0 && h('div.rv-bar',
       h('span', `${sel.length} ${sel.length === 1 ? 'documento selezionato' : 'documenti selezionati'}`),

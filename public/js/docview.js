@@ -35,6 +35,40 @@ function kindOf(d) {
 
 const pinnable = v => v.kind === 'pdf' || v.kind === 'image';
 
+// ---------- anteprima piccola (scheda al passaggio del mouse nella pagina Documenti) ----------
+// PDF: la prima pagina disegnata una volta e tenuta in memoria; immagini: il file; testo: le prime righe.
+const thumbs = new Map(); // "id:sha256" → Promise di un elemento
+export function docThumb(d, width = 300) {
+  const kind = kindOf(d);
+  const key = `${d.id}:${d.sha256 || d.url}`;
+  if (kind === 'image') return Promise.resolve(h('img.peek-img', { src: docFileUrl(d, { inline: true }), alt: '' }));
+  if (kind === 'pdf' && !d.url && !thumbs.has(key)) {
+    thumbs.set(key, (async () => {
+      const pdfjs = await loadPdfjs();
+      const task = pdfjs.getDocument({ url: docFileUrl(d, { inline: true }), withCredentials: true, disableRange: true, disableStream: true, standardFontDataUrl: `${PDFJS}standard_fonts/`, wasmUrl: `${PDFJS}wasm/` });
+      try {
+        const page = await (await task.promise).getPage(1);
+        const vp = page.getViewport({ scale: (width / page.getViewport({ scale: 1 }).width) * (window.devicePixelRatio || 1) });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.floor(vp.width);
+        canvas.height = Math.floor(vp.height);
+        await page.render({ canvas, viewport: vp }).promise;
+        return canvas.toDataURL('image/png');
+      } finally {
+        task.destroy().catch(() => {});
+      }
+    })().catch(() => null));
+  }
+  if (kind === 'pdf' && !d.url) return thumbs.get(key).then(src => src && h('img.peek-img.pdf', { src, alt: '' }));
+  if (kind === 'text' && (d.size ?? 0) < TEXT_MAX) {
+    if (!thumbs.has(key)) {
+      thumbs.set(key, fetch(docFileUrl(d), { credentials: 'same-origin' }).then(r => (r.ok ? r.text() : '')).catch(() => ''));
+    }
+    return thumbs.get(key).then(t => t && h('pre.peek-text', t.split('\n').slice(0, 14).join('\n')));
+  }
+  return Promise.resolve(null);
+}
+
 // ---------- visualizzatore (persistente) ----------
 function getViewer(d) {
   if (viewers.has(d.id)) return viewers.get(d.id);
@@ -596,6 +630,26 @@ function notesPanel(d, v) {
       : 'Nessuna nota. Scrivi qui sopra una nota sul file.'),
     // Mail (da mandare e mandate) che lo allegano o lo collegano, e le altre voci che lo citano.
     backlinksBox('doc', d.id, { title: 'Collegato in', compact: true }));
+}
+
+// Scheda al passaggio del mouse: tipo, nome, articolo, versione e un'anteprima piccola del file.
+export function docPeek(d) {
+  const D = S.data;
+  const it = D.itemById.get(d.item_id);
+  const n = notesOf(d.id).filter(x => !x.resolved_at).length;
+  const thumb = h('div.peek-thumb', h('span.muted', d.url ? '' : 'Anteprima…'));
+  docThumb(d).then(el => thumb.replaceChildren(el || h('span.muted', d.url ? d.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60) : 'Nessuna anteprima per questo file')));
+  return [
+    h('div.peek-h', h('span.dk', dkAttrs(d.kind), d.kind), it && h('span.code', itemAttrs(it), it.code)),
+    h('div.peek-name', docName(d)),
+    h('div.peek-grid',
+      d.version && h('div.peek-r', h('span.muted', 'Versione'), h('span.mono', d.version)),
+      d.filename && d.label && h('div.peek-r', h('span.muted', 'File'), h('span', d.filename)),
+      d.size != null && h('div.peek-r', h('span.muted', 'Dimensione'), h('span', fmtSize(d.size))),
+      h('div.peek-r', h('span.muted', 'Caricato'), h('span', fmtTime(d.created_at))),
+      n > 0 && h('div.peek-r', h('span.muted', 'Note aperte'), h('span', String(n)))),
+    thumb,
+  ];
 }
 
 // ---------- vista ----------

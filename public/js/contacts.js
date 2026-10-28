@@ -1,5 +1,5 @@
 // Rubrica: elenco filtrabile, scheda modificabile, mail collegate a ogni contatto.
-import { h, icon, S, ui, api, act, render, copy, trashIt, save, richField, contactHue, contactStyle, CONTACT_COLOR, hue, huePicker } from './core.js';
+import { h, icon, S, ui, api, act, render, copy, trashIt, save, richField, contactHue, contactStyle, CONTACT_COLOR, hue, huePicker, filterChip } from './core.js';
 import { backlinksBox } from './views.js';
 
 const lc = s => String(s || '').toLowerCase();
@@ -68,9 +68,8 @@ export function viewContacts(id) {
         [['none', 'no'], ...Object.entries(GROUPS).map(([k, g]) => [k, g.label])].map(([k, label]) =>
           h('button', { class: (field || 'none') === k && 'on', onclick: () => setGroup(k) }, label)))),
     field && values.length > 0 && h('div.toolbar.cats',
-      h('button.chip', { class: ui.contactTab == null && 'on', onclick: () => { ui.contactTab = null; render(); } }, 'Tutti', h('span.n', filtered.length)),
-      values.map(v => h('button.chip', { class: ui.contactTab === v && 'on', onclick: () => { ui.contactTab = v; render(); } },
-        v || GROUPS[field].none, h('span.n', counts.get(v))))),
+      filterChip({ on: ui.contactTab == null, label: 'Tutti', n: filtered.length, onclick: () => { ui.contactTab = null; render(); } }),
+      values.map(v => filterChip({ on: ui.contactTab === v, label: v || GROUPS[field].none, n: counts.get(v), onclick: () => { ui.contactTab = v; render(); } }))),
     h('form.inline-add', {
       onsubmit: ev => {
         ev.preventDefault();
