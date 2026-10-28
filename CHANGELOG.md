@@ -3,6 +3,9 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.12.2 — 2026-10-28
+- Correzione: dietro Cloudflare l'app poteva usare fino a 4 ore il codice della versione precedente (Cloudflare dice al browser di tenere JS e CSS 4 ore). Ora l'app ricontrolla sempre i suoi file con il server; un file non cambiato non si riscarica.
+
 ## 0.12.1 — 2026-10-28
 - **Avviso di nuova versione**: se Organizer viene aggiornato mentre l'app è aperta, in alto compare "È disponibile Organizer X" con **Ricarica** (e il link alle Novità). Si controlla quando la connessione col server si riattiva, quando torni sull'app e ogni 30 minuti.
 

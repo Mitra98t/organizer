@@ -38,6 +38,8 @@ Vale uguale oggi sul Mac e domani sul Raspberry: cambia solo dove gira Docker.
    (`app` è il nome del container dell'app nella rete di Docker: il tunnel la raggiunge da dentro.)
 6. Apri `https://organizer.tuodominio.it`: è Organizer, con il lucchetto.
 
+7. **Cache del browser**: Cloudflare → il tuo dominio → *Caching* → *Configuration* → **Browser Cache TTL** → *Respect Existing Headers*. Altrimenti Cloudflare dice al browser di tenere JS e CSS 4 ore e dopo un aggiornamento la prima apertura userebbe il codice vecchio (l'app installata si ricontrolla comunque da sola).
+
 Comandi utili: `make tunnel-status` (stato e log), `make tunnel-off` (spegne l'accesso da fuori), `make info`.
 
 ## 3. Dopo
