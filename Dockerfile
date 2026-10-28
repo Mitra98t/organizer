@@ -5,7 +5,7 @@ ENV NODE_ENV=production \
     PORT=8080
 
 WORKDIR /app
-COPY package.json ./
+COPY package.json CHANGELOG.md ./
 COPY server ./server
 COPY public ./public
 

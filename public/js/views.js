@@ -1083,6 +1083,8 @@ export function viewSettings() {
     ], { count: '' }),
 
     h('a.trash-link', { href: '#/cestino' }, icon('trash'), 'Cestino', h('span.muted', D.trashCount ? `${D.trashCount} elementi` : 'vuoto')),
+    // Su telefono la barra laterale non c'è: le novità (changelog) si aprono da qui.
+    h('a.trash-link', { href: '#/novita' }, icon('news'), 'Novità', h('span.muted', S.version ? `versione ${S.version}` : '')),
 
     section('set-contacts', 'Contatti', [
       h('div.grid', h('label.f', h('span', 'Colore dei contatti'),

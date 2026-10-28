@@ -12,6 +12,19 @@ const { version } = JSON.parse(fs.readFileSync(new URL('../package.json', import
 
 route('GET', '/api/info', () => ({ app: 'organizer', version, api: API_VERSION }), { auth: 'none' });
 
+// Novità di ogni versione (la pagina Novità dell'app): il CHANGELOG.md del progetto, così com'è.
+const CHANGELOG = new URL('../CHANGELOG.md', import.meta.url);
+route('GET', '/api/changelog', ({ res }) => {
+  let text = '';
+  try {
+    text = fs.readFileSync(CHANGELOG, 'utf8');
+  } catch {
+    fail(404, 'Changelog non disponibile');
+  }
+  res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8', 'Cache-Control': 'no-cache' });
+  res.end(text);
+}, { ws: false });
+
 route('GET', '/api/tokens', ({ user }) => apiTokensOf(user.id).map(t => ({ ...t, current: t.id === user.api_token })), { ws: false });
 
 // Dall'app (sessione): un token nuovo per un bot o uno script. Un token non può crearne altri.

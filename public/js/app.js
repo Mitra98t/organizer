@@ -9,6 +9,7 @@ import { viewTrash } from './trash.js';
 import { viewDoc, viewReview, docCancelDraft, setDocFocus, docSearchKey } from './docview.js';
 import { viewDocuments } from './documents.js';
 import { viewChat, notifyNew } from './chat.js';
+import { viewChangelog, hasNews, appVersion } from './changelog.js';
 import { parseQuick, extractCodes, today, parseItemLine, parseProjectLine } from './parse.js';
 import {
   viewAgenda, viewProjects, viewProject, viewMail, viewDiary, viewItems, viewItem, viewSearch, viewSettings, viewEntryPage,
@@ -32,6 +33,7 @@ const VIEWS = {
   cerca: { fn: viewSearch, title: 'Cerca', nav: null },
   chat: { fn: viewChat, title: 'Chat', nav: 'chat' },
   v: { fn: viewEntryPage, title: 'Voce', nav: null },
+  novita: { fn: viewChangelog, title: 'Novità', nav: 'novita' },
   impostazioni: { fn: viewSettings, title: 'Impostazioni', nav: 'impostazioni' },
 };
 
@@ -263,7 +265,9 @@ function buildShell() {
         // Documenti solo nella barra laterale (su telefono si raggiunge dal Magazzino): le tab in basso sono già 6.
         h('nav.side-nav', [...NAV.slice(0, 5), ['documenti', 'Documenti', 'file'], ...NAV.slice(5), ['chat', 'Chat', 'chat']].map(([k, l, i]) => navLink(k, l, i, navLinks, 'nav')),
           h('span.sep'), navLink('cestino', 'Cestino', 'trash', navLinks, 'nav'),
-          navLink('impostazioni', 'Impostazioni', 'settings', navLinks, 'nav'))),
+          navLink('impostazioni', 'Impostazioni', 'settings', navLinks, 'nav')),
+        // In fondo alla barra: le novità della versione (il changelog), con "nuovo" finché non si leggono.
+        h('div.side-foot', navLink('novita', 'Novità', 'news', navLinks, 'nav'))),
       h('main.main',
         h('header.top',
           titleEl,
@@ -304,6 +308,9 @@ function updateBadges() {
     map.get('mail').badge.textContent = mails || '';
   }
   navLinks.get('cestino').badge.textContent = D.trashCount || '';
+  const news = navLinks.get('novita');
+  news.badge.textContent = hasNews() ? 'nuovo' : '';
+  news.a.title = appVersion() ? `Novità · versione ${appVersion()}` : 'Novità';
   const unread = D.chatUnread > 99 ? '99+' : D.chatUnread || '';
   navLinks.get('chat').badge.textContent = unread;
   chatBadge.textContent = unread;
@@ -465,6 +472,8 @@ async function logout() {
 
 function start() {
   render();
+  // Versione dell'app: per la pagina Novità e il suo "nuovo" nella barra.
+  api('GET', '/info').then(i => { S.version = i.version; render(); }).catch(() => {});
   sync();
   connectLive();
   flushOutbox();
