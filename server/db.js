@@ -273,6 +273,10 @@ const MIGRATIONS = [
   );
   CREATE INDEX item_aliases_item ON item_aliases(item_id);
   `,
+  // v14: note sui modelli 3D. Il punto è x, y, z (0..1 nel riquadro che contiene il modello), con page = 1.
+  `
+  ALTER TABLE doc_notes ADD COLUMN z REAL;
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

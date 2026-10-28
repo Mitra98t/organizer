@@ -14,7 +14,7 @@ import './chat.js';
 import { purgeExpired } from './trash.js';
 import { resolveAuth, resolveApiToken, workspaceById, acc } from './accounts.js';
 import { bump } from './events.js';
-import { HttpError, sendJson, parseCookies, readJson } from './util.js';
+import { HttpError, sendJson, parseCookies, readJson, isHttps } from './util.js';
 import { DATA_DIR, withWorkspace, closeAll } from './db.js';
 
 const PORT = +process.env.PORT || 8080;
@@ -111,6 +111,9 @@ function serveStatic(req, res, pathname) {
     ETag: etag,
   };
   if (path.basename(file) === 'sw.js') headers['Service-Worker-Allowed'] = '/';
+  // Il worker che converte gli STEP (OpenCascade compilato con embind) genera funzioni con new Function: gli
+  // serve unsafe-eval. Un worker usa la policy della sua risposta, quindi vale solo lì, non nell'app.
+  if (path.basename(file) === 'step-worker.js') headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'";
   if (req.headers['if-none-match'] === etag) {
     res.writeHead(304, headers);
     return res.end();
@@ -122,6 +125,8 @@ function serveStatic(req, res, pathname) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
+  // Arrivati in HTTPS (dal tunnel o da Caddy): il browser non deve più provare in HTTP semplice.
+  if (isHttps(req)) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
   try {
     if (url.pathname === '/healthz') return sendJson(res, 200, { ok: true });
     if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);

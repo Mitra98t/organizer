@@ -50,4 +50,9 @@ export function parseCookies(header = '') {
   return out;
 }
 
+// Indirizzo di chi si collega. Dietro Cloudflare Tunnel tutte le richieste arrivano dal container del
+// tunnel: l'indirizzo vero è nell'header indicato da CLIENT_IP_HEADER (cf-connecting-ip), se presente.
+const IP_HEADER = (process.env.CLIENT_IP_HEADER || '').toLowerCase();
+export const clientIp = req => (IP_HEADER && String(req.headers[IP_HEADER] || '').split(',')[0].trim()) || req.socket.remoteAddress;
+
 export const isHttps = req => Boolean(req.socket.encrypted) || req.headers['x-forwarded-proto'] === 'https';

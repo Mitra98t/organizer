@@ -32,7 +32,7 @@ e accedi con `demo` / `demo1234` (c'è anche `marco` / `demo1234` per vedere la 
 | `make backup` / `make restore FILE=...` | backup completo in `backups/` e ripristino |
 | `make users` / `invite` / `reset-password UTENTE=x` / `make-admin UTENTE=x` | utenti |
 | `make info` | indirizzi locale e LAN |
-| `make remote` / `remote-off` / `remote-status` | accesso HTTPS da fuori casa tramite Tailscale (solo i tuoi dispositivi) |
+| `make tunnel` / `tunnel-off` / `tunnel-status` | accesso da fuori con il tuo dominio via Cloudflare Tunnel, senza porte aperte (vedi docs/DEPLOY.md) |
 | `make mail-helper` / `mail-helper-uninstall` | helper che apre le mail in Thunderbird con gli allegati |
 | `make dev` / `dev-demo` / `test` | sviluppo locale senza Docker (dati in `./data`) |
 
@@ -94,6 +94,7 @@ Un progetto può stare dentro un altro (campo "Dentro" nella sua pagina, o `@pad
 Cliccando un documento nella scheda di un articolo si apre il visualizzatore con le note a lato. Il documento usa tutta la larghezza della pagina; con **note** nascondi la barra delle note (la preferenza resta), con **espandi** sparisce anche il resto dell'app e il documento occupa tutta la finestra (Esc per tornare).
 
 - **PDF** (con PDF.js, incluso nel progetto in `public/vendor/pdfjs`, nessuna connessione esterna) e **immagini**: clicchi un punto e lasci una nota lì; il segnaposto numerato resta al suo posto a ogni zoom e si trascina per spostarlo, anche su un’altra pagina. Cliccando una nota il documento scorre al punto, e viceversa.
+- **Modelli 3D** (STL, 3MF, STEP, con three.js e OpenCascade inclusi nel progetto): il modello si gira, si sposta e si ingrandisce; clicchi un punto della superficie e lasci una nota lì. I segnaposto seguono la vista e si trascinano sul modello; cliccando una nota la vista si gira verso il punto. Gli STEP si convertono nel browser: un modello grande può richiedere qualche secondo.
 - **File di testo**: anteprima del contenuto.
 - **Cerca nel documento**: ⌘F (Ctrl+F su Linux) apre la ricerca nel PDF o nel file di testo aperto; Invio e Maiusc+Invio passano da un risultato all'altro, Esc chiude. Nella revisione affiancata cerca nel documento toccato per ultimo. Funziona sui PDF con testo vero (non sulle scansioni).
 - **Link a un PDF** (es. un datasheet su mouser.com): il server lo scarica al momento e lo mostra come un PDF caricato, con le stesse note. Solo indirizzi internet pubblici (mai la rete locale), solo PDF, massimo 60 MB (`REMOTE_MAX_MB`); se il sito mostra una pagina o una protezione anti-bot al posto del file, compare il motivo e il link originale.
@@ -175,17 +176,15 @@ Guida completa in [cli/README.md](cli/README.md). La CLI usa le API pubbliche, l
 
 ## Telefono e altri computer
 
-L'app è già raggiungibile in rete locale su `http://IP-DEL-MAC:8080`. Funziona, ma in HTTP semplice i browser non attivano installazione completa e modalità offline. Per averle serve HTTPS:
+L'app ascolta solo sul computer che la ospita (`http://localhost:8080`): nessuna porta aperta, nemmeno in rete locale. Da qualsiasi altro dispositivo, in casa o fuori, ci si arriva con il proprio dominio attraverso **Cloudflare Tunnel** (gratuito): HTTPS valido, installazione come app su telefono e modalità offline.
 
-**Opzione consigliata: Tailscale** (gratis, funziona anche fuori casa, certificato valido)
-1. Installa Tailscale sul Mac e sul telefono, stesso account.
-2. Sul Mac: `make remote` (la prima volta Tailscale chiede di abilitare Serve e i certificati HTTPS dal suo pannello)
-3. Sul telefono apri `https://nome-del-mac.tuo-tailnet.ts.net` e installa l'app.
-
-**Opzione Caddy** (HTTPS in LAN con CA interna: il telefono deve fidarsi del certificato di Caddy)
 ```bash
-SITE_ADDRESS=192.168.1.153 docker compose --profile https up -d
+make tunnel        # dopo aver messo TUNNEL_TOKEN nel file .env
+make tunnel-status
+make tunnel-off
 ```
+
+La configurazione passo passo (dominio su Cloudflare, tunnel, telefono, sicurezza, trasloco su Raspberry) è in [docs/DEPLOY.md](docs/DEPLOY.md). Per riaprire l'app in rete locale senza tunnel: `APP_BIND=0.0.0.0` in `.env`.
 
 Installazione: iPhone → Safari → Condividi → "Aggiungi alla schermata Home". Android → Chrome → "Installa app". Mac → Safari "Aggiungi al Dock" o Chrome. Linux → Chrome/Chromium.
 
@@ -239,6 +238,8 @@ CHANGELOG.md  novità di ogni versione
 test/         node --test
 tools/        generatore icone, helper Thunderbird (organizer-mail.sh) e suo installer
 public/vendor/pdfjs  PDF.js 6.4.299 (Apache-2.0), solo i file necessari al visualizzatore
+public/vendor/three  three.js 0.186.1 (MIT) e i suoi addon per STL, 3MF e la rotazione della vista
+public/vendor/occt   occt-import-js 0.0.23 (LGPL-2.1, OpenCascade) per leggere gli STEP, in un worker
 ```
 
 Dati: `/data/organizer.db` (SQLite, WAL) e `/data/uploads/` nel volume `organizer-data`.

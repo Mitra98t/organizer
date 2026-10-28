@@ -11,7 +11,7 @@ import {
   addMember, createWorkspace, removeMember, syncMirror, createSession, destroySession, defaultWorkspace, setSessionWorkspace,
   revokeApiTokens, permsIn, setPerms,
 } from './accounts.js';
-import { HttpError, fail, now, bool, str, sendJson } from './util.js';
+import { HttpError, fail, now, bool, str, sendJson, clientIp } from './util.js';
 import { rev, openStream, dropUser } from './events.js';
 import { allows, assertCan, entryArea, readableKinds } from './perms.js';
 import { currentWorkspace } from './db.js';
@@ -240,7 +240,7 @@ route('POST', '/api/setup', async ({ req, res, body }) => {
 
 route('POST', '/api/login', async ({ req, res, body }) => {
   const b = await body();
-  const key = `${req.socket.remoteAddress}|${String(b.username).toLowerCase()}`;
+  const key = `${clientIp(req)}|${String(b.username).toLowerCase()}`;
   throttle(key);
   const u = acc.prepare('SELECT id, pass FROM users WHERE username = ?').get(str(b.username, 32));
   if (!u || !(await verifyPassword(String(b.password || ''), u.pass))) {
@@ -261,7 +261,7 @@ route('GET', '/api/invites/:code', ({ params }) => {
 
 route('POST', '/api/register', async ({ req, res, body }) => {
   const b = await body();
-  const key = `${req.socket.remoteAddress}|invite`;
+  const key = `${clientIp(req)}|invite`;
   throttle(key);
   if (!validInvite(b.code)) {
     noteFailure(key);
@@ -941,13 +941,15 @@ route('DELETE', '/api/doc-kinds/:name', ({ params }) => {
 }, { area: 'documenti' });
 
 // ---------- note sui documenti ----------
+// Pagina e punto (0..1); z solo per i modelli 3D.
 function notePosition(b) {
-  if (b.page == null) return { page: null, x: null, y: null };
+  if (b.page == null) return { page: null, x: null, y: null, z: null };
   const page = Number(b.page);
-  const x = Number(b.x);
-  const y = Number(b.y);
-  if (!Number.isInteger(page) || page < 1 || !(x >= 0 && x <= 1) || !(y >= 0 && y <= 1)) fail(400, 'Posizione non valida');
-  return { page, x, y };
+  const [x, y] = [Number(b.x), Number(b.y)];
+  const z = b.z == null ? null : Number(b.z);
+  const unit = n => n >= 0 && n <= 1;
+  if (!Number.isInteger(page) || page < 1 || !unit(x) || !unit(y) || (z !== null && !unit(z))) fail(400, 'Posizione non valida');
+  return { page, x, y, z };
 }
 
 const getNote = id => db.prepare('SELECT * FROM doc_notes WHERE id = ? AND deleted_at IS NULL').get(+id) || fail(404, 'Nota non trovata');
@@ -956,10 +958,10 @@ route('POST', '/api/docs/:id/notes', async ({ params, user, body }) => {
   const b = await body();
   const d = db.prepare('SELECT id FROM documents WHERE id = ? AND deleted_at IS NULL').get(+params.id) || fail(404, 'Documento non trovato');
   const text = str(b.text, 5000) || fail(400, 'Scrivi la nota');
-  const { page, x, y } = notePosition(b);
+  const { page, x, y, z } = notePosition(b);
   const t = now();
-  return { id: insertId(db.prepare(`INSERT INTO doc_notes (doc_id, page, x, y, text, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(d.id, page, x, y, text, user.id, t, t)) };
+  return { id: insertId(db.prepare(`INSERT INTO doc_notes (doc_id, page, x, y, z, text, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(d.id, page, x, y, z, text, user.id, t, t)) };
 }, { area: 'documenti' });
 
 route('PATCH', '/api/doc-notes/:id', async ({ params, body }) => {

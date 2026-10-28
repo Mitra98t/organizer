@@ -5,13 +5,32 @@ services:
     build: .
     image: organizer:latest
     restart: unless-stopped
+    # Solo su questo computer (127.0.0.1): nessuna porta aperta verso la rete. Da fuori si passa dal tunnel.
+    # Per renderla raggiungibile in rete locale: APP_BIND=0.0.0.0 nel file .env.
     ports:
-      - "${APP_PORT:-8080}:8080"
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-8080}:8080"
     environment:
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-200}
       TRASH_DAYS: ${TRASH_DAYS:-30}
+      # Dietro Cloudflare l'indirizzo vero di chi si collega arriva in questo header (serve al limite
+      # dei tentativi di login). Si usa solo se c'è; l'app non è raggiungibile da fuori se non dal tunnel.
+      CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-cf-connecting-ip}
     volumes:
       - organizer-data:/data
+
+  # Accesso da internet con il tuo dominio, senza aprire porte: Cloudflare Tunnel. cloudflared apre una
+  # connessione in uscita verso Cloudflare, che ci fa passare le richieste per il dominio (HTTPS incluso).
+  # Il token del tunnel sta nel file .env (TUNNEL_TOKEN=…), mai nel repository. Avvio: make tunnel
+  # Nel pannello di Cloudflare il "public hostname" del tunnel punta a http://app:8080.
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    depends_on:
+      - app
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
 
   # HTTPS davanti all'app (necessario per installare la PWA su Android e per l'uso offline).
   # Avvio:  docker compose --profile https up -d

@@ -1,5 +1,6 @@
-// Visualizzatore di documenti con note: PDF (PDF.js), immagini e testo, più una barra laterale di note.
-// Le note con pagina e coordinate (0..1) sono segnaposto su un punto del file; le altre sono note generali.
+// Visualizzatore di documenti con note: PDF (PDF.js), immagini, testo e modelli 3D (model3d.js), più una barra
+// laterale di note. Le note con pagina e coordinate (0..1) sono segnaposto su un punto del file (nei modelli 3D
+// anche z, page = 1); le altre sono note generali.
 //
 // L'app ridisegna le viste a ogni sincronizzazione: ridisegnare un PDF ogni volta sarebbe lento, quindi
 // il visualizzatore (canvas compresi) resta in memoria e viene solo riagganciato; si aggiornano i segnaposto.
@@ -24,16 +25,19 @@ function loadPdfjs() {
 // Link che puntano a un PDF: si caricano dal vivo attraverso il server (vedi server/remote.js).
 const isPdfLink = d => d.url && /\.pdf$/i.test((() => { try { return new URL(d.url).pathname; } catch { return ''; } })());
 
+const MODEL_EXT = /\.(stl|3mf|stp|step)$/i;
+
 function kindOf(d) {
   if (isPdfLink(d)) return 'pdf';
   if (d.url) return 'link';
+  if (MODEL_EXT.test(d.filename || '')) return 'model';
   if (d.mime === 'application/pdf' || /\.pdf$/i.test(d.filename || '')) return 'pdf';
   if (/^image\/(png|jpeg|gif|webp)$/.test(d.mime || '')) return 'image';
   if (/^text\//.test(d.mime || '') || /\.(txt|log|md|csv|ini|cfg|json|ya?ml|h|c|cpp|py|sh)$/i.test(d.filename || '')) return 'text';
   return 'none';
 }
 
-const pinnable = v => v.kind === 'pdf' || v.kind === 'image';
+const pinnable = v => v.kind === 'pdf' || v.kind === 'image' || v.kind === 'model';
 
 // ---------- anteprima piccola (scheda al passaggio del mouse nella pagina Documenti) ----------
 // PDF: la prima pagina disegnata una volta e tenuta in memoria; immagini: il file; testo: le prime righe.
@@ -73,13 +77,14 @@ export function docThumb(d, width = 300) {
 function getViewer(d) {
   if (viewers.has(d.id)) return viewers.get(d.id);
   const v = { id: d.id, kind: kindOf(d), zoom: 1, scroll: 0, pages: [], draft: null, status: 'loading' };
-  v.scroller = h('div.dv-scroll', { onscroll: () => { v.scroll = v.scroller.scrollTop; updatePageLabel(v); } });
+  v.scroller = h(`div.dv-scroll${v.kind === 'model' ? '.model' : ''}`, { onscroll: () => { v.scroll = v.scroller.scrollTop; updatePageLabel(v); } });
   v.pagesEl = h('div.dv-pages');
   v.scroller.append(v.pagesEl);
   v.pageLabel = h('span.dv-pl');
   v.el = h('div.dv-main',
     h('div.dv-toolbar',
-      pinnable(v) && [
+      v.kind === 'model' && h('button.btn.sm.ghost', { onclick: () => v.stage?.reset() }, 'Vista iniziale'),
+      v.kind !== 'model' && pinnable(v) && [
         h('button.icon-btn', { title: 'Riduci', onclick: () => setZoom(v, v.zoom / 1.25) }, '−'),
         v.zoomLabel = h('span.dv-zoom', '100%'),
         h('button.icon-btn', { title: 'Ingrandisci', onclick: () => setZoom(v, v.zoom * 1.25) }, '+'),
@@ -87,7 +92,9 @@ function getViewer(d) {
         v.pageLabel,
       ],
       h('span.grow'),
-      h('span.muted.dv-hint', pinnable(v) ? 'Clicca sul documento per aggiungere una nota in quel punto, trascina un segnaposto per spostarlo' : ''),
+      h('span.muted.dv-hint', v.kind === 'model'
+        ? 'Trascina per ruotare, tasto destro per spostare, rotella per lo zoom. Clicca sul modello per una nota in quel punto'
+        : pinnable(v) ? 'Clicca sul documento per aggiungere una nota in quel punto, trascina un segnaposto per spostarlo' : ''),
       searchable(v) && h('button.icon-btn', { title: `Cerca nel documento (${MOD}F)`, onclick: () => openSearch(v) }, icon('search'))),
     searchBar(v),
     v.scroller);
@@ -98,6 +105,7 @@ function getViewer(d) {
   if (v.kind === 'pdf') openPdf(v, d);
   else if (v.kind === 'image') openImage(v, d);
   else if (v.kind === 'text') openText(v, d);
+  else if (v.kind === 'model') openModel(v, d);
   else v.status = 'ready';
   return v;
 }
@@ -108,6 +116,7 @@ const closePdf = v => v.task?.destroy().catch(() => {});
 function destroyViewer(v) {
   v.resize.disconnect();
   v.io?.disconnect();
+  v.stage?.dispose();
   closePdf(v);
   viewers.delete(v.id);
 }
@@ -200,6 +209,121 @@ async function openText(v, d) {
   }
 }
 
+// ---------- modelli 3D ----------
+// Un clic (senza trascinare: trascinare ruota la vista) su un punto del modello prepara una nota lì.
+async function openModel(v, d) {
+  const status = msg => v.pagesEl.replaceChildren(h('div.empty', msg));
+  status('Caricamento del modello…');
+  try {
+    const [m3, buf] = await Promise.all([
+      import('./model3d.js'),
+      fetch(docFileUrl(d), { credentials: 'same-origin' }).then(r => {
+        if (!r.ok) throw new Error(`errore ${r.status}`);
+        return r.arrayBuffer();
+      }),
+    ]);
+    const obj = await m3.parseModel(buf, d.filename, status);
+    if (viewers.get(v.id) !== v) return; // nel frattempo il documento è stato chiuso
+    v.pins3d = h('div.dv-pins');
+    v.stageEl = h('div.dv-model', { onpointerdown: ev => { v.down = { x: ev.clientX, y: ev.clientY, b: ev.button }; } });
+    v.stageEl.addEventListener('pointerup', ev => clickModel(v, ev));
+    v.pagesEl.replaceChildren(v.stageEl);
+    v.stage = m3.createStage(v.stageEl, settled => updatePins3d(v, settled));
+    v.stageEl.append(v.pins3d);
+    v.stage.setModel(obj);
+    ready(v);
+  } catch (e) {
+    console.warn(e);
+    fail(v, `Impossibile aprire il modello: ${e.message}`);
+  }
+}
+
+function clickModel(v, ev) {
+  const down = v.down;
+  v.down = null;
+  if (!down || down.b !== 0 || Math.hypot(ev.clientX - down.x, ev.clientY - down.y) > 4) return;
+  if (isReadOnly(v.stageEl) || ev.target.closest('.dv-pin')) return;
+  const p = v.stage.pick(ev.clientX, ev.clientY);
+  if (!p) return; // clic fuori dal modello
+  for (const o of viewers.values()) o.draft = null;
+  v.draft = { page: 1, ...p, fresh: true };
+  openNotes(v);
+  ui.docNote = null;
+  render();
+}
+
+// Segnaposto proiettati sullo schermo a ogni movimento della vista; quelli coperti dal modello (calcolati a
+// vista ferma, è il conto più lento) restano visibili ma attenuati.
+function updatePins3d(v, settled) {
+  if (!v.stage || v.dragging) return;
+  const list = numbered(v.id);
+  if (settled || !v.hiddenPins) v.hiddenPins = new Set(list.filter(({ n }) => v.stage.hidden(n)).map(({ n }) => n.id));
+  const place = (el, p) => {
+    const s = v.stage.toScreen(p);
+    el.style.left = `${s.left}px`;
+    el.style.top = `${s.top}px`;
+    el.hidden = s.behind;
+    return el;
+  };
+  const pins = list.map(({ n, num }) => place(pinDrag3d(v, n, h('button.dv-pin', {
+    class: [ui.docNote === n.id && 'on', n.resolved_at && 'resolved', v.hiddenPins.has(n.id) && 'back'].filter(Boolean).join(' ') || null,
+    title: `${n.text}\n(trascina per spostare)`,
+    onclick: ev => {
+      ev.stopPropagation();
+      if (ev.currentTarget.dragged) return;
+      openNotes(v);
+      selectNote(n.id, false);
+    },
+  }, num)), n));
+  if (v.draft) pins.push(place(h('span.dv-pin.draft', '+'), v.draft));
+  v.pins3d.replaceChildren(...pins);
+}
+
+// Come pinDrag, ma il segnaposto scorre sulla superficie del modello (fuori dal modello resta dov'era).
+function pinDrag3d(v, n, pin) {
+  pin.addEventListener('pointerdown', ev => {
+    if (ev.button !== 0 || isReadOnly(pin)) return;
+    ev.stopPropagation();
+    ev.preventDefault();
+    pin.dragged = false;
+    const tip = v.stage.toScreen(n);
+    const r0 = v.stageEl.getBoundingClientRect();
+    const off = { x: ev.clientX - (r0.left + tip.left), y: ev.clientY - (r0.top + tip.top) };
+    const start = { x: ev.clientX, y: ev.clientY };
+    let target = null;
+    pin.setPointerCapture(ev.pointerId);
+    const move = e => {
+      if (!pin.dragged && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 4) return;
+      pin.dragged = true;
+      v.dragging = true;
+      pin.classList.add('dragging');
+      pin.classList.remove('back');
+      const p = v.stage.pick(e.clientX - off.x, e.clientY - off.y);
+      if (!p) return;
+      target = { page: 1, ...p };
+      const s = v.stage.toScreen(target);
+      pin.style.left = `${s.left}px`;
+      pin.style.top = `${s.top}px`;
+    };
+    const end = () => {
+      pin.removeEventListener('pointermove', move);
+      pin.removeEventListener('pointerup', end);
+      pin.removeEventListener('pointercancel', end);
+      pin.classList.remove('dragging');
+      v.dragging = false;
+      if (!pin.dragged || !target) return;
+      Object.assign(n, target);
+      v.hiddenPins = null;
+      act(() => api('PATCH', `/doc-notes/${n.id}`, target));
+      setTimeout(() => { pin.dragged = false; }, 0);
+    };
+    pin.addEventListener('pointermove', move);
+    pin.addEventListener('pointerup', end);
+    pin.addEventListener('pointercancel', end);
+  });
+  return pin;
+}
+
 function newPage(v, num, w, h0, extra) {
   const pins = h('div.dv-pins');
   const hits = h('div.dv-hits');
@@ -220,6 +344,10 @@ function ready(v) {
 
 // Larghezza = spazio disponibile × zoom; l'altezza segue le proporzioni della pagina.
 function layout(v) {
+  if (v.stage) {
+    v.stage.resize();
+    return;
+  }
   if (!v.pages.length || !v.scroller.isConnected) return;
   const avail = Math.max(200, v.scroller.clientWidth - 16); // 8 px di margine per lato
   for (const p of v.pages) {
@@ -491,6 +619,12 @@ function numbered(docId) {
 
 function updatePins(v) {
   if (!pinnable(v) || v.status !== 'ready' || v.dragging) return; // durante un trascinamento non si ridisegna
+  if (v.kind === 'model') {
+    // Note aggiunte o spostate: si ricalcola quali sono coperte (non a ogni sincronizzazione: costa).
+    const key = numbered(v.id).map(({ n }) => `${n.id}:${n.x},${n.y},${n.z}`).join();
+    if (key !== v.pinKey) [v.pinKey, v.hiddenPins] = [key, null];
+    return updatePins3d(v, false);
+  }
   const list = numbered(v.id);
   for (const p of v.pages) {
     const pins = list.filter(x => x.n.page === p.num).map(({ n, num }) => pinDrag(v, n, h('button.dv-pin', {
@@ -573,6 +707,7 @@ function applyPendingScroll(v) {
   const n = notesOf(v.id).find(x => x.id === id);
   const p = n?.page != null && v.pages[n.page - 1];
   v.pendingNote = null;
+  if (v.stage && n?.z != null) return v.stage.focus(n); // modello 3D: si gira la vista verso il punto
   if (!p) return;
   v.scroll = Math.max(0, p.wrap.offsetTop + n.y * p.wrap.offsetHeight - v.scroller.clientHeight / 2);
   v.scroller.scrollTop = v.scroll; // immediato: lo scorrimento animato si ferma se la scheda non è in primo piano
@@ -655,9 +790,9 @@ function notesPanel(d, v) {
   const pins = numbered(d.id);
   const resolved = all.filter(n => n.resolved_at).length;
   const saveDraft = text => {
-    const { page, x, y } = v.draft;
+    const { page, x, y, z } = v.draft;
     v.draft = null;
-    act(async () => { const r = await api('POST', `/docs/${d.id}/notes`, { text, page, x, y }); ui.docNote = r.id; });
+    act(async () => { const r = await api('POST', `/docs/${d.id}/notes`, { text, page, x, y, z }); ui.docNote = r.id; });
   };
   const cancelDraft = () => { v.draft = null; render(); };
 
@@ -681,10 +816,10 @@ function notesPanel(d, v) {
       onkeydown: enterSave((text, el) => { el.value = ''; act(() => api('POST', `/docs/${d.id}/notes`, { text })); }),
     }),
     general.map(n => noteCard(d, n)),
-    pins.length > 0 && h('div.dv-sub', pinnable(v) ? 'Sul documento' : 'Posizionate'),
+    pins.length > 0 && h('div.dv-sub', v.kind === 'model' ? 'Sul modello' : pinnable(v) ? 'Sul documento' : 'Posizionate'),
     pins.map(({ n, num }) => noteCard(d, n, num)),
     !all.length && !v.draft && h('p.muted.dv-empty', pinnable(v)
-      ? 'Nessuna nota. Clicca su un punto del documento per lasciarne una lì, oppure scrivi una nota generale qui sopra.'
+      ? `Nessuna nota. Clicca su un punto del ${v.kind === 'model' ? 'modello' : 'documento'} per lasciarne una lì, oppure scrivi una nota generale qui sopra.`
       : 'Nessuna nota. Scrivi qui sopra una nota sul file.'),
     // Mail (da mandare e mandate) che lo allegano o lo collegano, e le altre voci che lo citano.
     backlinksBox('doc', d.id, { title: 'Collegato in', compact: true }));

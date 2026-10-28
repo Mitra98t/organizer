@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { route, throttle, noteFailure, clearFailures } from './api.js';
 import { acc, createApiToken, apiTokensOf, revokeApiTokens, getAccount } from './accounts.js';
 import { verifyPassword } from './auth.js';
-import { fail, str } from './util.js';
+import { fail, str, clientIp } from './util.js';
 
 // Versione delle API pubbliche: cambia solo se un client esistente smetterebbe di funzionare.
 export const API_VERSION = 1;
@@ -37,7 +37,7 @@ route('POST', '/api/tokens', async ({ user, body }) => {
 // Dalla CLI: utente e password in cambio di un token. Stessi limiti di tentativi del login.
 route('POST', '/api/auth/token', async ({ req, body }) => {
   const b = await body();
-  const key = `${req.socket.remoteAddress}|${String(b.username).toLowerCase()}`;
+  const key = `${clientIp(req)}|${String(b.username).toLowerCase()}`;
   throttle(key);
   const u = acc.prepare('SELECT id, pass FROM users WHERE username = ?').get(str(b.username, 32));
   if (!u || !(await verifyPassword(String(b.password || ''), u.pass))) {

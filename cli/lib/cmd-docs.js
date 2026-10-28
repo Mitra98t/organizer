@@ -183,7 +183,7 @@ export default {
         general.forEach(print);
       }
       for (const page of [...new Set(pinned.map(n => n.page))]) {
-        heading(`Pagina ${page}`);
+        heading(pinned.some(n => n.z != null) ? 'Sul modello' : `Pagina ${page}`); // modelli 3D: i punti stanno tutti a page = 1
         pinned.filter(n => n.page === page).forEach(print);
       }
       if (hidden) console.log(c.dim(`\n${hidden} ${hidden === 1 ? 'nota risolta nascosta' : 'note risolte nascoste'} (--all per vederle)`));

@@ -8,7 +8,7 @@ APP_PORT    ?= 8080
 
 .DEFAULT_GOAL := help
 .PHONY: help up down restart logs ps https wait reset demo seed backup restore \
-        users invite workspaces reset-password make-admin mail-helper mail-helper-uninstall cli cli-uninstall remote remote-off remote-status shell info test dev dev-reset dev-demo confirm
+        users invite workspaces reset-password make-admin mail-helper mail-helper-uninstall cli cli-uninstall tunnel tunnel-off tunnel-status shell info test dev dev-reset dev-demo confirm
 
 help: ## Mostra questo elenco
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -19,8 +19,8 @@ up: ## Costruisce e avvia l'app (http://localhost:8080)
 	@$(MAKE) --no-print-directory wait
 	@echo "Organizer pronto su http://localhost:$(APP_PORT)"
 
-down: ## Ferma tutti i container (i dati restano)
-	$(COMPOSE) --profile https down
+down: ## Ferma tutti i container, tunnel compreso (i dati restano)
+	$(COMPOSE) --profile https --profile tunnel down
 
 restart: ## Riavvia l'app
 	$(COMPOSE) restart app
@@ -30,7 +30,7 @@ logs: ## Segue i log dell'app
 	$(COMPOSE) logs -f --tail=100 app
 
 ps: ## Stato dei container
-	$(COMPOSE) --profile https ps
+	$(COMPOSE) --profile https --profile tunnel ps
 
 https: ## Avvia anche Caddy in HTTPS (SITE_ADDRESS=... per IP o dominio)
 	$(COMPOSE) --profile https up -d --build
@@ -92,19 +92,18 @@ make-admin: ## Rende admin di un workspace: make make-admin UTENTE=marco [WS=2]
 	@test -n "$(UTENTE)" || { echo "Uso: make make-admin UTENTE=nome [WS=id]"; exit 1; }
 	$(COMPOSE) exec -T app $(NODE) server/cli.js make-admin $(UTENTE) $(WS)
 
-# ---------- accesso da fuori casa (Tailscale) ----------
-TAILSCALE ?= $(shell command -v tailscale 2>/dev/null || echo /Applications/Tailscale.app/Contents/MacOS/Tailscale)
+# ---------- accesso da fuori casa (Cloudflare Tunnel, nessuna porta aperta) ----------
+tunnel: ## Accesso da internet con il tuo dominio via Cloudflare Tunnel (token in .env, vedi docs/DEPLOY.md)
+	@grep -qs '^TUNNEL_TOKEN=.' .env || { echo "Manca TUNNEL_TOKEN nel file .env: vedi docs/DEPLOY.md"; exit 1; }
+	$(COMPOSE) --profile tunnel up -d tunnel
+	@sleep 4; $(COMPOSE) --profile tunnel logs --tail=8 tunnel
 
-remote: ## Rende l'app raggiungibile in HTTPS dai tuoi dispositivi Tailscale (non da Internet)
-	@$(TAILSCALE) status >/dev/null 2>&1 || { echo "Tailscale non è attivo: aprilo e fai login."; exit 1; }
-	$(TAILSCALE) serve --bg $(APP_PORT)
-	@$(TAILSCALE) serve status
+tunnel-off: ## Spegne il tunnel: l'app resta raggiungibile solo da questo computer
+	$(COMPOSE) --profile tunnel stop tunnel
 
-remote-off: ## Smette di pubblicare l'app su Tailscale
-	$(TAILSCALE) serve reset
-
-remote-status: ## Mostra cosa è pubblicato su Tailscale e l'indirizzo
-	@$(TAILSCALE) serve status
+tunnel-status: ## Stato del tunnel e ultime righe del suo log
+	@$(COMPOSE) --profile tunnel ps tunnel
+	@$(COMPOSE) --profile tunnel logs --tail=20 tunnel
 
 # ---------- mail ----------
 mail-helper: ## Installa l'helper che apre le mail in Thunderbird con gli allegati (macOS/Linux)
@@ -126,8 +125,13 @@ shell: ## Shell dentro il container
 
 info: ## Indirizzi a cui raggiungere l'app
 	@echo "Locale: http://localhost:$(APP_PORT)"
-	@ip=$$(ipconfig getifaddr en0 2>/dev/null || hostname -I 2>/dev/null | cut -d' ' -f1); \
-	  [ -n "$$ip" ] && echo "LAN:    http://$$ip:$(APP_PORT)" || true
+	@if grep -qs '^APP_BIND=0.0.0.0' .env; then \
+	  ip=$$(ipconfig getifaddr en0 2>/dev/null || hostname -I 2>/dev/null | cut -d' ' -f1); \
+	  [ -n "$$ip" ] && echo "LAN:    http://$$ip:$(APP_PORT)"; \
+	else echo "LAN:    chiusa (solo questo computer; APP_BIND=0.0.0.0 in .env per aprirla)"; fi
+	@$(COMPOSE) --profile tunnel ps --status running tunnel 2>/dev/null | grep -q tunnel \
+	  && echo "Da fuori: tunnel Cloudflare attivo (l'indirizzo è il public hostname scelto su Cloudflare)" \
+	  || echo "Da fuori: tunnel spento (make tunnel)"
 
 # ---------- sviluppo locale (senza Docker, dati in ./data) ----------
 test: ## Esegue i test

@@ -111,6 +111,17 @@ test('documenti: carica, rinomina, scarica', async () => {
   assert.deepEqual(notes.pinned.map(n => [n.num, n.text]), [[1, 'in alto'], [2, 'in fondo']]);
   assert.equal(JSON.parse(await org(['doc', 'notes', String(id), '--all', '--json'])).pinned[0].text, 'vecchia');
 
+  // Modelli 3D: il punto ha anche z (0..1 nel riquadro del modello).
+  const stl = path.join(dir, 'staffa.stl');
+  fs.writeFileSync(stl, 'solid staffa\nendsolid staffa\n');
+  const [mid] = JSON.parse(await org(['doc', 'up', 'SCH-042', stl, '-k', 'altro', '--json']));
+  const n3 = await call('POST', `/docs/${mid}/notes`, { token: config().token, body: { text: 'foro M3', page: 1, x: 0.2, y: 0.4, z: 1 } }).then(r => r.json());
+  assert.equal((await call('POST', `/docs/${mid}/notes`, { token: config().token, body: { text: 'fuori', page: 1, x: 0.2, y: 0.4, z: 1.5 } })).status, 400);
+  await call('PATCH', `/doc-notes/${n3.id}`, { token: config().token, body: { page: 1, x: 0.3, y: 0.4, z: 0.7 } });
+  const m = JSON.parse(await org(['doc', 'notes', String(mid), '--json']));
+  assert.deepEqual(m.pinned.map(n => [n.text, n.x, n.z]), [['foro M3', 0.3, 0.7]]);
+  assert.match(await org(['doc', 'notes', String(mid)]), /Sul modello/);
+
   await org(['doc', 'rename', String(id), 'firmware relè']);
   const out = path.join(dir, 'giu');
   fs.mkdirSync(out);

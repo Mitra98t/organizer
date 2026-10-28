@@ -3,6 +3,14 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.11 — 2026-10-28
+- **Accesso da fuori con Cloudflare Tunnel** al posto di Tailscale: `make tunnel` collega il tuo dominio all'app con HTTPS e senza porte aperte (connessione in uscita); il token sta in `.env`. Guida passo passo in `docs/DEPLOY.md`, anche per il futuro trasloco su Raspberry. Tolti i comandi `make remote`.
+- L'app ascolta solo sul computer che la ospita (`127.0.0.1`): niente più porta aperta in rete locale (`APP_BIND=0.0.0.0` per riaprirla).
+- Sicurezza dietro il tunnel: il limite dei tentativi di login usa l'indirizzo vero di chi si collega (`CF-Connecting-IP`), non quello del tunnel; in HTTPS il browser riceve HSTS.
+- **Anteprima dei modelli 3D**: i documenti STL, 3MF e STEP si aprono in un visore 3D (trascina per ruotare, tasto destro per spostare, rotella per lo zoom, "Vista iniziale" per tornare all'inizio). Gli STEP sono convertiti in triangoli nel browser con OpenCascade, con i colori delle parti; i 3MF tengono i loro colori.
+- **Note sui punti del modello**: clicchi sul modello e lasci una nota lì, come sui PDF. I segnaposto seguono la vista, quelli coperti da altre parti si attenuano, si trascinano sulla superficie; cliccando una nota la vista gira verso il punto. `org doc notes` le mostra sotto "Sul modello".
+- Schema dati v14.
+
 ## 0.10 — 2026-10-28
 - **Permessi**: in Impostazioni → Permessi un admin sceglie per ogni persona del workspace il livello di ogni area (todo e diario, mail, progetti, magazzino, documenti, contatti, chat): nessun accesso, lettura o scrittura. Le aree collegate si sistemano da sole (scrivere le mail richiede di leggere contatti, documenti, magazzino e progetti…; l'elenco è nella stessa sezione).
 - Senza accesso un'area sparisce dal menu e dalle tab; in sola lettura si vede tutto ma i controlli per modificare sono spenti. Il server controlla ogni richiesta e manda solo i dati che si possono leggere: valgono anche per CLI e bot.
