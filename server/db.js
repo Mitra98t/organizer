@@ -263,6 +263,16 @@ const MIGRATIONS = [
   `
   ALTER TABLE contacts ADD COLUMN hue INTEGER;
   `,
+  // v13: codici alternativi degli articoli (oltre al codice principale, con cui l'articolo è noto).
+  // Ogni codice, principale o alternativo, appartiene a un solo articolo.
+  `
+  CREATE TABLE item_aliases (
+    code TEXT PRIMARY KEY COLLATE NOCASE,
+    item_id INTEGER NOT NULL REFERENCES items ON DELETE CASCADE,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX item_aliases_item ON item_aliases(item_id);
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

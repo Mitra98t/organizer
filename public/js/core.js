@@ -203,6 +203,7 @@ function indexData(d) {
   d.entryProjects ||= [];
   d.categoryColors ||= [];
   d.customDocKinds ||= [];
+  d.itemAliases ||= [];
   d.chat ||= [];
   d.chatUnread ??= 0;
   d.chatReadId ??= 0;
@@ -214,6 +215,9 @@ function indexData(d) {
   d.userById = new Map(d.users.map(u => [u.id, u]));
   d.itemById = new Map(d.items.map(i => [i.id, i]));
   d.itemByCode = new Map(d.items.map(i => [i.code.toUpperCase(), i]));
+  // Codici alternativi: #ALTERNATIVO porta all'articolo come il codice principale.
+  d.aliasesOf = group(d.itemAliases, 'item_id');
+  for (const a of d.itemAliases) if (d.itemById.has(a.item_id)) d.itemByCode.set(a.code.toUpperCase(), d.itemById.get(a.item_id));
   d.childrenOf = group(d.entries.filter(e => e.parent_id), 'parent_id');
   d.logsOf = group(d.logs, 'entry_id');
   d.itemsOfEntry = group(d.entryItems, 'entry_id');
@@ -475,6 +479,67 @@ export async function newDocKind() {
   return r?.name ?? null;
 }
 
+// Scelta del tipo di documento: un menu nostro, perché le voci di un <select> sul Mac non si colorano.
+// Ogni voce è il tipo con il suo colore; in fondo "+ nuovo tipo…". Tastiera: ↑↓, Invio, Esc.
+const kindMenu = h('div.kind-menu', { hidden: true, role: 'listbox' });
+let kindMenuFor = null;
+
+export function kindPicker(value, onPick, { title = 'Tipo di documento' } = {}) {
+  const btn = h('button.dk-sel.kpick', {
+    ...dkAttrs(value), type: 'button', title, 'aria-haspopup': 'listbox',
+    onclick: ev => { ev.stopPropagation(); openKindMenu(btn, value, onPick); },
+  }, value, h('span.kpick-caret', '▾'));
+  return btn;
+}
+
+function closeKindMenu() {
+  kindMenuFor = null;
+  kindMenu.hidden = true;
+}
+
+// Dopo un ridisegno il pulsante può essere stato sostituito: il menu si chiude.
+export const kindMenuCheck = () => { if (kindMenuFor && !kindMenuFor.isConnected) closeKindMenu(); };
+
+function openKindMenu(btn, value, onPick) {
+  if (kindMenuFor === btn) return closeKindMenu();
+  if (!kindMenu.isConnected) document.body.append(kindMenu);
+  kindMenuFor = btn;
+  const pick = async k => {
+    closeKindMenu();
+    btn.focus();
+    const kind = k === '+' ? await newDocKind() : k;
+    if (kind && kind !== value) onPick(kind);
+  };
+  kindMenu.replaceChildren(
+    ...docKinds().map(k => h('button.km-i', { type: 'button', class: k === value ? 'on' : null, role: 'option', onclick: () => pick(k) }, h('span.dk', dkAttrs(k), k))),
+    h('button.km-i.new', { type: 'button', onclick: () => pick('+') }, icon('plus'), 'nuovo tipo…'));
+  kindMenu.hidden = false;
+  const r = btn.getBoundingClientRect();
+  const mh = kindMenu.offsetHeight;
+  kindMenu.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - kindMenu.offsetWidth - 8))}px`;
+  kindMenu.style.top = `${r.bottom + 4 + mh < window.innerHeight - 8 ? r.bottom + 4 : Math.max(8, r.top - mh - 4)}px`;
+  (kindMenu.querySelector('.km-i.on') || kindMenu.querySelector('.km-i')).focus();
+}
+
+document.addEventListener('pointerdown', ev => {
+  if (kindMenuFor && !kindMenu.contains(ev.target) && !kindMenuFor.contains(ev.target)) closeKindMenu();
+}, true);
+window.addEventListener('scroll', ev => { if (kindMenuFor && !kindMenu.contains(ev.target)) closeKindMenu(); }, true);
+kindMenu.addEventListener('keydown', ev => {
+  const items = [...kindMenu.querySelectorAll('.km-i')];
+  const i = items.indexOf(document.activeElement);
+  if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+    ev.preventDefault();
+    items[(i + (ev.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
+  } else if (ev.key === 'Escape') {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const b = kindMenuFor;
+    closeKindMenu();
+    b?.focus();
+  }
+});
+
 // URL del file di un documento. L'impronta (sha256) nell'indirizzo evita che il browser mostri dalla cache
 // un file vecchio con lo stesso numero di documento (dopo un reset o il ripristino di un backup).
 export const docFileUrl = (d, { inline = false } = {}) =>
@@ -504,6 +569,9 @@ export function huePicker(current, auto, onPick) {
 export function filterChip({ on, onclick, label, n, cls, style, title }) {
   return h('button.chip.fchip', { class: [on && 'on', cls].filter(Boolean).join(' ') || null, style, title, onclick }, label, n != null && h('span.n', n));
 }
+
+// Codici alternativi di un articolo (testo), per filtri e ricerche.
+export const aliasCodes = it => (S.data?.aliasesOf.get(it.id) || []).map(a => a.code);
 
 export const itemAttrs = it => (it?.category ? { class: 'cat', style: catStyle(it.category) } : {});
 

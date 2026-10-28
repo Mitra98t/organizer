@@ -42,6 +42,7 @@ org item show SCH-042
 org item add SCH-060 scheda relè -c scheda -l B4 -q 3
 org item mv SCH-060 SCH-061 relè           # cambia categoria
 org item link PRD-ROVER-1 SCH-060          # composizione
+org item alias SCH-060 G5V-1-DC5           # codice alternativo (--rm per toglierlo)
 
 org doc up SCH-060 fw_1.1.bin -V 1.1       # tipo dedotto: firmware (aggiorna la versione dell'articolo)
 org doc up SCH-060 relay.kicad_mod         # → footprint

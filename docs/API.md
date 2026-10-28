@@ -52,7 +52,7 @@ X-Workspace: 2          (facoltativo)
 | `GET /api/trash` | contenuto del cestino |
 | `GET /api/events` | notifiche in tempo reale (Server-Sent Events) |
 
-`/api/sync` restituisce: `me`, `users` (`member: 1` per i membri attuali), `workspace`, `workspaces`, `projects`, `entries` (aperte e fatte negli ultimi 30 giorni), `logs`, `entryItems`, `entryProjects` (progetti oltre al principale `project_id`), `items`, `itemLinks` (composizione `parent_id` → `child_id`), `projectItems`, `docs`, `contacts`, `categoryColors`, `docNotes`, `attachments`, `chat` (ultimi 100 messaggi), `chatReadId`, `chatUnread`, `trashCount`, `rev`. Supporta `ETag`/`If-None-Match` (→ `304` se non è cambiato niente).
+`/api/sync` restituisce: `me`, `users` (`member: 1` per i membri attuali), `workspace`, `workspaces`, `projects`, `entries` (aperte e fatte negli ultimi 30 giorni), `logs`, `entryItems`, `entryProjects` (progetti oltre al principale `project_id`), `items`, `itemAliases` (codici alternativi: `item_id`, `code`), `itemLinks` (composizione `parent_id` → `child_id`), `projectItems`, `docs`, `contacts`, `categoryColors`, `docNotes`, `attachments`, `chat` (ultimi 100 messaggi), `chatReadId`, `chatUnread`, `trashCount`, `rev`. Supporta `ETag`/`If-None-Match` (→ `304` se non è cambiato niente).
 
 `/api/events` manda un evento `change` (`data: {"rev": …, "by": idUtente}`) a ogni modifica nel workspace e un commento `: ping` ogni 25 secondi. Il modo semplice per reagire: a ogni `change`, rileggere `/api/sync` (con l'ETag).
 
@@ -131,6 +131,8 @@ Campi di un articolo: `code` (unico; lettere, numeri e `. _ - /`), `name`, `cate
 |---|---|
 | `POST /api/items` `{code, …campi, project_id?}` | nuovo articolo |
 | `PATCH /api/items/:id` | campi; cambiando `code` si aggiornano anche i `#CODICE` nel testo delle voci |
+| `POST /api/items/:id/aliases` `{code}` | aggiunge un codice alternativo (unico: non può essere il codice, principale o alternativo, di un altro articolo) |
+| `DELETE /api/items/:id/aliases/:code` | toglie un codice alternativo |
 | `POST /api/items/:id/children` `{code}` | composizione: l'articolo contiene `code` (creato se non esiste) |
 | `DELETE /api/items/:id/children/:childId` | toglie dalla composizione |
 | `PUT /api/categories/color` `{name, hue}` | colore di una categoria (`hue: null` = automatico) |
@@ -150,7 +152,7 @@ curl -X POST "http://localhost:8080/api/items/7/docs?kind=firmware&version=1.1&n
 
 Parametri: `kind`, `name` (nome del file), `version`, `label` (nome mostrato). Un `firmware` con versione aggiorna il campo `firmware` dell'articolo. Limite: 200 MB (`MAX_UPLOAD_MB`).
 
-**Collegare un link** (repo, wiki, PDF online): stesso endpoint con corpo JSON `{"url": "https://…", "kind": "datasheet", "label": "…", "version": "…"}`.
+**Collegare un link** (repo, wiki, PDF online): stesso endpoint, **senza** `name` nella query string, con corpo JSON `{"url": "https://…", "kind": "datasheet", "label": "…", "version": "…"}`. È `name` a distinguere un file da un link: un file `.json` si carica con `Content-Type: application/json` e `?name=…` come qualunque altro file.
 
 | | |
 |---|---|
@@ -166,7 +168,7 @@ Una mail è una voce con `kind: "mail"`. Il server non spedisce niente: la mail 
 | | |
 |---|---|
 | `POST /api/entries/:id/attachments?name=file.pdf` | allega un file (corpo grezzo, come i documenti) |
-| `POST /api/entries/:id/attachments` `{doc_id}` | allega un documento del magazzino |
+| `POST /api/entries/:id/attachments` `{doc_id}` | allega un documento del magazzino (senza `name` nella query string) |
 | `DELETE /api/attachments/:id` | toglie un allegato |
 | `GET /api/attachments/:id/file` | scarica un allegato |
 | `GET /api/entries/:id/eml` | la mail come `.eml` (destinatari, oggetto, testo, allegati) |

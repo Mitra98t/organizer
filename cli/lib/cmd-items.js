@@ -38,7 +38,7 @@ export default {
       const D = await ctx.data();
       const q = pos.join(' ').toLowerCase();
       const list = D.items.filter(i => (!o.cat || i.category.toLowerCase() === o.cat.toLowerCase())
-        && (!q || `${i.code} ${i.name} ${i.category} ${i.location} ${i.notes} ${i.firmware}`.toLowerCase().includes(q)));
+        && (!q || `${i.code} ${(D.aliasesOf.get(i.id) || []).join(' ')} ${i.name} ${i.category} ${i.location} ${i.notes} ${i.firmware}`.toLowerCase().includes(q)));
       if (ctx.json) return ctx.out(list);
       if (!list.length) return console.log(c.dim('Nessun articolo'));
       const cats = [...new Set(list.map(i => i.category))].sort((a, b) => (!a) - (!b) || a.localeCompare(b));
@@ -62,8 +62,10 @@ export default {
       const mails = await ctx.api().get(`/backlinks/articolo/${it.id}`);
       const projects = new Map(D.projectItems.filter(x => x.item_id === it.id).map(x => [x.project_id, D.projectById.get(x.project_id)]));
       for (const e of entries) for (const p of entryProjects(D, e)) projects.set(p.id, p);
-      if (ctx.json) return ctx.out({ ...it, docs, children, parents, entries, mails, projects: [...projects.values()].filter(Boolean) });
+      if (ctx.json) return ctx.out({ ...it, aliases: D.aliasesOf.get(it.id) || [], docs, children, parents, entries, mails, projects: [...projects.values()].filter(Boolean) });
       console.log(`${c.bold(c.cyan(it.code))} ${it.name}${it.status ? ` ${STATUS_LABEL[it.status]}` : ''}`);
+      const alts = D.aliasesOf.get(it.id) || [];
+      if (alts.length) console.log(c.dim(`anche: ${alts.join(' · ')}`));
       console.log(c.dim(`${ctx.api().base}/#/i/${it.id}`));
       table([
         it.category && ['categoria', it.category],
@@ -134,6 +136,24 @@ export default {
         await ctx.api().patch(`/items/${it.id}`, { category: cat === '-' ? '' : cat });
         done(it.code, `→ ${cat === '-' ? 'senza categoria' : cat}`);
       }
+    },
+  },
+
+  alias: {
+    usage: 'item alias CODICE [ALTERNATIVO…] [--rm ALTERNATIVO]',
+    summary: 'codici alternativi di un articolo: senza altro li elenca, poi li aggiunge; --rm ne toglie uno',
+    options: { rm: { type: 'string', multiple: true } },
+    async run(ctx, [ref, ...alts], o) {
+      const D = await ctx.data();
+      const it = itemRef(D, ref ?? fail('Quale articolo?'));
+      for (const a of alts) await ctx.api().post(`/items/${it.id}/aliases`, { code: a });
+      for (const a of o.rm ?? []) await ctx.api().del(`/items/${it.id}/aliases/${encodeURIComponent(a.replace(/^#/, ''))}`);
+      if (!alts.length && !o.rm) {
+        const list = D.aliasesOf.get(it.id) || [];
+        if (ctx.json) return ctx.out(list);
+        return console.log(list.length ? list.join('\n') : c.dim(`${it.code} non ha codici alternativi`));
+      }
+      done(it.code, 'aggiornato');
     },
   },
 

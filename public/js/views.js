@@ -1,8 +1,8 @@
 import {
   h, icon, S, ui, RS, api, act, render, richText, dueInfo, dayDiff, fmtDay, fmtLongDay, fmtTime, fmtSize,
   userName, toast, save, patchEntry, addEntry, isMine, localDay, autosize, stop, copy, hue, trashIt, contactNames,
-  descendants, ancestors, catStyle, itemAttrs, docFileUrl, projectsOf, DOC_KINDS, docKinds, newDocKind, projHue, catHue, huePicker,
-  switchWorkspace, newWorkspace, docName, renameDoc, richField, backlinks, plainRefs, CONTACT_COLOR, masonry, filterChip,
+  descendants, ancestors, catStyle, itemAttrs, docFileUrl, projectsOf, DOC_KINDS, projHue, catHue, huePicker,
+  switchWorkspace, newWorkspace, docName, renameDoc, richField, backlinks, plainRefs, CONTACT_COLOR, masonry, filterChip, aliasCodes, kindPicker,
 } from './core.js';
 import { docMeta, docPeek } from './docview.js';
 import { today, addDays } from './parse.js';
@@ -695,6 +695,7 @@ function peekContent(it) {
     h('div.peek-name', it.name || h('span.muted', 'senza descrizione')),
     it.status && h('div.peek-status', statusDot(it), ITEM_STATUS[it.status]),
     h('div.peek-grid',
+      aliasCodes(it).length > 0 && row('Alternativi', h('span.mono', aliasCodes(it).join(' · '))),
       it.firmware && row('Firmware', h('span.mono', it.firmware), fw && h('span.muted', ` · ${fw.filename}`)),
       it.location && row('Posizione', it.location),
       it.url && row('Link', it.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 40)),
@@ -753,9 +754,11 @@ function itemRow(i) {
   const D = S.data;
   const n = openCountOf(i.id);
   const docs = (D.docsOf.get(i.id) || []).length;
+  const alts = aliasCodes(i);
   return peekable(h('a.item-row', { href: `#/i/${i.id}`, class: i.status ? `st-${i.status}` : null },
     statusDot(i),
     h('span.code', itemAttrs(i), i.code),
+    alts.length > 0 && h('span.alts', { title: 'Codici alternativi' }, alts.join(' · ')),
     h('span.name', i.name || h('span.muted', 'senza descrizione')),
     h('span.item-meta',
       i.firmware && h('span.fw', icon('chip'), i.firmware),
@@ -778,7 +781,7 @@ export function viewItems() {
   const items = D.items
     .filter(i => (ui.itemStatusF ? i.status === ui.itemStatusF : !(ui.hideDiscarded && i.status === 'discarded')))
     .filter(i => ui.itemCat == null || (i.category || '') === ui.itemCat)
-    .filter(i => !f || [i.code, i.name, i.category, i.firmware, i.location, i.notes, docNames(i.id)].join(' ').toLowerCase().includes(f));
+    .filter(i => !f || [i.code, ...aliasCodes(i), i.name, i.category, i.firmware, i.location, i.notes, docNames(i.id)].join(' ').toLowerCase().includes(f));
   const setView = v => { ui.itemView = v; save('org.itemView', v); render(); };
 
   // Vista per categoria: una colonna per tipo di articolo (affiancate sugli schermi larghi).
@@ -861,10 +864,7 @@ function docSection(it) {
   };
   const body = [
     h('div.upload',
-      selectOf(ui.docKind, [...docKinds().map(k => [k, k]), ['+', '+ nuovo tipo…']], async v => {
-        ui.docKind = v === '+' ? (await newDocKind()) || ui.docKind : v;
-        render();
-      }),
+      kindPicker(ui.docKind, k => { ui.docKind = k; render(); }, { title: 'Tipo dei documenti da caricare' }),
       h('input', { placeholder: 'versione', size: 9, value: ui.docVer, 'data-fk': `docver-${it.id}`, oninput: ev => { ui.docVer = ev.target.value; } }),
       h('button.btn', { onclick: () => fileInput.click() }, icon('upload'), 'File'),
       h('button.btn.ghost', { onclick: addLink }, icon('link'), 'Link'),
@@ -939,6 +939,16 @@ export function viewItem(id) {
         [['', 'attivo'], ['outdated', 'outdated'], ['discarded', 'scartato']].map(([k, label]) =>
           h('button', { class: (it.status || '') === k && 'on', onclick: () => patch({ status: k }) }, k && h('span.sdot', { class: `s-${k}` }), label)))),
     it.category && ui.catPicker === it.category && h('div.cat-pick', h('span.muted', `Colore della categoria "${it.category}" (vale per tutti i suoi articoli): `), catColorPicker(it.category)),
+    // Codici alternativi: il principale resta quello con cui l'articolo è noto; questi lo trovano lo stesso.
+    h('div.aliases',
+      h('span.muted', 'Codici alternativi'),
+      aliasCodes(it).map(code => h('span.chip-wrap',
+        h('span.code', itemAttrs(it), code),
+        h('button.icon-btn.sm', { title: `Togli ${code}`, onclick: () => act(() => api('DELETE', `/items/${it.id}/aliases/${encodeURIComponent(code)}`)) }, icon('x')))),
+      h('input.sub-in.mono', {
+        placeholder: '+ codice alternativo', size: 20, 'data-fk': `ialias-${it.id}`, autocomplete: 'off', autocapitalize: 'characters',
+        onkeydown: enterAdd(code => act(() => api('POST', `/items/${it.id}/aliases`, { code }))),
+      })),
     h('div.grid',
       field('name', 'Descrizione', { placeholder: 'es. scheda controllo motori' }, 'wide'),
       field('category', 'Categoria', { placeholder: 'scheda, prodotto, cavo…', list: 'item-cats' }),
@@ -1002,7 +1012,7 @@ export function viewSearch() {
   const projects = D.projects.filter(p => has(p.name) || has(p.tag) || has(p.notes));
   const contacts = D.contacts.filter(c => [c.name, c.email, c.company, c.role, c.phone, c.notes].some(has));
   const docNotes = D.docNotes.filter(n => has(n.text) && D.docById.has(n.doc_id));
-  const items = D.items.filter(i => [i.code, i.name, i.category, i.firmware, i.location, i.notes].some(has)
+  const items = D.items.filter(i => [i.code, ...aliasCodes(i), i.name, i.category, i.firmware, i.location, i.notes].some(has)
     || (D.docsOf.get(i.id) || []).some(d => has(d.filename) || has(d.label) || has(d.version)));
 
   return h('div.view',

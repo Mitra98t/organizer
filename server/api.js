@@ -82,8 +82,20 @@ function resolveProject(tag, user) {
     .run(tag, tag, user.id, t, t));
 }
 
+// Un codice (principale o alternativo) appartiene a un solo articolo: messaggio d'errore se è già preso.
+function codeTaken(code, selfId = null) {
+  const main = db.prepare('SELECT code, deleted_at FROM items WHERE code = ? AND id IS NOT ?').get(code, selfId);
+  if (main) return main.deleted_at ? `${main.code} è nel cestino: ripristinalo da lì` : `Il codice ${main.code} esiste già`;
+  const alias = db.prepare(`SELECT a.code, i.code AS main FROM item_aliases a JOIN items i ON i.id = a.item_id
+    WHERE a.code = ? AND a.item_id IS NOT ?`).get(code, selfId);
+  return alias ? `${alias.code} è un codice alternativo di ${alias.main}` : null;
+}
+
 function ensureItem(code, user) {
-  const it = db.prepare('SELECT id, deleted_at FROM items WHERE code = ?').get(code);
+  // #CODICE alternativo: è l'articolo a cui appartiene.
+  const alias = db.prepare('SELECT item_id FROM item_aliases WHERE code = ?').get(code);
+  const it = alias ? db.prepare('SELECT id, deleted_at FROM items WHERE id = ?').get(alias.item_id)
+    : db.prepare('SELECT id, deleted_at FROM items WHERE code = ?').get(code);
   if (it?.deleted_at) db.prepare('UPDATE items SET deleted_at = NULL, deleted_by = NULL WHERE id = ?').run(it.id);
   if (it) return it.id;
   const t = now();
@@ -117,7 +129,8 @@ export function syncEntryLinks(entryId) {
   for (const m of text.matchAll(REF_RE)) if (!(m[1] === 'voce' && +m[2] === entryId)) link.run(entryId, m[1], +m[2]);
   if (e.kind !== 'mail') return;
   const body = `${e.notes}\n${e.mail_subject || ''}`;
-  for (const it of db.prepare('SELECT id, code FROM items WHERE deleted_at IS NULL').all()) {
+  for (const it of db.prepare(`SELECT id, code FROM items WHERE deleted_at IS NULL UNION ALL
+    SELECT a.item_id, a.code FROM item_aliases a JOIN items i ON i.id = a.item_id WHERE i.deleted_at IS NULL`).all()) {
     if (new RegExp(`(^|[^\\w#])${escRe(it.code)}(?![\\w]|[.\\-/][\\w])`, 'i').test(body)) link.run(entryId, 'articolo', it.id);
   }
 }
@@ -299,6 +312,8 @@ route('GET', '/api/sync', ({ req, res, user }) => {
     logs: db.prepare(`SELECT l.* FROM entry_log l JOIN entries e ON e.id = l.entry_id WHERE ${where} ORDER BY l.id`).all(p),
     entryItems: db.prepare(`SELECT ei.entry_id, ei.item_id FROM entry_items ei JOIN entries e ON e.id = ei.entry_id WHERE ${where}`).all(p),
     items: db.prepare('SELECT * FROM items WHERE deleted_at IS NULL ORDER BY code COLLATE NOCASE').all(),
+    itemAliases: db.prepare(`SELECT a.item_id, a.code FROM item_aliases a JOIN items i ON i.id = a.item_id
+      WHERE i.deleted_at IS NULL ORDER BY a.code COLLATE NOCASE`).all(),
     itemLinks: db.prepare('SELECT parent_id, child_id FROM item_links').all(),
     entryProjects: db.prepare(`SELECT ep.entry_id, ep.project_id FROM entry_projects ep
       JOIN entries e ON e.id = ep.entry_id JOIN projects p ON p.id = ep.project_id
@@ -687,8 +702,8 @@ function checkCode(code) {
 route('POST', '/api/items', async ({ user, body }) => {
   const b = await body();
   const code = checkCode(str(b.code, 64));
-  const existing = db.prepare('SELECT deleted_at FROM items WHERE code = ?').get(code);
-  if (existing) fail(409, existing.deleted_at ? `${code} è nel cestino: ripristinalo da lì` : `Il codice ${code} esiste già`);
+  const taken = codeTaken(code);
+  if (taken) fail(409, taken);
   const projectId = b.project_id ? getProject(b.project_id, user.id).id : null;
   const t = now();
   return tx(() => {
@@ -707,7 +722,13 @@ route('PATCH', '/api/items/:id', async ({ params, body }) => {
   tx(() => {
     if (b.code !== undefined && b.code !== it.code) {
       f.code = checkCode(str(b.code, 64));
-      if (db.prepare('SELECT 1 FROM items WHERE code = ? AND id != ?').get(f.code, it.id)) fail(409, `Il codice ${f.code} esiste già`);
+      const taken = codeTaken(f.code, it.id);
+      if (taken) fail(409, taken);
+      // Un codice alternativo diventa il principale: quello di prima resta tra gli alternativi.
+      if (db.prepare('DELETE FROM item_aliases WHERE code = ? AND item_id = ?').run(f.code, it.id).changes
+        && f.code.toLowerCase() !== it.code.toLowerCase()) {
+        db.prepare('INSERT INTO item_aliases (code, item_id, created_at) VALUES (?, ?, ?)').run(it.code, it.id, now());
+      }
       renameCodeInEntries(it, f.code);
     }
     f.updated_at = now();
@@ -733,6 +754,28 @@ function renameCodeInEntries(it, code) {
 route('DELETE', '/api/items/:id', ({ params, user }) => {
   const it = getItem(params.id);
   db.prepare('UPDATE items SET deleted_at = ?, deleted_by = ? WHERE id = ?').run(now(), user.id, it.id);
+});
+
+// Codici alternativi: si aggiungono e si tolgono; nei testi #ALTERNATIVO porta all'articolo.
+route('POST', '/api/items/:id/aliases', async ({ params, user, body }) => {
+  const it = getItem(params.id);
+  const code = checkCode(str((await body()).code, 64).replace(/^#/, ''));
+  if (code.toLowerCase() === it.code.toLowerCase()) fail(400, 'È già il codice principale');
+  const taken = codeTaken(code, it.id);
+  if (taken) fail(409, taken);
+  tx(() => {
+    db.prepare('INSERT OR IGNORE INTO item_aliases (code, item_id, created_at) VALUES (?, ?, ?)').run(code, it.id, now());
+    // Le voci che lo citavano già (#CODICE) ora sono collegate all'articolo.
+    const q = `%#${code.replace(/[%_\\]/g, '\\$&')}%`;
+    const ids = db.prepare(`SELECT DISTINCT e.id FROM entries e LEFT JOIN entry_log l ON l.entry_id = e.id
+      WHERE e.title LIKE $q ESCAPE '\\' OR e.notes LIKE $q ESCAPE '\\' OR l.text LIKE $q ESCAPE '\\'`).all({ q });
+    for (const { id } of ids) syncEntryItems(id, user);
+  });
+});
+
+route('DELETE', '/api/items/:id/aliases/:code', ({ params }) => {
+  const it = getItem(params.id);
+  if (!db.prepare('DELETE FROM item_aliases WHERE code = ? AND item_id = ?').run(params.code, it.id).changes) fail(404, 'Codice alternativo non trovato');
 });
 
 route('POST', '/api/items/:id/children', async ({ params, user, body }) => {
@@ -776,14 +819,17 @@ export async function saveUpload(req) {
   return { stored, size, sha256: hash.digest('hex'), mime: str(req.headers['content-type'], 100) || 'application/octet-stream' };
 }
 
-// Upload: il corpo della richiesta è il file grezzo, i metadati stanno nella query string.
-// Con Content-Type JSON invece si registra un link esterno (repo, wiki, drive...).
+// Upload: il corpo della richiesta è il file grezzo, i metadati stanno nella query string (?name= sempre).
+// Senza ?name= e con corpo JSON invece si registra un link esterno (repo, wiki, drive...): un file .json
+// caricato ha Content-Type JSON ma anche il nome, quindi resta un file.
+export const isJsonRequest = (req, query) => !query.name && (req.headers['content-type'] || '').startsWith('application/json');
+
 route('POST', '/api/items/:id/docs', async ({ req, params, query, user, body }) => {
   const it = getItem(params.id);
   const kind = docKind(query.kind);
   const t = now();
 
-  if ((req.headers['content-type'] || '').startsWith('application/json')) {
+  if (isJsonRequest(req, query)) {
     const b = await body();
     const url = str(b.url, 2000);
     if (!/^https?:\/\//i.test(url)) fail(400, 'Il link deve iniziare con http:// o https://');

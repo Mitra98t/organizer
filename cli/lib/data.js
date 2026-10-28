@@ -21,6 +21,9 @@ export async function loadData(api) {
   D.childrenOf = group(D.itemLinks, 'parent_id', 'child_id');
   D.parentsOf = group(D.itemLinks, 'child_id', 'parent_id');
   D.itemsOfProject = group(D.projectItems, 'project_id', 'item_id');
+  // Codici alternativi: trovano l'articolo come il codice principale.
+  D.aliasesOf = group(D.itemAliases || [], 'item_id', 'code');
+  for (const a of D.itemAliases || []) if (D.itemById.has(a.item_id)) D.itemByCode.set(a.code.toLowerCase(), D.itemById.get(a.item_id));
   return D;
 }
 

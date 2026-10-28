@@ -5,7 +5,7 @@
 // il visualizzatore (canvas compresi) resta in memoria e viene solo riagganciato; si aggiornano i segnaposto.
 // Più visualizzatori possono essere aperti insieme (revisione affiancata, #/review?d=1,2,3).
 import { backlinksBox } from './views.js';
-import { h, icon, S, ui, api, act, render, richText, fmtTime, fmtSize, userName, toast, trashIt, autosize, itemAttrs, save, docFileUrl, docKinds, dkAttrs, newDocKind, docName, renameDoc } from './core.js';
+import { h, icon, S, ui, api, act, render, richText, fmtTime, fmtSize, userName, toast, trashIt, autosize, itemAttrs, save, docFileUrl, dkAttrs, kindPicker, docName, renameDoc } from './core.js';
 import { today } from './parse.js';
 
 const PDFJS = new URL('../vendor/pdfjs/', import.meta.url).href;
@@ -748,14 +748,7 @@ export function viewDoc(id, query = {}) {
 export function docMeta(d) {
   const patch = f => act(() => api('PATCH', `/docs/${d.id}`, f));
   return h('span.docmeta',
-    h('select.dk-sel', {
-      ...dkAttrs(d.kind), value: d.kind, title: 'Tipo di documento',
-      onchange: async ev => {
-        const kind = ev.target.value === '+' ? await newDocKind() : ev.target.value;
-        if (kind) patch({ kind });
-        else ev.target.value = d.kind;
-      },
-    }, docKinds().map(k => h('option', { value: k }, k)), h('option', { value: '+' }, '+ nuovo tipo…')),
+    kindPicker(d.kind, kind => patch({ kind })),
     h('input.ver-in', {
       value: d.version || '', placeholder: 'versione', size: 7, title: 'Versione', 'data-fk': `dver-${d.id}`,
       onchange: ev => patch({ version: ev.target.value.trim() }),

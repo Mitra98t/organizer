@@ -159,13 +159,20 @@ function contactFieldSuggestions(field, ql) {
 // Nei codici trattini, punti e barre non contano: "sch051" trova SCH-051.
 const bare = s => lc(s).replace(/[-_./\s]+/g, '');
 
+// Si cerca anche nei codici alternativi; si inserisce sempre il codice principale (quello con cui è noto),
+// e nel suggerimento si vede quale alternativo ha trovato.
 function itemSuggestions(ql, filter = () => true) {
   const qb = bare(ql);
+  const codeHit = c => lc(c).includes(ql) || (qb && bare(c).includes(qb));
+  const altOf = i => (ql ? (S.data.aliasesOf.get(i.id) || []).map(a => a.code).find(codeHit) : null);
   return S.data.items
-    .filter(i => filter(i) && (!ql || [i.code, i.name, i.firmware, i.category].some(v => lc(v).includes(ql)) || (qb && bare(i.code).includes(qb))))
+    .filter(i => filter(i) && (!ql || [i.name, i.firmware, i.category].some(v => lc(v).includes(ql)) || codeHit(i.code) || altOf(i)))
     .sort((a, b) => rank(a.code, ql) - rank(b.code, ql) || a.code.localeCompare(b.code))
     .slice(0, 8)
-    .map(i => ({ label: i.code, hint: i.name, extra: i.firmware ? `fw ${i.firmware}` : i.category, code: true, cat: i.category }));
+    .map(i => {
+      const alt = !codeHit(i.code) && altOf(i);
+      return { label: i.code, hint: alt ? `alt. ${alt} · ${i.name}` : i.name, extra: i.firmware ? `fw ${i.firmware}` : i.category, code: true, cat: i.category };
+    });
 }
 
 function projectSuggestions(ql) {

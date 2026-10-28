@@ -2,7 +2,7 @@
 // Si filtrano, si raggruppano per categoria dell'articolo (come il magazzino a colonne) o per tipo di documento,
 // e se ne scelgono fino a 3 da aprire affiancati. Qui si aggiungono anche i tipi di documento.
 import {
-  h, icon, S, ui, api, act, render, save, toast, fmtSize, fmtTime, itemAttrs, catStyle, docKinds, dkAttrs, newDocKind, docName, renameDoc, masonry, filterChip,
+  h, icon, S, ui, api, act, render, save, toast, fmtSize, fmtTime, itemAttrs, catStyle, docKinds, dkAttrs, newDocKind, docName, renameDoc, masonry, filterChip, aliasCodes,
 } from './core.js';
 import { docMeta, docPeek } from './docview.js';
 import { peekable } from './views.js';
@@ -90,7 +90,7 @@ export function viewDocuments() {
       if (!f) return true;
       const it = D.itemById.get(d.item_id);
       const notes = (D.docNotesOf.get(d.id) || []).map(n => n.text).join(' ');
-      return lc([d.label, d.filename, d.url, d.version, d.kind, it.code, it.name, notes].join(' ')).includes(f);
+      return lc([d.label, d.filename, d.url, d.version, d.kind, it.code, ...aliasCodes(it), it.name, notes].join(' ')).includes(f);
     });
   const byCat = ui.docGroup === 'item'; // valore salvato delle versioni precedenti ("per articolo")
   const filtered = !!(f || ui.docKindF || ui.docOnlyNotes);

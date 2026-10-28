@@ -3,6 +3,12 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.9.2 — 2026-10-28
+- Magazzino: **codici alternativi** per gli articoli, oltre al codice principale con cui sono noti. Si aggiungono e si tolgono nella scheda dell'articolo; `#ALTERNATIVO` nelle voci porta all'articolo, filtri, ricerca, suggerimenti e scheda rapida li trovano. Ogni codice appartiene a un solo articolo; scrivendo un alternativo come nuovo codice diventa il principale e il vecchio resta tra gli alternativi. CLI: `org item alias`.
+- Tipo di documento: il menu che si apre ha le voci con il loro colore (il menu di sistema sul Mac non le colorava); si usa anche con la tastiera (↑↓, Invio, Esc).
+- Correzione: i file `.json` non si caricavano come documenti né come allegati (dalla CLI e dall'app il server li scambiava per la creazione di un link: "Il link deve iniziare con http://"). Ora un caricamento si riconosce dal nome del file nella richiesta.
+- Schema dati v13.
+
 ## 0.9.1 — 2026-10-28
 - Note sui PDF e sulle immagini: i segnaposto si trascinano in un altro punto, anche su un'altra pagina (vicino ai bordi il documento scorre). Un clic senza trascinare seleziona la nota come prima.
 

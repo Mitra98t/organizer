@@ -216,3 +216,53 @@ test('colore dei contatti: tinta 0..359 o automatico', async () => {
   await call('PATCH', `/contacts/${id}`, { cookie, body: { hue: null } });
   assert.equal(await hueOf(), null);
 });
+
+test('codici alternativi: unici, #ALTERNATIVO porta all\'articolo, promozione a principale', async () => {
+  const login = await call('POST', '/login', { body: { username: 'fede', password: 'password-di-prova' } });
+  const cookie = login.headers.get('set-cookie').split(';')[0];
+  const sync = async () => (await call('GET', '/sync', { cookie })).json();
+  const { id } = await (await call('POST', '/items', { cookie, body: { code: 'LED-01', name: 'led bianco' } })).json();
+  assert.equal((await call('POST', `/items/${id}/aliases`, { cookie, body: { code: 'C503D-WAN' } })).status, 204);
+  // Già preso (come alternativo, o come codice principale di un altro articolo): no.
+  assert.equal((await call('POST', '/items', { cookie, body: { code: 'c503d-wan' } })).status, 409);
+  assert.equal((await call('POST', `/items/${id}/aliases`, { cookie, body: { code: 'SCH-042' } })).status, 409);
+
+  // Una voce che cita il codice alternativo è collegata all'articolo (non ne crea uno nuovo).
+  const e = (await (await call('POST', '/entries', { cookie, body: { text: 'ordinare #C503D-WAN' } })).json()).id;
+  let d = await sync();
+  assert.deepEqual(d.entryItems.filter(x => x.entry_id === e).map(x => x.item_id), [id]);
+  assert.ok(!d.items.some(i => i.code.toUpperCase() === 'C503D-WAN'));
+
+  // L'alternativo diventa il principale: il vecchio principale resta tra gli alternativi.
+  await call('PATCH', `/items/${id}`, { cookie, body: { code: 'C503D-WAN' } });
+  d = await sync();
+  assert.equal(d.items.find(i => i.id === id).code, 'C503D-WAN');
+  assert.deepEqual(d.itemAliases.filter(a => a.item_id === id).map(a => a.code), ['LED-01']);
+
+  // Dalla CLI: elenco, aggiunta, rimozione.
+  await org(['login', url, '-u', 'fede', '--password-stdin'], { input: 'password-di-prova\n' });
+  await org(['item', 'alias', 'LED-01', 'NSPW500']);
+  assert.deepEqual(JSON.parse(await org(['item', 'alias', 'C503D-WAN', '--json'])).sort(), ['LED-01', 'NSPW500']);
+  await org(['item', 'alias', 'C503D-WAN', '--rm', 'LED-01']);
+  assert.deepEqual(JSON.parse(await org(['item', 'show', 'NSPW500', '--json'])).aliases, ['NSPW500']);
+});
+
+test('file .json: si caricano come documenti e come allegati, non come link', async () => {
+  await org(['login', url, '-u', 'fede', '--password-stdin'], { input: 'password-di-prova\n' });
+  const src = path.join(dir, 'profilo.json');
+  fs.writeFileSync(src, '{"led": "SCH-042", "corrente": 20}');
+  const [id] = JSON.parse(await org(['doc', 'up', 'SCH-042', src, '--json']));
+  const out = path.join(dir, 'giu-json');
+  fs.mkdirSync(out);
+  await org(['doc', 'get', String(id), '-o', out]);
+  assert.equal(fs.readFileSync(path.join(out, 'profilo.json'), 'utf8'), fs.readFileSync(src, 'utf8'));
+
+  const [mail] = JSON.parse(await org(['add', '--mail', 'invio profilo >ufficio@ditta.example', '--json']));
+  await org(['mail', 'attach', String(mail), src]);
+  const e = JSON.parse(await org(['show', String(mail), '--json']));
+  assert.deepEqual(e.attachments.map(a => a.filename), ['profilo.json']);
+  // Un link si crea ancora con il corpo JSON senza ?name=.
+  const { token } = config();
+  const item = (await (await call('GET', '/sync', { token })).json()).items.find(i => i.code === 'SCH-042');
+  assert.equal((await call('POST', `/items/${item.id}/docs`, { token, body: { url: 'example.com/x' } })).status, 400);
+});

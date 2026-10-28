@@ -1,7 +1,7 @@
 import {
   h, icon, S, ui, RS, api, sync, setRenderer, render, renderStatus, connectLive, disconnectLive, liveClosed,
   flushOutbox, addEntry, loadCache, clearLocal, dueInfo, autosize, toast, isMine, dayDiff, save, hue, act, catStyle, tagStyle,
-  switchWorkspace, newWorkspace,
+  switchWorkspace, newWorkspace, kindMenuCheck,
 } from './core.js';
 import { initAutocomplete, acCheck } from './autocomplete.js';
 import { viewContacts } from './contacts.js';
@@ -408,6 +408,7 @@ function renderApp() {
   }
   viewEl.querySelectorAll('textarea').forEach(autosize);
   acCheck();
+  kindMenuCheck();
   if (keep) {
     const el = viewEl.querySelector(`[data-fk="${CSS.escape(keep.fk)}"]`);
     if (el) {

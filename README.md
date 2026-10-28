@@ -131,6 +131,8 @@ Eliminare sposta nel cestino: voci (con le loro sotto-attività), progetti, arti
 
 ## Magazzino
 
+Ogni articolo ha il suo **codice** (quello con cui è noto) e può avere dei **codici alternativi** (del fornitore, del produttore, vecchie sigle), da aggiungere nella sua scheda sotto il codice. Un `#ALTERNATIVO` scritto in una voce porta allo stesso articolo, e filtri, ricerca e suggerimenti li trovano; i suggerimenti inseriscono sempre il codice principale. Ogni codice appartiene a un solo articolo. Scrivendo un alternativo come nuovo codice dell'articolo, diventa il principale e quello di prima resta tra gli alternativi.
+
 Ogni articolo ha uno **stato**: attivo, **outdated** (superato) o **scartato** (valutato e lasciato perdere), da scegliere nella sua scheda. Negli elenchi e nelle colonne compare come pallino (arancione / rosso) e in cima ci sono i filtri per stato e "nascondi scartati".
 
 Ogni articolo può avere un **link** facoltativo (pagina prodotto, repo, wiki). Nella vista per categoria un articolo si sposta in un'altra categoria **trascinandolo** nella colonna (o in "Nuova categoria").

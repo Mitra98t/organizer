@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { db, UPLOAD_DIR, currentWorkspace } from './db.js';
-import { route, getEntry, insertId, saveUpload } from './api.js';
+import { route, getEntry, insertId, saveUpload, isJsonRequest } from './api.js';
 import { fail, now, str } from './util.js';
 
 const TOKEN_MINUTES = 15;
@@ -60,7 +60,7 @@ function mailParts(e) {
 route('POST', '/api/entries/:id/attachments', async ({ req, params, query, user, body }) => {
   const e = getEntry(params.id, user.id);
   const t = now();
-  if ((req.headers['content-type'] || '').startsWith('application/json')) {
+  if (isJsonRequest(req, query)) { // { doc_id }: documento del magazzino; altrimenti un file (?name=)
     const b = await body();
     const d = db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL AND stored IS NOT NULL').get(+b.doc_id)
       || fail(404, 'Documento non trovato (i link esterni non si possono allegare)');
