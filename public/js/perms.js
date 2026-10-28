@@ -16,6 +16,10 @@ export const AREAS = {
   chat: 'Chat',
 };
 export const LEVELS = { none: 'nessuno', read: 'lettura', write: 'scrittura' };
+
+// La posta è personale (vale anche per gli admin, controllato dal server in VIS_ANY): il permesso Mail decide
+// se una persona può usare le mail, non le fa vedere quelle degli altri.
+export const MAIL_PERSONAL = 'La posta è personale: ognuno vede solo le mail che ha scritto o che gli sono assegnate da mandare, e la propria posta in arrivo da Thunderbird. Nessuno, nemmeno un admin, vede la posta degli altri. Il permesso Mail decide solo se una persona può usare le mail (L: leggere le proprie, S: scriverle e mandarle).';
 const RANK = { none: 0, read: 1, write: 2 };
 
 // Per scrivere in un'area serve leggere queste.

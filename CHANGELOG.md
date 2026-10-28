@@ -3,6 +3,22 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.12 — 2026-10-28
+- **Estensione Organizer per Thunderbird** (Impostazioni → Mail e Thunderbird: si scarica già impostata per il tuo indirizzo, poi un token). Con Thunderbird aperto, **Manda** apre la mail lì con gli allegati, anche se premi dal telefono; Thunderbird resta l'unico a conoscere le password della posta.
+- **Stato automatico**: quando la mail parte da Thunderbird diventa "mandata" e "in attesa di risposta" da sola; quando arriva la risposta esce da "in attesa".
+- **Conversazioni**: nella mail compaiono i messaggi mandati e le risposte arrivate (senza la citazione dei precedenti, "messaggio completo" per vederla), con i nomi degli allegati. Nelle liste (agenda, progetto, contatto, articolo) le mail con risposte hanno ↩ e il numero.
+- **Rispondi** su una risposta arrivata: crea in Organizer la mail di risposta, negli stessi progetti; con Manda si apre in Thunderbird come risposta al messaggio originale, con la citazione sotto.
+- **In arrivo**: nella pagina Mail le mail ricevute in Thunderbird (cartelle Posta in arrivo, non lo spam), con **Rispondi** e **Rispondi a tutti** (gli altri destinatari in Cc, senza i tuoi indirizzi) e Archivia. Sono personali: le vede solo chi le riceve, in ogni workspace. Al collegamento l'estensione recupera anche quelle arrivate mentre Thunderbird era chiuso (la prima volta gli ultimi 7 giorni). Nelle opzioni dell'estensione si può spegnere: allora a Organizer arrivano solo le risposte alle mail mandate da Organizer. Dopo 180 giorni le mail in arrivo si cancellano da Organizer (in Thunderbird restano).
+- **Allegati nel magazzino**: un allegato di una mail ricevuta (in arrivo o nella conversazione) si salva come documento di un articolo con "→ magazzino", scegliendo codice e tipo. Il file lo prende Thunderbird, che deve essere collegato.
+- **La posta è personale**: le mail di Organizer (da mandare, mandate, conversazioni) le vedono solo chi le ha scritte e chi le deve mandare (assegnate); la posta in arrivo solo chi la riceve. Nessun altro membro del workspace, nemmeno un admin, vede la posta degli altri: è scritto anche in Impostazioni → Permessi. Le mail già scritte da altri spariscono dalla tua vista; "privata" non serve più sulle mail.
+- **Pagina Mail riorganizzata**: in "Da fare" solo ciò che è aperto (ricevute da leggere, da mandare, in attesa di risposta); le ricevute lette e le mail mandate vanno in **Archivio**. Una mail ricevuta aperta è letta e passa in archivio quando lasci la pagina; il tasto a sinistra la segna letta o da leggere. In alto i filtri: testo (oggetto, persone, indirizzi, testo), tipo, con allegati, progetto.
+- Le mail ricevute hanno la stessa grafica delle mail di Organizer.
+- **Mail su due colonne**: a sinistra conversazione, testo e aggiornamenti; a destra quello che la lega a Organizer: dettagli (tipo, scadenza, progetti, assegnata), persone (con azienda e ruolo, "+ rubrica" per chi non c'è), allegati in uscita (anche dal magazzino) e ricevuti (→ magazzino), articoli e collegamenti scritti nella mail, chi la cita. Sotto i 1100 px le colonne si impilano.
+- **Contatti → Da salvare**: un pannello con gli indirizzi delle tue mail (ricevute, mandate, in copia) che non sono in rubrica, con il nome preso dalla mail: si salvano uno a uno, o si ignorano.
+- Rispondi a tutti anche sui messaggi ricevuti nella conversazione di una mail. Il numero sulla voce Mail conta anche le mail arrivate da leggere.
+- L'helper `organizer-mail://` resta come alternativa senza estensione.
+- Schema dati v15, account v4.
+
 ## 0.11 — 2026-10-28
 - **Accesso da fuori con Cloudflare Tunnel** al posto di Tailscale: `make tunnel` collega il tuo dominio all'app con HTTPS e senza porte aperte (connessione in uscita); il token sta in `.env`. Guida passo passo in `docs/DEPLOY.md`, anche per il futuro trasloco su Raspberry. Tolti i comandi `make remote`.
 - L'app ascolta solo sul computer che la ospita (`127.0.0.1`): niente più porta aperta in rete locale (`APP_BIND=0.0.0.0` per riaprirla).

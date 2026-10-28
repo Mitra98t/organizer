@@ -327,7 +327,8 @@ function updateBadges() {
   if (!D) return;
   const open = D.entries.filter(e => !e.done_at && e.kind !== 'note');
   const urgent = open.filter(e => e.due && dayDiff(e.due) <= 0 && isMine(e)).length;
-  const mails = open.filter(e => e.kind === 'mail').length;
+  // Mail: da mandare più quelle arrivate da leggere.
+  const mails = open.filter(e => e.kind === 'mail').length + (D.inbox || []).filter(m => !m.read_at).length;
   for (const map of [navLinks, tabLinks]) {
     map.get('agenda').badge.textContent = urgent || '';
     map.get('mail').badge.textContent = mails || '';

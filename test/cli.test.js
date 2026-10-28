@@ -129,6 +129,108 @@ test('documenti: carica, rinomina, scarica', async () => {
   assert.deepEqual(fs.readFileSync(path.join(out, 'firmware relè.bin')), fs.readFileSync(src));
 });
 
+test('thunderbird: manda, mandata, risposta, conversazione, rispondi', async () => {
+  const { token } = config();
+  const tb = (method, p, body) => call(method, p, { token, body });
+  const json = r => (r.status === 204 ? null : r.json());
+  const { id } = await tb('POST', '/entries', { text: 'offerta relè', kind: 'mail' }).then(json);
+  await tb('PATCH', `/entries/${id}`, { contact: 'mario@fornitore.it', mail_subject: 'Offerta relè' });
+  assert.equal((await tb('POST', `/entries/${id}/compose`)).status, 409); // nessuna estensione collegata
+
+  // L'estensione tiene aperto il flusso: il server sa che c'è e la avvisa delle mail da aprire.
+  const ctrl = new AbortController();
+  const stream = await fetch(`${url}/api/mail/stream`, { headers: { Authorization: `Bearer ${token}` }, signal: ctrl.signal });
+  const reader = stream.body.pipeThrough(new TextDecoderStream()).getReader();
+  assert.match((await reader.read()).value, /event: hello/);
+  const sync = await tb('GET', '/sync').then(json);
+  assert.equal(sync.mailExt, true);
+  const ws = sync.workspace.id;
+
+  assert.equal((await tb('POST', `/entries/${id}/compose`)).status, 204);
+  assert.match((await reader.read()).value, /event: outbox/);
+  const [req] = await tb('GET', '/mail/outbox').then(json);
+  assert.deepEqual([req.to, req.subject, req.reply_to], ['mario@fornitore.it', 'Offerta relè', null]);
+  assert.equal((await tb('POST', `/mail/outbox/${ws}/${req.id}/claim`)).status, 204);
+  assert.equal((await tb('POST', `/mail/outbox/${ws}/${req.id}/claim`)).status, 409); // un solo Thunderbird la apre
+
+  await tb('POST', '/mail/sent', { ws, outbox_id: req.id, message_id: '<abc@organizer.test>', to: 'mario@fornitore.it', subject: 'Offerta relè' });
+  let e = await tb('GET', `/entries/${id}`).then(json);
+  assert.ok(e.done_at);
+  assert.equal(e.awaiting_reply, 1);
+  assert.deepEqual(await tb('GET', '/mail/watch').then(json), ['abc@organizer.test']);
+
+  // Una mail qualsiasi non entra; la risposta sì, e la mail non è più in attesa.
+  assert.deepEqual(await tb('POST', '/mail/incoming', { message_id: 'altro@x', in_reply_to: '<nessuno@x>' }).then(json), { matched: false });
+  const reply = { message_id: '<r1@fornitore.it>', in_reply_to: '<abc@organizer.test>', references: ['abc@organizer.test'],
+    from: 'Mario Rossi <mario@fornitore.it>', subject: 'Re: Offerta relè', body: 'Va bene, mando il preventivo.\n\nIl giorno 28/10 Fede ha scritto:\n> Offerta' };
+  assert.deepEqual(await tb('POST', '/mail/incoming', reply).then(json), { matched: true });
+  assert.deepEqual(await tb('POST', '/mail/incoming', reply).then(json), { matched: true }); // già vista: nessun doppione
+  e = await tb('GET', `/entries/${id}`).then(json);
+  assert.equal(e.awaiting_reply, 0);
+  const thread = await tb('GET', `/entries/${id}/thread`).then(json);
+  assert.deepEqual(thread.map(m => [m.direction, m.message_id]), [['out', 'abc@organizer.test'], ['in', 'r1@fornitore.it']]);
+
+  // Rispondi: una mail nuova nella stessa conversazione, che Thunderbird aprirà come risposta.
+  const { id: rid } = await tb('POST', `/mail/messages/${thread[1].id}/reply`).then(json);
+  const r = await tb('GET', `/entries/${rid}`).then(json);
+  assert.deepEqual([r.kind, r.contact, r.mail_subject, r.mail_thread], ['mail', 'mario@fornitore.it', 'Re: Offerta relè', id]);
+  await tb('POST', `/entries/${rid}/compose`);
+  const pending = await tb('GET', '/mail/outbox').then(json);
+  assert.equal(pending.at(-1).reply_to, 'r1@fornitore.it');
+  assert.equal((await tb('GET', `/entries/${rid}/thread`).then(json)).length, 2);
+
+  // Tutta la posta in arrivo: personale, con Rispondi e Rispondi a tutti (senza i nostri indirizzi).
+  await tb('POST', '/mail/identities', { addresses: ['Fede <fede@organizer.test>'] });
+  const news = { message_id: '<n1@cliente.it>', from: 'Anna Bianchi <anna@cliente.it>', to: 'fede@organizer.test, luca@cliente.it',
+    cc: 'Ufficio <ufficio@cliente.it>', subject: 'Richiesta campioni', body: 'Ci servono 5 campioni @ 12V !urgente', inbox: true };
+  assert.deepEqual(await tb('POST', '/mail/incoming', news).then(json), { matched: false });
+  const [inMail] = (await tb('GET', '/sync').then(json)).inbox;
+  assert.deepEqual([inMail.subject, inMail.read_at], ['Richiesta campioni', null]);
+  const { id: aid } = await tb('POST', `/mail/inbox/${inMail.id}/reply`, { all: true }).then(json);
+  const a = await tb('GET', `/entries/${aid}`).then(json);
+  assert.deepEqual([a.title, a.contact, a.mail_cc, a.mail_subject, a.project_id], ['Re: Richiesta campioni', 'anna@cliente.it', 'luca@cliente.it, ufficio@cliente.it', 'Re: Richiesta campioni', null]);
+  assert.deepEqual((await tb('GET', `/entries/${aid}/thread`).then(json)).map(m => [m.direction, m.message_id]), [['in', 'n1@cliente.it']]);
+  const { id: sid } = await tb('POST', `/mail/inbox/${inMail.id}/reply`, { all: false }).then(json);
+  assert.deepEqual(await tb('GET', `/entries/${sid}`).then(json).then(x => [x.contact, x.mail_cc, x.mail_thread]), ['anna@cliente.it', null, aid]);
+  await tb('POST', `/entries/${aid}/compose`);
+  assert.equal((await tb('GET', '/mail/outbox').then(json)).find(o => o.subject === 'Re: Richiesta campioni').reply_to, 'n1@cliente.it');
+  const linked = (await tb('GET', '/sync').then(json)).inbox[0];
+  assert.deepEqual([linked.thread_entry, !!linked.read_at], [aid, true]);
+  await tb('PATCH', `/mail/inbox/${inMail.id}`, { archived: true });
+  assert.equal((await tb('GET', '/sync').then(json)).inbox.length, 0);
+
+  // Allegato ricevuto → documento: Organizer lo chiede all'estensione, che lo carica sull'articolo.
+  await tb('POST', '/mail/incoming', { message_id: '<n2@cliente.it>', from: 'anna@cliente.it', subject: 'Datasheet', inbox: true,
+    attachments: [{ name: 'relè.pdf', part: '1.2', size: 1234, type: 'application/pdf' }] });
+  const s2 = await tb('GET', '/sync').then(json);
+  const ds = s2.inbox.find(m => m.subject === 'Datasheet');
+  const item = s2.items.find(i => i.code === 'SCH-042');
+  assert.equal((await tb('POST', '/mail/attachments/save', { source: 'inbox', id: ds.id, n: 0, item_id: item.id, kind: 'datasheet' })).status, 200);
+  const [f] = await tb('GET', '/mail/fetches').then(json);
+  assert.deepEqual([f.part, f.name, f.kind, f.message_id, f.item_id], ['1.2', 'relè.pdf', 'datasheet', 'n2@cliente.it', item.id]);
+  assert.equal((await tb('POST', `/mail/fetches/${f.id}/claim`)).status, 204);
+  const up = await fetch(`${url}/api/items/${f.item_id}/docs?${new URLSearchParams({ name: f.name, kind: f.kind })}`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'X-Workspace': String(f.ws), 'Content-Type': 'application/pdf' }, body: Buffer.from('%PDF-1.4 prova') });
+  assert.equal(up.status, 200);
+  await tb('POST', `/mail/fetches/${f.id}/done`);
+  assert.deepEqual(await tb('GET', '/mail/fetches').then(json), []);
+  assert.ok((await tb('GET', '/sync').then(json)).docs.some(d => d.filename === 'relè.pdf' && d.kind === 'datasheet'));
+
+  // La posta è personale: un altro membro del workspace non vede le mail né la posta in arrivo, nemmeno da admin.
+  const { code } = await tb('POST', '/admin/invites').then(json);
+  const reg = await call('POST', '/register', { body: { code, username: 'luca', password: 'password-di-luca' } });
+  const cookie = reg.headers.get('set-cookie').split(';')[0];
+  const other = await call('GET', '/sync', { cookie }).then(json);
+  assert.ok(other.entries.some(x => x.kind === 'todo'));
+  assert.deepEqual([other.entries.filter(x => x.kind === 'mail').length, other.inbox.length, other.mailMsgs.length], [0, 0, 0]);
+  assert.equal((await call('GET', `/entries/${id}/thread`, { cookie })).status, 404);
+
+  // L'estensione si scarica già impostata per questo server.
+  const xpi = Buffer.from(await (await tb('GET', '/mail/thunderbird.xpi')).arrayBuffer());
+  assert.equal(xpi.subarray(0, 2).toString(), 'PK');
+  ctrl.abort();
+});
+
 test('token: niente CSRF col Bearer, workspace per richiesta, revoca', async () => {
   const { token } = config();
   // Senza token e senza header dell'app le modifiche restano bloccate.

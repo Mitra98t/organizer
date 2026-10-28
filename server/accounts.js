@@ -69,6 +69,31 @@ const MIGRATIONS = [
   `
   ALTER TABLE memberships ADD COLUMN perms TEXT;
   `,
+  // Posta in arrivo passata dall'estensione di Thunderbird (server/thunderbird.js): è personale, la vede solo
+  // chi la riceve, in qualunque workspace. thread_ws/thread_entry: la mail di Organizer a cui appartiene.
+  // mail_addresses: gli indirizzi delle identità di Thunderbird (per "rispondi a tutti" senza sé stessi).
+  `
+  CREATE TABLE mail_inbox (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
+    message_id TEXT NOT NULL,
+    from_addr TEXT NOT NULL DEFAULT '',
+    to_addr TEXT NOT NULL DEFAULT '',
+    cc TEXT NOT NULL DEFAULT '',
+    subject TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL DEFAULT '',
+    attachments TEXT NOT NULL DEFAULT '[]',
+    date TEXT NOT NULL,
+    thread_ws INTEGER,
+    thread_entry INTEGER,
+    read_at TEXT,
+    archived_at TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE (user_id, message_id)
+  );
+  CREATE INDEX mail_inbox_user ON mail_inbox(user_id, date);
+  ALTER TABLE users ADD COLUMN mail_addresses TEXT NOT NULL DEFAULT '[]';
+  `,
 ];
 
 {
@@ -283,4 +308,16 @@ export function resolveApiToken(token, wsHeader) {
   }
   const ws = wsId ? workspaceById(wsId) : null;
   return { account, ws, role: ws ? roleIn(ws.id, account.id) : null, perms: ws ? permsIn(ws.id, account.id) : null, apiToken: t.id };
+}
+
+// Indirizzi delle identità di Thunderbird dell'utente (li manda l'estensione): sono i "miei" indirizzi.
+export const mailAddressesOf = userId => JSON.parse(acc.prepare('SELECT mail_addresses FROM users WHERE id = ?').get(userId)?.mail_addresses || '[]');
+
+// Posta in arrivo personale per /api/sync (senza il testo intero). Oltre INBOX_DAYS si cancella da Organizer:
+// resta comunque in Thunderbird.
+const INBOX_DAYS = 180;
+export function inboxOf(userId) {
+  acc.prepare('DELETE FROM mail_inbox WHERE user_id = ? AND date < ?').run(userId, new Date(Date.now() - INBOX_DAYS * 864e5).toISOString());
+  return acc.prepare(`SELECT id, from_addr, to_addr, cc, subject, substr(body, 1, 300) AS snippet, attachments != '[]' AS has_att, date,
+    thread_ws, thread_entry, read_at FROM mail_inbox WHERE user_id = ? AND archived_at IS NULL ORDER BY date DESC LIMIT 300`).all(userId);
 }

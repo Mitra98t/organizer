@@ -1,0 +1,15 @@
+{
+  "manifest_version": 2,
+  "name": "Organizer",
+  "version": "1.2",
+  "description": "Apre in Thunderbird le mail preparate in Organizer, con gli allegati, tiene aggiornate le conversazioni e porta in Organizer la posta in arrivo.",
+  "author": "Organizer",
+  "browser_specific_settings": {
+    "gecko": { "id": "thunderbird@organizer.local", "strict_min_version": "128.0" }
+  },
+  "icons": { "64": "icon.png" },
+  "permissions": ["compose", "messagesRead", "accountsRead", "storage", "notifications"],
+  "optional_permissions": ["*://*/*"],
+  "background": { "scripts": ["background.js"] },
+  "options_ui": { "page": "options.html" }
+}

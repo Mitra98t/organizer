@@ -112,7 +112,27 @@ Una voce di tipo mail è una mail vera: destinatari (A, Cc) con suggerimenti dal
 
 Ogni mail ha un tasto solo che la fa avanzare: un clic la segna mandata e la mette **In attesa di risposta** (con la clessidra), un altro clic quando la risposta è arrivata la manda in archivio. Così i thread ancora aperti non si perdono. Se una mail non richiede risposta, "Nessuna risposta" subito dopo averla segnata mandata. La freccia ↑ in fondo alla riga di una mail mandata la riporta tra quelle da mandare (per un sollecito). Ogni contatto ha un colore, che si cambia dal pallino nella sua pagina: il suo nome nelle mail è colorato così. In Impostazioni → Contatti si può colorare invece per azienda, fascia oraria o ruolo.
 
-**Manda** apre la mail già compilata in Thunderbird, allegati compresi. Un link `mailto:` non può portare allegati, quindi serve un piccolo helper locale da installare una volta per computer:
+### Con Thunderbird (estensione)
+
+L'estensione **Organizer per Thunderbird** collega l'app al tuo Thunderbird (cartella `thunderbird/`, si scarica pronta da Impostazioni → Mail e Thunderbird):
+
+1. **Scarica l'estensione**: il file `.xpi` è già impostato per l'indirizzo da cui apri l'app.
+2. In Thunderbird: menu ≡ → Componenti aggiuntivi e temi → ingranaggio → "Installa componente aggiuntivo da file…".
+3. **Crea token per Thunderbird** nella stessa sezione e incollalo nelle opzioni dell'estensione → "Salva e collega".
+
+Poi, con Thunderbird aperto:
+- **Manda** apre la mail in Thunderbird con destinatari, oggetto, testo e allegati, anche se premi dal telefono (si apre sul computer). Le risposte scritte in Organizer si aprono come risposta al messaggio originale.
+- Quando la invii diventa **mandata** e **in attesa di risposta** da sola.
+- Quando arriva una risposta, compare nella **conversazione** della mail (e la mail esce da "in attesa"); da lì **Rispondi** o **Rispondi a tutti** crea la mail di risposta in Organizer.
+- **Da leggere** (pagina Mail): le mail ricevute nelle cartelle Posta in arrivo, con Rispondi e Rispondi a tutti. Le vede solo chi le riceve. Lette, passano in **Archivio**. Rispondendo, la mail ricevuta diventa il primo messaggio della conversazione.
+- In Contatti, **Da salvare** elenca gli indirizzi delle mail che non sono in rubrica.
+- **Allegati nel magazzino**: su un allegato di una mail ricevuta, "→ magazzino" con codice dell'articolo e tipo: Thunderbird carica il file e compare tra i documenti dell'articolo.
+
+Thunderbird resta l'unico a conoscere le password della posta. Con "Passa a Organizer tutta la posta in arrivo" (opzioni dell'estensione, attivo di base) le mail ricevute vengono copiate nel database di Organizer (`accounts.db`, solo per te; dopo 180 giorni si cancellano). Spento, l'estensione manda a Organizer solo le risposte alle tue conversazioni, riconosciute confrontando gli identificativi dei messaggi (Message-ID). Con più computer si può installarla su ognuno: la mail si apre su uno solo.
+
+### Senza estensione
+
+Un link `mailto:` non può portare allegati, quindi in alternativa c'è un piccolo helper locale da installare una volta per computer:
 
 ```bash
 make mail-helper
@@ -152,7 +172,7 @@ Un **workspace** è un insieme di dati separato (progetti, voci, magazzino, cont
 - **Admin del workspace**: invita, toglie persone, nomina altri admin, rinomina o elimina il workspace, fa backup e ripristino. Un workspace ha sempre almeno un admin.
 - Dentro un workspace tutto è condiviso tranne le voci e i progetti marcati **privati**. Le modifiche arrivano in tempo reale solo a chi è nello stesso workspace.
 
-**Permessi**: in Impostazioni → Permessi un admin sceglie per ogni persona (non admin) cosa vede e cosa può modificare in ogni area: todo e diario, mail, progetti, magazzino, documenti, contatti, chat. Per ogni area: nessun accesso (l'area sparisce dall'app), lettura o scrittura. Le aree collegate si sistemano da sole: dando la scrittura alle mail, contatti, documenti, magazzino e progetti diventano almeno leggibili. Il server controlla ogni richiesta, quindi i permessi valgono anche per la CLI e per i bot.
+**Permessi**: in Impostazioni → Permessi un admin sceglie per ogni persona (non admin) cosa vede e cosa può modificare in ogni area: todo e diario, mail, progetti, magazzino, documenti, contatti, chat. Per ogni area: nessun accesso (l'area sparisce dall'app), lettura o scrittura. Le aree collegate si sistemano da sole: dando la scrittura alle mail, contatti, documenti, magazzino e progetti diventano almeno leggibili. Il server controlla ogni richiesta, quindi i permessi valgono anche per la CLI e per i bot. **La posta è personale**: le mail le vedono solo chi le ha scritte e chi le deve mandare (assegnate), la posta in arrivo da Thunderbird solo chi la riceve; nessun altro, nemmeno un admin. Il permesso Mail decide solo se una persona può usare le mail.
 
 Sul server: `accounts.db` contiene account, sessioni, workspace e inviti; ogni workspace ha il suo file (`organizer.db` il primo, `ws-<id>.db` gli altri). Aggiornando da una versione senza workspace, l'installazione esistente diventa il workspace "Principale" (nome cambiabile con `WORKSPACE_NAME`) con gli stessi utenti e ruoli.
 
@@ -225,6 +245,7 @@ server/       HTTP, API REST, autenticazione, SSE (Node, solo moduli standard)
   db.js       schema SQLite e migrazioni (PRAGMA user_version)
   demo.js     dati dimostrativi (make demo / make seed)
   mail.js     allegati, .eml e pacchetto per l'helper Thunderbird
+  thunderbird.js  ponte con l'estensione di Thunderbird (coda, mandate, risposte, conversazioni)
   contacts.js rubrica
   trash.js    cestino e pulizia automatica
   backup.js   ripristino di un backup .db dal browser
@@ -237,6 +258,7 @@ docs/API.md   API per CLI, bot e script
 CHANGELOG.md  novità di ogni versione
 test/         node --test
 tools/        generatore icone, helper Thunderbird (organizer-mail.sh) e suo installer
+thunderbird/  estensione Organizer per Thunderbird (si scarica da Impostazioni)
 public/vendor/pdfjs  PDF.js 6.4.299 (Apache-2.0), solo i file necessari al visualizzatore
 public/vendor/three  three.js 0.186.1 (MIT) e i suoi addon per STL, 3MF e la rotazione della vista
 public/vendor/occt   occt-import-js 0.0.23 (LGPL-2.1, OpenCascade) per leggere gli STEP, in un worker

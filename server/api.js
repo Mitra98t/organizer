@@ -9,10 +9,10 @@ import { hashPassword, verifyPassword, sessionCookie, validUsername, validPasswo
 import {
   acc, atx, userCount, getAccount, workspaceById, workspacesOf, membersOf, roleIn, adminCount,
   addMember, createWorkspace, removeMember, syncMirror, createSession, destroySession, defaultWorkspace, setSessionWorkspace,
-  revokeApiTokens, permsIn, setPerms,
+  revokeApiTokens, permsIn, setPerms, inboxOf, mailAddressesOf,
 } from './accounts.js';
 import { HttpError, fail, now, bool, str, sendJson, clientIp } from './util.js';
-import { rev, openStream, dropUser } from './events.js';
+import { rev, openStream, dropUser, mailExtOn } from './events.js';
 import { allows, assertCan, entryArea, readableKinds } from './perms.js';
 import { currentWorkspace } from './db.js';
 
@@ -22,7 +22,7 @@ const STATUSES = ['open', 'paused', 'closed'];
 const DOC_KINDS = ['firmware', 'datasheet', 'schema', 'footprint', 'manuale', 'foto', 'altro'];
 export const docKinds = () => [...DOC_KINDS.slice(0, -1),
   ...db.prepare('SELECT name FROM doc_kinds ORDER BY name').all().map(r => r.name), 'altro'];
-const docKind = k => (docKinds().includes(String(k)) ? String(k) : 'altro');
+export const docKind = k => (docKinds().includes(String(k)) ? String(k) : 'altro');
 const ARCHIVE_DAYS = 30;
 const CHAT_IN_SYNC = 100;
 const MAX_UPLOAD = (+process.env.MAX_UPLOAD_MB || 200) * 1048576;
@@ -41,9 +41,10 @@ export function route(method, pattern, handler, { auth = 'user', ws = auth !== '
 }
 
 // ---------- visibilità ----------
-// Tutto è condiviso tra gli utenti dell'istanza, tranne voci e progetti marcati privati.
+// Tutto è condiviso tra gli utenti dell'istanza, tranne voci e progetti marcati privati e le mail: la posta è
+// personale, la vedono solo chi l'ha scritta e chi la deve mandare (assegnata). Vale anche per gli admin.
 // Le versioni *_ANY includono anche ciò che sta nel cestino (deleted_at valorizzato).
-export const VIS_ANY = `(e.private = 0 OR e.created_by = $uid OR e.assignee_id = $uid)
+export const VIS_ANY = `((e.private = 0 AND e.kind != 'mail') OR e.created_by = $uid OR e.assignee_id = $uid)
   AND (e.project_id IS NULL OR EXISTS (SELECT 1 FROM projects p WHERE p.id = e.project_id AND (p.private = 0 OR p.created_by = $uid)))`;
 export const PVIS_ANY = '(p.private = 0 OR p.created_by = $uid)';
 export const VIS = `e.deleted_at IS NULL AND ${VIS_ANY}`;
@@ -354,6 +355,12 @@ route('GET', '/api/sync', ({ req, res, user }) => {
       WHERE n.deleted_at IS NULL AND d.deleted_at IS NULL ORDER BY n.id`),
     attachments: db.prepare(`SELECT a.id, a.entry_id, a.doc_id, a.filename, a.mime, a.size FROM mail_attachments a
       JOIN entries e ON e.id = a.entry_id WHERE ${where} ORDER BY a.id`).all(p),
+    // Mail con Thunderbird: se l'estensione è collegata e i messaggi delle conversazioni (senza il testo).
+    mailExt: mailExtOn(uid),
+    inbox: can('mail') ? inboxOf(uid) : [], // posta in arrivo personale (solo di chi è collegato)
+    myAddresses: mailAddressesOf(uid),
+    mailMsgs: db.prepare(`SELECT m.id, m.entry_id, m.direction, m.from_addr, m.date FROM mail_messages m
+      JOIN entries e ON e.id = m.entry_id WHERE ${where} ORDER BY m.date`).all(p),
     // Chat: gli ultimi messaggi (i precedenti con /api/chat?before=) e quanti ne restano da leggere.
     chat: all('chat', `SELECT id, user_id, text, created_at, edited_at FROM chat_messages WHERE deleted_at IS NULL
       ORDER BY id DESC LIMIT ${CHAT_IN_SYNC}`).reverse(),

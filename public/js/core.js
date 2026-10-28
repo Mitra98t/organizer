@@ -57,7 +57,16 @@ export const ui = {
   richEdit: null, // data-fk del campo di testo aperto in scrittura (vedi richField)
   trash: null,
   contactFilter: '',
+  contactsUnknown: false, // pannello "da salvare" in Contatti
+  ignoredAddrs: new Set(load('org.ignoredAddrs', [])), // indirizzi da non proporre in rubrica
   mailHelper: load('org.mailHelper', false),
+  mailFilter: '',
+  mailView: load('org.mailView', 'todo'), // 'todo' (da fare) o 'archive'
+  mailType: null, // una sola sezione della pagina Mail
+  mailAtt: false,
+  mailProj: null,
+  inboxOpen: null,
+  inboxKeep: new Set(), // mail lette ora: restano in "da fare" finché non si lascia la pagina
   itemView: load('org.itemView', 'list'),
   itemCat: null,
   projDeep: load('org.projDeep', true),
@@ -253,6 +262,10 @@ function indexData(d) {
   d.contactById = new Map(d.contacts.map(c => [c.id, c]));
   d.contactByEmail = new Map(d.contacts.filter(c => c.email).map(c => [c.email.toLowerCase(), c]));
   d.attachmentsOf = group(d.attachments, 'entry_id');
+  d.mailMsgs ||= [];
+  d.inbox ||= [];
+  d.mine = new Set((d.myAddresses || []).map(a => a.toLowerCase())); // i miei indirizzi (identità di Thunderbird)
+  d.mailMsgsOf = group(d.mailMsgs, 'entry_id');
   d.itemsOfProject = group(d.projectItems, 'project_id');
   d.extraProjectsOf = group(d.entryProjects, 'entry_id');
   d.projectsOfItem = group(d.projectItems, 'item_id');

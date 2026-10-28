@@ -33,3 +33,34 @@ export function openStream(req, res, user) {
 export function dropUser(userId, wsId = null) {
   for (const c of clients) if (c.userId === userId && (wsId == null || c.wsId === wsId)) c.res.end();
 }
+
+// Estensione di Thunderbird (server/thunderbird.js): ogni utente può averne più di una collegata (più computer).
+// Finché ce n'è una, "Manda" passa da lei; quando si collega o si scollega l'app si aggiorna.
+const mailExt = new Map(); // id utente → Set di risposte aperte
+
+export const mailExtOn = userId => (mailExt.get(userId)?.size ?? 0) > 0;
+
+export function openMailExtStream(req, res, user) {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.write('retry: 5000\nevent: hello\ndata: {}\n\n');
+  let set = mailExt.get(user.id);
+  if (!set) mailExt.set(user.id, (set = new Set()));
+  set.add(res);
+  if (set.size === 1) bump(user.id);
+  const heartbeat = setInterval(() => res.write(': ping\n\n'), 25000);
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    set.delete(res);
+    if (!set.size) bump(user.id);
+  });
+}
+
+// event: 'outbox' (c'è una mail da aprire) o 'watch' (cambiate le conversazioni da seguire).
+export function notifyMailExt(userId, event) {
+  for (const res of mailExt.get(userId) || []) res.write(`event: ${event}\ndata: {}\n\n`);
+}

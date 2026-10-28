@@ -182,6 +182,31 @@ Una mail è una voce con `kind: "mail"`. Il server non spedisce niente: la mail 
 | `GET /api/attachments/:id/file` | scarica un allegato |
 | `GET /api/entries/:id/eml` | la mail come `.eml` (destinatari, oggetto, testo, allegati) |
 | `POST /api/entries/:id/send` | `{token}` per l'helper Thunderbird: `organizer-mail://open?server=…&token=…` (15 minuti) |
+| `POST /api/entries/:id/compose` | apre la mail nell'estensione di Thunderbird collegata (409 se non ce n'è una) |
+| `GET /api/entries/:id/thread` | i messaggi della conversazione: `direction` (`out`, `in`), `message_id`, `from_addr`, `to_addr`, `subject`, `body`, `attachments`, `date` |
+| `POST /api/mail/messages/:id/reply` | `{all}` (rispondi a tutti) → `{id}` della nuova mail di risposta a quel messaggio |
+| `PATCH /api/mail/inbox/:id` | `{read, archived}` su una mail in arrivo (personale; l'elenco è `inbox` in `/api/sync`) |
+| `GET /api/mail/inbox/:id` | la mail in arrivo con il testo intero |
+| `POST /api/mail/inbox/:id/reply` | `{all}` → `{id}` della mail di risposta, nel workspace attivo |
+| `POST /api/mail/attachments/save` | `{source: "inbox" o "message", id, n, item_id, kind}`: chiede all'estensione di caricare l'allegato n come documento dell'articolo |
+
+Le mail sono personali: le voci `kind: "mail"` le vedono solo chi le ha create e l'assegnatario, anche per gli admin.
+
+L'estensione di Thunderbird (cartella `thunderbird/`) usa queste, con un token; valgono per tutti i workspace dell'utente:
+
+| | |
+|---|---|
+| `GET /api/mail/stream` | flusso di eventi (`outbox`, `watch`); finché è aperto l'estensione risulta collegata (`mailExt` in `/api/sync`) |
+| `GET /api/mail/outbox` | mail da aprire: `ws`, `id`, `to`, `cc`, `subject`, `body`, `reply_to` (Message-ID), `files` |
+| `POST /api/mail/outbox/:ws/:id/claim` | la prende (409 se l'ha già presa un altro Thunderbird) |
+| `GET /api/mail/outbox/:ws/:id/file/:n` | allegato n |
+| `POST /api/mail/sent` | `{ws, outbox_id, message_id, from, to, cc, subject, date}`: mandata, in attesa di risposta |
+| `GET /api/mail/watch` | Message-ID delle conversazioni seguite |
+| `POST /api/mail/incoming` | `{message_id, in_reply_to, references, from, to, cc, subject, date, body, attachments, inbox}` → `{matched}`; con `inbox: true` entra anche nella posta in arrivo |
+| `POST /api/mail/identities` | `{addresses}`: i propri indirizzi, esclusi da "rispondi a tutti" |
+| `GET /api/mail/fetches` | allegati da caricare come documenti: `id`, `ws`, `item_id`, `kind`, `message_id`, `part`, `name`; si caricano con `POST /api/items/:id/docs` e l'header `X-Workspace` |
+| `POST /api/mail/fetches/:id/claim`, `/done` | presa in carico e fine (anche se non riuscita) |
+| `GET /api/mail/thunderbird.xpi` | l'estensione, impostata per il server da cui si scarica |
 
 ## Contatti
 

@@ -6,6 +6,7 @@ import { routes, backfillLinks } from './api.js';
 import { assertCan } from './perms.js';
 import './contacts.js';
 import './mail.js';
+import './thunderbird.js';
 import './backup.js';
 import './workspaces.js';
 import './remote.js';

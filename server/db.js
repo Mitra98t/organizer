@@ -277,6 +277,36 @@ const MIGRATIONS = [
   `
   ALTER TABLE doc_notes ADD COLUMN z REAL;
   `,
+  // v15: mail con l'estensione di Thunderbird (server/thunderbird.js). mail_outbox: le mail da aprire in
+  // Thunderbird; mail_messages: i messaggi delle conversazioni (mandati e risposte arrivate), legati alla mail
+  // di Organizer a cui appartengono. Una mail scritta come risposta ha mail_thread (la prima mail della
+  // conversazione) e reply_to (il messaggio a cui risponde).
+  `
+  CREATE TABLE mail_outbox (
+    id INTEGER PRIMARY KEY,
+    entry_id INTEGER NOT NULL REFERENCES entries ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    claimed_at TEXT
+  );
+  CREATE TABLE mail_messages (
+    id INTEGER PRIMARY KEY,
+    entry_id INTEGER NOT NULL REFERENCES entries ON DELETE CASCADE,
+    direction TEXT NOT NULL CHECK (direction IN ('out', 'in')),
+    message_id TEXT NOT NULL UNIQUE,
+    from_addr TEXT NOT NULL DEFAULT '',
+    to_addr TEXT NOT NULL DEFAULT '',
+    cc TEXT NOT NULL DEFAULT '',
+    subject TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL DEFAULT '',
+    attachments TEXT NOT NULL DEFAULT '[]',
+    date TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX mail_messages_entry ON mail_messages(entry_id);
+  ALTER TABLE entries ADD COLUMN mail_thread INTEGER REFERENCES entries ON DELETE SET NULL;
+  ALTER TABLE entries ADD COLUMN reply_to INTEGER REFERENCES mail_messages ON DELETE SET NULL;
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

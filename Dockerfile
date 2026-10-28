@@ -8,6 +8,7 @@ WORKDIR /app
 COPY package.json CHANGELOG.md ./
 COPY server ./server
 COPY public ./public
+COPY thunderbird ./thunderbird
 
 RUN mkdir -p /data && chown node:node /data
 USER node

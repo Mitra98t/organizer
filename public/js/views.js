@@ -6,9 +6,9 @@ import {
 } from './core.js';
 import { docMeta, docPeek } from './docview.js';
 import { today, addDays } from './parse.js';
-import { mailComposer } from './mail.js';
+import { mailComposer, mailThread, mailSide, inboxRow } from './mail.js';
 import { THEMES, BASE_THEMES, currentTheme, setTheme } from './themes.js';
-import { AREAS, LEVELS, WRITE_NEEDS, READ_NEEDS, fullAccess, setLevel, isRestricted } from './perms.js';
+import { AREAS, LEVELS, WRITE_NEEDS, READ_NEEDS, MAIL_PERSONAL, fullAccess, setLevel, isRestricted } from './perms.js';
 import { draggable } from './dnd.js';
 
 const KIND_LABEL = { todo: 'Todo', mail: 'Mail', note: 'Nota' };
@@ -125,6 +125,9 @@ export function entryRow(e, opt = {}) {
   if (e.kind === 'mail' && e.done_at && e.awaiting_reply) meta.push(h('span.awaiting', icon('wait'), `in attesa di risposta ${waitingFor(e)}`));
   for (const p of projs) meta.push(projTag(p));
   if (e.kind === 'mail' && e.contact) meta.push(h('span.contact', { title: e.contact }, '→ ', contactNames(e.contact)));
+  // Risposte arrivate (non la mail ricevuta a cui questa risponde).
+  const replies = (S.data.mailMsgsOf.get(e.id) || []).filter(m => m.direction === 'in' && m.id !== e.reply_to);
+  if (replies.length) meta.push(h('span.replies', { title: `Risposte arrivate (l'ultima ${fmtTime(replies.at(-1).date)})` }, '↩ ', replies.length));
   const atts = S.data.attachmentsOf.get(e.id);
   if (atts) meta.push(h('span.atts-n', { title: atts.map(a => a.filename).join(', ') }, icon('clip'), atts.length));
   if (e.assignee_id) meta.push(h('span.who', `+${userName(e.assignee_id)}`));
@@ -168,8 +171,7 @@ function entryEditor(e) {
 
   const dueBtn = (label, value) => h('button.chip', { class: e.due === value && 'on', onclick: () => patchEntry(e, { due: value }) }, label);
 
-  return h('div.editor',
-    h('textarea.ed-title', {
+  const title = h('textarea.ed-title', {
       rows: 1, value: e.title, 'data-fk': `title-${e.id}`, spellcheck: 'false', 'data-ac': e.kind, 'data-ac-entry': e.id,
       oninput: autosize,
       onkeydown: ev => {
@@ -180,8 +182,8 @@ function entryEditor(e) {
         const v = ev.target.value.trim();
         if (v && v !== e.title) patchEntry(e, { title: v });
       },
-    }),
-    h('div.fields',
+    });
+  const fields = h('div.fields',
       h('label.f', h('span', 'Tipo'), selectOf(e.kind, Object.entries(KIND_LABEL), v => patchEntry(e, { kind: v }))),
       h('label.f', h('span', isNote ? 'Data' : 'Scadenza'),
         h('input', { type: 'date', value: e.due || '', onchange: ev => patchEntry(e, { due: ev.target.value || null }) })),
@@ -204,23 +206,20 @@ function entryEditor(e) {
         selectOf(e.assignee_id ? String(e.assignee_id) : '', [['', '— nessuno —'], ...D.members.map(u => [String(u.id), u.name || u.username])],
           v => patchEntry(e, { assignee_id: v ? +v : null }))),
       h('button.chip', { class: e.pinned && 'on', onclick: () => patchEntry(e, { pinned: !e.pinned }) }, icon('star'), 'evidenza'),
-      e.created_by === me.id && h('button.chip', { class: e.private && 'on', onclick: () => patchEntry(e, { private: !e.private }) }, icon('lock'), 'privata'),
+      // Le mail sono già personali: "privata" serve solo a todo e note.
+      e.created_by === me.id && e.kind !== 'mail' && h('button.chip', { class: e.private && 'on', onclick: () => patchEntry(e, { private: !e.private }) }, icon('lock'), 'privata'),
       e.kind === 'mail' && e.done_at && h('button.chip', {
         class: e.awaiting_reply && 'on', title: 'La mail compare in "In attesa di risposta" finché non arriva la risposta',
         onclick: () => patchEntry(e, { awaiting: !e.awaiting_reply }),
       }, icon('mail'), 'attende risposta'),
-    ),
-    e.kind === 'mail' ? mailComposer(e) : richField({
-      fk: `notes-${e.id}`, cls: 'ed-notes', rows: 1, value: e.notes, placeholder: 'Dettagli (facoltativo; #codice, [[ per collegare altro)…',
-      attrs: { 'data-ac': e.kind, 'data-ac-only': '#', 'data-ac-entry': e.id }, onSave: notes => patchEntry(e, { notes }),
-    }),
-    !isNote && !e.parent_id && h('div.subs',
+  );
+  const subs = !isNote && !e.parent_id && h('div.subs',
       kids.map(k => entryRow(k, { nested: true, showProject: false })),
       h('input.sub-in', {
         placeholder: '+ sotto-attività', 'data-fk': `sub-${e.id}`, 'data-ac': 'todo', autocomplete: 'off',
         onkeydown: enterAdd(text => addEntry({ text, today: today(), parent_id: e.id })),
-      })),
-    h('div.log',
+      }));
+  const log = h('div.log',
       logs.map(l => h('div.log-l', { class: l.system ? 'sys' : null },
         h('span.log-t', fmtTime(l.created_at)),
         D.users.length > 1 && h('span.log-u', userName(l.user_id)),
@@ -230,9 +229,8 @@ function entryEditor(e) {
         placeholder: 'Aggiornamento: cosa hai scoperto? (anche !data +utente #CODICE)', 'data-fk': `log-${e.id}`,
         'data-ac': e.kind, 'data-ac-only': '!#+', 'data-ac-entry': e.id, autocomplete: 'off',
         onkeydown: enterAdd(text => act(() => api('POST', `/entries/${e.id}/log`, { text, today: today() }))),
-      })),
-    backlinksBox('voce', e.id, { title: 'Citata in', compact: true }),
-    h('div.ed-foot',
+      }));
+  const foot = h('div.ed-foot',
       h('span.muted', `${userName(e.created_by)} · ${fmtTime(e.created_at)}`),
       h('span.grow'),
       h('button.btn.sm.danger', {
@@ -240,7 +238,29 @@ function entryEditor(e) {
           ui.open.delete(e.id);
           trashIt('entry', `/entries/${e.id}`, kids.length ? 'Voce e sotto-attività' : 'Voce');
         },
-      }, icon('trash'), 'Elimina')));
+      }, icon('trash'), 'Elimina'));
+
+  // Mail: due colonne. A sinistra la mail (conversazione, testo, aggiornamenti), a destra quello che la lega
+  // al resto di Organizer (dettagli, persone, allegati nei due versi, collegamenti, chi la cita).
+  if (e.kind === 'mail') {
+    return h('div.editor.mail-ed',
+      title,
+      h('div.mail-cols',
+        h('div.mail-main', mailThread(e), mailComposer(e), log),
+        h('aside.mail-side', h('div.ms-b', h('div.ms-h', 'Dettagli'), fields), mailSide(e))),
+      foot);
+  }
+  return h('div.editor',
+    title,
+    fields,
+    richField({
+      fk: `notes-${e.id}`, cls: 'ed-notes', rows: 1, value: e.notes, placeholder: 'Dettagli (facoltativo; #codice, [[ per collegare altro)…',
+      attrs: { 'data-ac': e.kind, 'data-ac-only': '#', 'data-ac-entry': e.id }, onSave: notes => patchEntry(e, { notes }),
+    }),
+    subs,
+    log,
+    backlinksBox('voce', e.id, { title: 'Citata in', compact: true }),
+    foot);
 }
 
 // Voce fatta da più di 30 giorni: non è nei dati sincronizzati, si legge dal server (sola lettura, si può riaprire).
@@ -598,18 +618,74 @@ export function viewProject(id) {
 }
 
 // ---------- mail ----------
+// "Da fare": ricevute da leggere, da mandare, in attesa di risposta. "Archivio": ricevute già lette e mandate
+// che non aspettano niente. In alto si filtra per testo, tipo, allegati e progetto.
+const MAIL_TYPES = {
+  todo: [['in', 'Da leggere'], ['draft', 'Da mandare'], ['wait', 'In attesa di risposta']],
+  archive: [['read', 'Lette'], ['sent', 'Inviate (ultimi 30 giorni)']],
+};
+
 export function viewMail() {
   const D = S.data;
-  const open = D.entries.filter(e => e.kind === 'mail' && !e.done_at).sort(byDue);
-  // Thread aperti: mandate e in attesa di risposta, dalla più vecchia (anche oltre i 30 giorni).
-  const waiting = D.entries.filter(e => e.kind === 'mail' && e.done_at && e.awaiting_reply).sort((a, b) => a.done_at.localeCompare(b.done_at));
-  const sent = D.entries.filter(e => e.kind === 'mail' && e.done_at && !e.awaiting_reply).sort(byDoneDesc);
-  return h('div.view',
-    pendingRows(p => p.kind === 'mail'),
-    !open.length && empty(h('p', 'Nessuna mail da mandare.'), h('p', 'Esempio: ', kbd('offerta 50 schede >acquisti@ditta.it !ven'))),
-    open.length > 0 && section('mail-open', 'Da mandare', open.map(e => entryRow(e, { showKind: false }))),
-    waiting.length > 0 && section('mail-wait', 'In attesa di risposta', waiting.map(e => entryRow(e, { showKind: false })), { cls: 'waiting' }),
-    sent.length > 0 && section('mail-sent', 'Inviate (ultimi 30 giorni)', sent.map(e => entryRow(e, { showKind: false })), { collapsed: true }));
+  const lcs = s => String(s || '').toLowerCase();
+  const f = lcs(ui.mailFilter.trim());
+  const has = (...vals) => !f || vals.some(v => lcs(v).includes(f));
+  const proj = ui.mailProj && D.projectById.get(ui.mailProj);
+  const inProj = e => !proj || projectsOf(e).some(p => p.id === proj.id);
+  const mails = D.entries.filter(e => e.kind === 'mail' && has(e.title, e.contact, e.mail_cc, e.mail_subject, e.notes)
+    && inProj(e) && (!ui.mailAtt || D.attachmentsOf.has(e.id)));
+  // Le ricevute non hanno progetti: con un progetto scelto restano quelle della sua conversazione.
+  const inbox = D.inbox.filter(m => has(m.subject, m.from_addr, m.to_addr, m.cc, m.snippet) && (!ui.mailAtt || m.has_att)
+    && (!proj || (m.thread_ws === D.workspace.id && D.entryById.has(m.thread_entry) && inProj(D.entryById.get(m.thread_entry)))));
+  const groups = {
+    in: inbox.filter(m => !m.read_at || ui.inboxKeep.has(m.id)),
+    draft: mails.filter(e => !e.done_at).sort(byDue),
+    // Thread aperti: mandate e in attesa di risposta, dalla più vecchia (anche oltre i 30 giorni).
+    wait: mails.filter(e => e.done_at && e.awaiting_reply).sort((a, b) => a.done_at.localeCompare(b.done_at)),
+    read: inbox.filter(m => m.read_at && !ui.inboxKeep.has(m.id)),
+    sent: mails.filter(e => e.done_at && !e.awaiting_reply).sort(byDoneDesc),
+  };
+  const view = ui.mailView === 'archive' ? 'archive' : 'todo';
+  const types = MAIL_TYPES[view];
+  if (ui.mailType && !types.some(([k]) => k === ui.mailType)) ui.mailType = null;
+  const count = v => MAIL_TYPES[v].reduce((n, [k]) => n + groups[k].length, 0);
+  const setView = v => { ui.mailView = v; ui.mailType = null; save('org.mailView', v); render(); };
+  const rows = k => (k === 'in' || k === 'read' ? groups[k].map(inboxRow) : groups[k].map(e => entryRow(e, { showKind: false })));
+  const projects = [...new Map(D.entries.filter(e => e.kind === 'mail').flatMap(projectsOf).map(p => [p.id, p])).values()]
+    .sort((a, b) => a.tag.localeCompare(b.tag));
+  const filtered = !!(f || ui.mailAtt || proj || ui.mailType);
+  const shown = types.filter(([k]) => !ui.mailType || ui.mailType === k);
+
+  return h('div.view.mailpage',
+    h('div.toolbar',
+      h('input.filter', {
+        type: 'search', placeholder: 'Filtra per oggetto, persona, indirizzo, testo…', value: ui.mailFilter, 'data-fk': 'mailfilter',
+        oninput: ev => { ui.mailFilter = ev.target.value; render(); },
+      }),
+      h('div.seg',
+        h('button', { class: view === 'todo' && 'on', onclick: () => setView('todo'), title: 'Da leggere, da mandare, in attesa di risposta' }, 'Da fare', h('span.n', count('todo'))),
+        h('button', { class: view === 'archive' && 'on', onclick: () => setView('archive'), title: 'Ricevute già lette e mail mandate' }, 'Archivio', h('span.n', count('archive'))))),
+    h('div.toolbar.cats',
+      types.map(([k, label]) => filterChip({
+        on: ui.mailType === k, label: label.replace(/ \(.*\)$/, ''), n: groups[k].length, cls: k === 'in' || k === 'read' ? 'tint k-mail' : null,
+        onclick: () => { ui.mailType = ui.mailType === k ? null : k; render(); },
+      })),
+      h('span.tsep'),
+      filterChip({ on: ui.mailAtt, label: [icon('clip'), 'con allegati'], onclick: () => { ui.mailAtt = !ui.mailAtt; render(); } }),
+      projects.length > 0 && h('select.sm', {
+        value: proj ? String(proj.id) : '', title: 'Solo le mail di un progetto',
+        onchange: ev => { ui.mailProj = +ev.target.value || null; render(); },
+      }, h('option', { value: '' }, 'tutti i progetti'), projects.map(p => h('option', { value: p.id }, `@${p.tag}`)))),
+    h('p.muted.fhint', view === 'todo'
+      ? 'Da fare: le mail ricevute da leggere, quelle da mandare e quelle che aspettano risposta. Aperta, una mail ricevuta è letta e quando lasci la pagina passa in Archivio.'
+      : 'Archivio: le mail ricevute già lette (il tasto a sinistra le rimette da leggere) e quelle mandate che non aspettano risposta.'),
+    view === 'todo' && pendingRows(p => p.kind === 'mail'),
+    shown.map(([k, label]) => groups[k].length > 0 && section(`mail-${k}`, label, rows(k), { cls: k === 'wait' ? 'waiting' : null })),
+    !shown.some(([k]) => groups[k].length) && (filtered
+      ? empty(h('p', 'Nessuna mail corrisponde ai filtri.'))
+      : view === 'todo'
+        ? empty(h('p', 'Niente da fare con la posta.'), h('p', 'Nuova mail dalla barra in alto, ad esempio: ', kbd('offerta 50 schede >acquisti@ditta.it !ven')))
+        : empty(h('p', 'L\'archivio è vuoto.'))));
 }
 
 // ---------- diario ----------
@@ -1074,6 +1150,15 @@ function tokensSection() {
   ], { count: ui.tokens.length || '', collapsed: true });
 }
 
+// Token per l'estensione di Thunderbird: come gli altri token, si vede una volta sola.
+function thunderbirdToken() {
+  act(async () => {
+    const r = await api('POST', '/tokens', { name: 'Thunderbird' });
+    loadTokens();
+    prompt('Copia il token e incollalo nelle opzioni dell\'estensione: non verrà più mostrato.', r.token);
+  });
+}
+
 const inviteLink = code => `${location.origin}${location.pathname}#/registrati?code=${code}`;
 
 // Temi: una scheda con l'anteprima dei colori per ognuno; si applica subito (vale per questo dispositivo).
@@ -1122,7 +1207,8 @@ function permsSection(D) {
         }, LEVEL_SHORT[l]))))));
   };
   return section('set-perms', 'Permessi', [
-    h('p.muted', 'Per ogni persona del workspace scegli cosa vede e cosa può modificare: — nessun accesso (l\'area sparisce), L lettura, S scrittura. Gli admin hanno sempre tutto.'),
+    h('p.muted', 'Per ogni persona del workspace scegli cosa vede e cosa può modificare: — nessun accesso (l\'area sparisce), L lettura, S scrittura. Gli admin hanno sempre tutto, tranne la posta degli altri.'),
+    h('p.pm-note', icon('lock'), MAIL_PERSONAL),
     others.length
       ? h('div.pm-wrap', h('table.pm',
         h('thead', h('tr', h('th'), Object.values(AREAS).map(a => h('th', a)))),
@@ -1142,6 +1228,7 @@ function myPermsSection(D) {
   return section('set-myperms', 'I tuoi permessi', [
     h('div.pm-mine', Object.entries(AREAS).map(([a, label]) => h('span.chip', { class: `pm-l-${D.perms[a]}` }, label, ': ', LEVELS[D.perms[a]]))),
     h('p.muted', 'Li decide un admin del workspace.'),
+    h('p.pm-note', icon('lock'), MAIL_PERSONAL),
   ], { count: '' });
 }
 
@@ -1179,12 +1266,21 @@ export function viewSettings() {
     ], { count: '', collapsed: true }),
 
     section('set-mail', 'Mail e Thunderbird', [
-      h('p', '"Manda" apre la mail già compilata in Thunderbird, allegati compresi. Serve un piccolo helper sul computer, da installare una volta dalla cartella del progetto:'),
-      h('p', kbd('make mail-helper')),
-      h('label.check-row',
-        h('input', { type: 'checkbox', checked: ui.mailHelper, onchange: ev => { ui.mailHelper = ev.target.checked; save('org.mailHelper', ui.mailHelper); render(); } }),
-        'Helper Thunderbird installato su questo computer'),
-      h('p.muted', 'Senza helper (per esempio dal telefono) "Manda" usa l\'app mail predefinita, ma senza allegati: per quelli c\'è il pulsante ".eml".'),
+      h('p', 'Con l\'estensione Organizer per Thunderbird, "Manda" apre la mail in Thunderbird con gli allegati (anche se premi dal telefono: si apre sul computer). Quando la invii diventa "mandata" da sola, e le risposte compaiono nella conversazione della mail, da cui puoi rispondere.'),
+      h('p', D.mailExt ? h('span.chip.on', icon('check'), 'Thunderbird collegato') : h('span.chip', 'Thunderbird non collegato')),
+      h('ol.steps',
+        h('li', h('a.btn.sm', { href: 'api/mail/thunderbird.xpi', download: '' }, icon('download'), 'Scarica l\'estensione'), ' già impostata per questo indirizzo.'),
+        h('li', 'In Thunderbird: menu ≡ → Componenti aggiuntivi e temi → ingranaggio → "Installa componente aggiuntivo da file…", e scegli il file.'),
+        h('li', h('button.btn.sm', { onclick: thunderbirdToken }, icon('plus'), 'Crea token per Thunderbird'),
+          ' e incollalo nelle opzioni dell\'estensione (Componenti aggiuntivi → Organizer → Opzioni), poi "Salva e collega".')),
+      h('p.pm-note', icon('lock'), MAIL_PERSONAL),
+      h('p.muted', 'Funziona finché Thunderbird è aperto. Le altre mail non escono da Thunderbird: l\'estensione confronta solo gli identificativi dei messaggi per riconoscere le risposte alle tue conversazioni.'),
+      h('details',
+        h('summary.muted', 'Senza estensione'),
+        h('p', '"Manda" può usare il vecchio helper (da installare dalla cartella del progetto con ', kbd('make mail-helper'), ') oppure l\'app mail predefinita, senza allegati: per quelli c\'è il pulsante ".eml". In questi casi la mail si segna come mandata a mano.'),
+        h('label.check-row',
+          h('input', { type: 'checkbox', checked: ui.mailHelper, onchange: ev => { ui.mailHelper = ev.target.checked; save('org.mailHelper', ui.mailHelper); render(); } }),
+          'Helper installato su questo computer')),
     ], { count: '', collapsed: true }),
 
     workspaceSection(D),

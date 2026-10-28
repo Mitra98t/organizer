@@ -40,7 +40,7 @@ function plainRefs(text) {
   });
 }
 
-function mailParts(e) {
+export function mailParts(e) {
   const rows = db.prepare(`SELECT a.filename, a.mime, a.stored, d.stored AS doc_stored, d.mime AS doc_mime, d.filename AS doc_filename
     FROM mail_attachments a LEFT JOIN documents d ON d.id = a.doc_id AND d.deleted_at IS NULL
     WHERE a.entry_id = ? ORDER BY a.id`).all(e.id)
@@ -92,7 +92,7 @@ route('GET', '/api/attachments/:id/file', ({ res, params, user }) => {
   sendFile(res, file, a.filename, 'application/octet-stream');
 }, { area: 'mail' });
 
-function sendFile(res, file, name, mime) {
+export function sendFile(res, file, name, mime) {
   res.writeHead(200, {
     'Content-Type': mime,
     'Content-Length': fs.statSync(file).size,
