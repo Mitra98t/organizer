@@ -589,6 +589,34 @@ route('GET', '/api/entries/:id', ({ params, user }) => {
 
 // Backlink: le voci (anche archiviate) che collegano l'elemento. Per un articolo anche #CODICE e i codici
 // nelle mail, per un documento anche gli allegati, per un contatto anche le mail mandate al suo indirizzo.
+// Collegamenti [[tipo:ID]] che l'app non ha nei suoi dati: archiviati (con il titolo, se si possono vedere),
+// non condivisi con chi legge (si dice solo questo, senza contenuto) o eliminati.
+route('POST', '/api/refs', async ({ user, body }) => {
+  const b = await body();
+  const uid = user.id;
+  const out = {};
+  for (const [kind, raw] of (Array.isArray(b.refs) ? b.refs : []).slice(0, 200)) {
+    const id = +raw;
+    const key = `${kind}:${id}`;
+    if (kind === 'voce') {
+      const e = db.prepare('SELECT id, kind, title, done_at, deleted_at FROM entries WHERE id = ?').get(id);
+      if (!e || e.deleted_at) out[key] = { status: 'gone' };
+      else if (db.prepare(`SELECT 1 FROM entries e WHERE e.id = $id AND ${VIS}`).get({ id, uid }) && allows(user.perms, entryArea(e.kind))) {
+        out[key] = { status: 'ok', kind: e.kind, title: e.title, done: !!e.done_at };
+      } else out[key] = { status: 'hidden' };
+    } else if (kind === 'progetto' || kind === 'contatto') {
+      const [table, a, vis, area] = kind === 'progetto' ? ['projects', 'p', PVIS_ANY, 'progetti'] : ['contacts', 'c', CVIS_ANY, 'contatti'];
+      const o = db.prepare(`SELECT id, deleted_at FROM ${table} WHERE id = ?`).get(id);
+      if (!o || o.deleted_at) out[key] = { status: 'gone' };
+      else out[key] = { status: db.prepare(`SELECT 1 FROM ${table} ${a} WHERE ${a}.id = $id AND ${vis}`).get({ id, uid }) && allows(user.perms, area) ? 'ok' : 'hidden' };
+    } else if (kind === 'doc') {
+      const d = db.prepare('SELECT deleted_at FROM documents WHERE id = ?').get(id);
+      out[key] = { status: !d || d.deleted_at ? 'gone' : allows(user.perms, 'documenti') ? 'ok' : 'hidden' };
+    }
+  }
+  return out;
+}, { quiet: true });
+
 route('GET', '/api/backlinks/:kind/:id', ({ params, user }) => {
   const { kind } = params;
   const id = +params.id;

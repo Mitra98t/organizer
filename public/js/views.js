@@ -1,6 +1,7 @@
 import {
   h, icon, S, ui, RS, api, act, render, richText, dueInfo, dayDiff, fmtDay, fmtLongDay, fmtTime, fmtSize,
   userName, toast, save, patchEntry, addEntry, isMine, localDay, autosize, stop, copy, hue, trashIt, contactNames, shareBox, sharedWithOf,
+  popButton, popItem, popSep,
   updatePending, removePending,
   descendants, ancestors, catStyle, itemAttrs, docFileUrl, projectsOf, DOC_KINDS, projHue, catHue, huePicker,
   switchWorkspace, newWorkspace, docName, renameDoc, richField, backlinks, plainRefs, CONTACT_COLOR, masonry, filterChip, aliasCodes, kindPicker, can, canEntry, roClass,
@@ -187,15 +188,54 @@ function pendingEditor(e) {
       h('button.btn.sm.danger', { onclick: () => { ui.open.delete(e.id); removePending(e.id); toast('Voce in coda eliminata'); } }, icon('trash'), 'Elimina')));
 }
 
+// ---------- menu della voce: tipo, scadenza (o data), assegnata ----------
+function kindPop(e) {
+  const pill = k => h('span.kpill', { class: `k-${k}` }, KIND_PILL[k]);
+  return popButton(`kind:${e.id}`, [pill(e.kind), KIND_LABEL[e.kind]], close => [
+    popSep('Tipo'),
+    Object.entries(KIND_LABEL).map(([k, label]) => popItem(h('span', pill(k), label), () => { close(); if (k !== e.kind) patchEntry(e, { kind: k }); }, { on: k === e.kind })),
+  ], { title: 'Tipo' });
+}
+
+function duePop(e) {
+  const isNote = e.kind === 'note';
+  const t = today();
+  const dow = new Date(`${t}T12:00:00`).getDay();
+  const label = e.due ? (isNote ? fmtDay(e.due) : dueInfo(e.due).label) : (isNote ? 'senza data' : 'nessuna');
+  return popButton(`due:${e.id}`, [icon('cal'), label], close => {
+    const set = v => { close(); if (v !== e.due) patchEntry(e, { due: v }); };
+    const opts = isNote
+      ? [['Oggi', t], ['Ieri', addDays(t, -1)], ['Due giorni fa', addDays(t, -2)]]
+      : [['Oggi', t], ['Domani', addDays(t, 1)], ['Lunedì prossimo', addDays(t, ((8 - dow) % 7) || 7)], ['Tra una settimana', addDays(t, 7)], ['Tra un mese', addDays(t, 30)]];
+    return [
+      popSep(isNote ? 'Quando è successo' : 'Scadenza'),
+      opts.map(([l, v]) => popItem(l, () => set(v), { on: e.due === v, hint: fmtDay(v) })),
+      h('label.pop-date', h('span', 'Altra data'), h('input', { type: 'date', value: e.due || '', onchange: ev => set(ev.target.value || null) })),
+      e.due && popItem(isNote ? 'Togli la data' : 'Nessuna scadenza', () => set(null)),
+      h('p.muted.pop-note', 'Anche dalla barra: !ven, !3g, !25/11, !no.'),
+    ];
+  }, { title: isNote ? 'Data' : 'Scadenza', class: e.due && !isNote ? dueInfo(e.due).cls : null });
+}
+
+function assignPop(e) {
+  const D = S.data;
+  return popButton(`assign:${e.id}`, [icon('user'), e.assignee_id ? userName(e.assignee_id) : 'nessuno'], close => {
+    const set = v => { close(); if (v !== e.assignee_id) patchEntry(e, { assignee_id: v }); };
+    return [
+      popSep('Assegnata a'),
+      popItem('Nessuno', () => set(null), { on: !e.assignee_id }),
+      D.members.map(u => popItem(u.name || u.username, () => set(u.id), { on: e.assignee_id === u.id, hint: u.id === D.me.id ? 'tu' : `@${u.username}` })),
+      h('p.muted.pop-note', 'Chi è assegnato vede la voce. Dalla barra: ++persona.'),
+    ];
+  }, { title: 'Assegnata' });
+}
+
 function entryEditor(e) {
   const D = S.data;
   const me = D.me;
   const kids = (D.childrenOf.get(e.id) || []).slice().sort((a, b) => !!a.done_at - !!b.done_at || byDue(a, b));
   const logs = D.logsOf.get(e.id) || [];
   const isNote = e.kind === 'note';
-  const t = today();
-
-  const dueBtn = (label, value) => h('button.chip', { class: e.due === value && 'on', onclick: () => patchEntry(e, { due: value }) }, label);
 
   const title = h('textarea.ed-title', {
       rows: 1, value: e.title, 'data-fk': `title-${e.id}`, spellcheck: 'false', 'data-ac': e.kind, 'data-ac-entry': e.id,
@@ -210,12 +250,8 @@ function entryEditor(e) {
       },
     });
   const fields = h('div.fields',
-      h('label.f', h('span', 'Tipo'), selectOf(e.kind, Object.entries(KIND_LABEL), v => patchEntry(e, { kind: v }))),
-      h('label.f', h('span', isNote ? 'Data' : 'Scadenza'),
-        h('input', { type: 'date', value: e.due || '', onchange: ev => patchEntry(e, { due: ev.target.value || null }) })),
-      !isNote && h('div.chips',
-        dueBtn('oggi', t), dueBtn('domani', addDays(t, 1)), dueBtn('+1 sett', addDays(t, 7)),
-        e.due && h('button.chip', { onclick: () => patchEntry(e, { due: null }) }, icon('x'))),
+      h('div.f', h('span', 'Tipo'), kindPop(e)),
+      h('div.f', h('span', isNote ? 'Data' : 'Scadenza'), duePop(e)),
       !e.parent_id && h('div.f.projs', h('span', 'Progetti'),
         h('div.projs-b',
           projectsOf(e).map((p, i) => h('span.chip-wrap', { title: i === 0 ? 'Progetto principale' : null }, projTag(p),
@@ -228,11 +264,9 @@ function entryEditor(e) {
               act(() => api('POST', `/entries/${e.id}/projects`, { project_id: p.id }));
             }),
           }))),
-      D.members.length > 1 && h('label.f', h('span', 'Assegnata'),
-        selectOf(e.assignee_id ? String(e.assignee_id) : '', [['', '— nessuno —'], ...D.members.map(u => [String(u.id), u.name || u.username])],
-          v => patchEntry(e, { assignee_id: v ? +v : null }))),
+      D.members.length > 1 && h('div.f', h('span', 'Assegnata'), assignPop(e)),
+      !e.parent_id && h('div.f', h('span', 'Condivisione'), shareBox('entry', e)),
       h('button.chip', { class: e.pinned && 'on', onclick: () => patchEntry(e, { pinned: !e.pinned }) }, icon('star'), 'evidenza'),
-      !e.parent_id && shareBox('entry', e),
       e.kind === 'mail' && e.done_at && h('button.chip', {
         class: e.awaiting_reply && 'on', title: 'La mail compare in "In attesa di risposta" finché non arriva la risposta',
         onclick: () => patchEntry(e, { awaiting: !e.awaiting_reply }),

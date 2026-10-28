@@ -47,6 +47,8 @@ Magazzino e documenti sono di tutto il workspace. Voci, progetti, contatti e not
 
 `POST /api/entries` accetta anche `client_id` (generato dal client: se la voce con quel `client_id` esiste già, restituisce quella invece di crearne un'altra) e `done` (`true` o la data: la todo arriva già fatta), per le voci create offline.
 
+`POST /api/refs` `{refs: [["voce", 12], ["progetto", 3]…]}` → `{"voce:12": {status: "ok", kind, title, done} | {status: "hidden"} | {status: "gone"}}`: per i collegamenti `[[tipo:ID]]` che non sono nei dati (archiviati, non condivisi, eliminati). Di quelli non condivisi si dice solo che ci sono.
+
 In `/api/sync` ogni oggetto ha `shared_all`, e `shares` elenca `{kind, obj_id, user_id}` di ciò che vedi. Una voce la vede anche l'assegnatario, una sotto-attività chi vede la voce sopra.
 
 ## Convenzioni

@@ -281,6 +281,24 @@ test('privato di default: +persona, ++persona, +all per voci, progetti, contatti
   assert.equal((await call('POST', '/register', { body: { code, username: 'all', password: 'password-di-all' } })).status, 400);
 });
 
+test('collegamenti citati: archiviati, non condivisi, eliminati', async () => {
+  const { token } = config();
+  const json = r => (r.status === 204 ? null : r.json());
+  const me = (method, p, body) => call(method, p, { token, body }).then(json);
+  const cookie = (await call('POST', '/login', { body: { username: 'luca', password: 'password-di-luca' } })).headers.get('set-cookie').split(';')[0];
+  const { id: priv } = await me('POST', '/entries', { text: 'segreta' });
+  const { id: open } = await me('POST', '/entries', { text: 'per luca +luca' });
+  const { id: gone } = await me('POST', '/entries', { text: 'da eliminare +luca' });
+  await me('DELETE', `/entries/${gone}`);
+  const { id: pid } = await me('POST', '/projects', { name: 'Riservato' });
+  const r = await call('POST', '/refs', { cookie, body: { refs: [['voce', priv], ['voce', open], ['voce', gone], ['progetto', pid], ['voce', 999999]] } }).then(json);
+  assert.deepEqual(r[`voce:${priv}`], { status: 'hidden' });
+  assert.deepEqual([r[`voce:${open}`].status, r[`voce:${open}`].title], ['ok', 'per luca']);
+  assert.equal(r[`voce:${gone}`].status, 'gone');
+  assert.equal(r[`progetto:${pid}`].status, 'hidden');
+  assert.equal(r['voce:999999'].status, 'gone');
+});
+
 test('voci create offline: niente doppioni se l\'invio si ripete, todo già fatta', async () => {
   const { token } = config();
   const post = body => call('POST', '/entries', { token, body }).then(r => r.json());

@@ -3,6 +3,11 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.13.1 — 2026-10-29
+- **Menu a comparsa**: Tipo, Scadenza (o Data per le note), Assegnata e Visibile a si aprono come un menu accanto al pulsante, con la stessa grafica del menu dei tipi di documento. Scadenza: oggi, domani, lunedì prossimo, tra una settimana, tra un mese, un'altra data o nessuna. Visibile a: solo io, tutti, persona per persona (resta aperto mentre si scelgono). Si chiudono cliccando fuori o con Esc; ↑↓ per spostarsi.
+- **Citazioni non accessibili**: in chat e negli altri testi, un collegamento a qualcosa che non è condiviso con te (o a un'area che non puoi vedere) mostra "Nota: non hai permessi sufficienti" invece di "voce 12". Le voci archiviate mostrano il loro titolo, quelle eliminate "voce eliminata".
+- Correzione (da un feedback): scrivendo una nota su un documento, `+persona` ora suggerisce le persone (serve a condividerla).
+
 ## 0.13 — 2026-10-29
 - **Tutto è privato di chi lo crea**, tranne magazzino e documenti: todo, diario, mail, progetti, contatti e note sui documenti li vede solo chi li ha creati (e chi ha una voce assegnata). Vale anche per gli admin. I dati già esistenti diventano privati di chi li aveva creati; chi aveva una voce assegnata la vede ancora.
 - **Condividere**: `+marco` la rende visibile anche a Marco, `++marco` la condivide e gliela assegna, `+all` (o `+tutti`) la rende visibile a tutti, anche a chi entrerà dopo. Funziona nella barra in alto, nel titolo di una voce, nella barra dei progetti e nel testo delle note sui documenti; i suggerimenti propongono le persone e +all. In ogni voce, progetto, contatto e nota c'è **"Visibile a"**: chi l'ha creato sceglie con chi condividerlo e può togliere la condivisione. Nelle righe si vede di chi è una voce non tua e con chi hai condiviso le tue. "all" e "tutti" non possono più essere nomi utente.

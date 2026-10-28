@@ -842,10 +842,33 @@ const plainTitle = t => t.replace(/(^|\s)#/g, '$1');
 
 const REF_AREA = { doc: 'documenti', progetto: 'progetti', contatto: 'contatti' };
 
+// Collegamenti a cose che l'app non ha nei dati (archiviate, non condivise, eliminate): si chiede al server
+// una volta, tutti insieme dopo il ridisegno. Il server dice solo lo stato (e il titolo se si può vedere).
+const refInfo = new Map(); // "voce:12" → { status: 'ok' | 'hidden' | 'gone', title… } (null = in arrivo)
+let refAsk = null;
+function askRef(kind, id) {
+  const key = `${kind}:${id}`;
+  if (refInfo.has(key)) return refInfo.get(key);
+  refInfo.set(key, null);
+  refAsk ||= new Set();
+  refAsk.add(key);
+  queueMicrotask(() => {
+    if (!refAsk) return;
+    const refs = [...refAsk].map(k => k.split(':'));
+    refAsk = null;
+    api('POST', '/refs', { refs }).then(r => { for (const [k, v] of Object.entries(r)) refInfo.set(k, v); render(); })
+      .catch(() => { for (const [k, i] of refs) refInfo.delete(`${k}:${i}`); });
+  });
+  return null;
+}
+
+const noAccess = () => h('span.ref.gone.denied', { title: 'Il collegamento porta a qualcosa che non è condiviso con te (o a un\'area che non puoi vedere)' },
+  icon('lock'), 'Nota: non hai permessi sufficienti');
+
 export function refChip(kind, id) {
   const D = S.data;
   // Collegamento a un'area che non si può vedere: si dice, senza nome (i dati non arrivano).
-  if (REF_AREA[kind] && !can(REF_AREA[kind])) return h('span.ref.gone', icon('lock'), 'non accessibile');
+  if (REF_AREA[kind] && !can(REF_AREA[kind])) return noAccess();
   if (kind === 'doc') {
     const d = D.docById.get(id);
     const it = d && D.itemById.get(d.item_id);
@@ -853,18 +876,32 @@ export function refChip(kind, id) {
       : h('span.ref.gone', icon('file'), 'documento eliminato');
   }
   if (kind === 'voce') {
-    const e = D.entryById.get(id);
+    // Non nei dati: archiviata (si apre lo stesso), non condivisa, o eliminata.
+    const e = D.entryById.get(id) || refInfoEntry(id);
+    if (e === 'hidden') return noAccess();
+    if (e === 'gone') return h('span.ref.gone', icon('check'), 'voce eliminata');
     return h('a.ref', { href: `#/v/${id}`, onclick: stop, class: e?.done_at ? 'done' : null },
       icon(ENTRY_ICON[e?.kind] || 'check'), e ? plainTitle(e.title.replace(REF_RE, '…')) : `voce ${id}`);
   }
   if (kind === 'progetto') {
     const p = D.projectById.get(id);
+    const st = !p && askRef('progetto', id)?.status;
+    if (st === 'hidden') return noAccess();
     return p ? h('a.ref', { href: `#/p/${id}`, onclick: stop, style: `--h:${projHue(p)}` }, icon('folder'), p.name, h('span.ref-x', `@${p.tag}`))
-      : h('span.ref.gone', icon('folder'), 'progetto eliminato');
+      : h('span.ref.gone', icon('folder'), st ? 'progetto eliminato' : 'progetto…');
   }
   const c = D.contactById.get(id);
+  const st = !c && askRef('contatto', id)?.status;
+  if (st === 'hidden') return noAccess();
   return c ? h('a.ref', { href: `#/contatti/${id}`, onclick: stop, title: c.email }, icon('user'), c.name || c.email)
-    : h('span.ref.gone', icon('user'), 'contatto eliminato');
+    : h('span.ref.gone', icon('user'), st ? 'contatto eliminato' : 'contatto…');
+}
+
+function refInfoEntry(id) {
+  const r = askRef('voce', id);
+  if (!r) return null;
+  if (r.status !== 'ok') return r.status;
+  return { kind: r.kind, title: r.title, done_at: r.done ? 'x' : null };
 }
 
 // Nome semplice di un collegamento (per le mail aperte con mailto: e le notifiche).
@@ -986,25 +1023,104 @@ export function shareLabel(kind, o) {
 export function shareBox(kind, o) {
   const D = S.data;
   const mine = o.created_by === D.me.id;
-  const key = `${kind}:${o.id}`;
-  const open = ui.shareOpen === key;
   const ids = sharedWithOf(kind, o);
-  const others = D.members.filter(u => u.id !== D.me.id);
+  const label = [icon(o.shared_all ? 'users' : ids.length ? 'user' : 'lock'), h('span', 'Visibile a: ', h('b', shareLabel(kind, o)))];
+  // Chi non l'ha creato vede solo con chi è condiviso.
+  if (!mine) return h('span.share-b.ro-info', { title: `Creato da ${userName(o.created_by)}: solo lui sceglie con chi condividerlo` }, label, h('span.muted', ` · di ${userName(o.created_by)}`));
   const save = (users, all) => act(() => api('PUT', `/shares/${kind}/${o.id}`, { users, all }));
-  return h('div.share', { class: open ? 'open' : null },
-    h('button.share-b', {
-      type: 'button', disabled: !mine, 'aria-expanded': mine ? String(open) : null,
-      title: mine ? 'Scegli con chi condividere' : `Creato da ${userName(o.created_by)}: solo lui sceglie con chi condividerlo`,
-      onclick: () => { ui.shareOpen = open ? null : key; render(); },
-    }, icon(o.shared_all ? 'users' : ids.length ? 'user' : 'lock'), h('span', 'Visibile a: ', h('b', shareLabel(kind, o))),
-    !mine && h('span.muted', ` · di ${userName(o.created_by)}`)),
-    open && h('div.share-p', { role: 'group', 'aria-label': 'Condividi con' },
-      h('label.check-row', h('input', { type: 'checkbox', checked: !!o.shared_all, onchange: ev => save(ids, ev.target.checked) }),
-        h('b', 'Tutti'), h('span.muted', ' (+all) anche chi entrerà nel workspace')),
-      others.map(u => h('label.check-row',
-        h('input', { type: 'checkbox', checked: ids.includes(u.id), disabled: !!o.shared_all,
-          onchange: ev => save(ev.target.checked ? [...ids, u.id] : ids.filter(x => x !== u.id), !!o.shared_all) }),
-        u.name || u.username, h('span.muted', ` @${u.username}`))),
-      !others.length && h('p.muted', 'Non ci sono altre persone nel workspace.'),
-      h('p.muted', 'Anche dalla barra in alto: +persona, ++persona (e gliela assegni), +all.')));
+  return popButton(`share:${kind}:${o.id}`, label, () => {
+    const x = (kind === 'entry' ? S.data.entryById : kind === 'project' ? S.data.projectById : kind === 'contact' ? S.data.contactById : new Map(S.data.docNotes.map(n => [n.id, n]))).get(o.id) || o;
+    const cur = sharedWithOf(kind, x);
+    const others = S.data.members.filter(u => u.id !== S.data.me.id);
+    return [
+      popSep('Visibile a'),
+      popItem('Solo io', () => save([], false), { on: !x.shared_all && !cur.length, check: true }),
+      popItem('Tutti', () => save(cur, !x.shared_all), { on: !!x.shared_all, check: true, hint: '+all' }),
+      others.length > 0 && popSep('Persone'),
+      others.map(u => popItem(u.name || u.username, () => save(cur.includes(u.id) ? cur.filter(v => v !== u.id) : [...cur, u.id], !!x.shared_all),
+        { on: !!x.shared_all || cur.includes(u.id), check: true, hint: `@${u.username}` })),
+      !others.length && h('p.muted.pop-note', 'Non ci sono altre persone nel workspace.'),
+      h('p.muted.pop-note', 'Anche dalla barra: +persona, ++persona (e gliela assegni), +all.'),
+    ];
+  }, { class: 'share-b', title: 'Scegli con chi condividere' });
 }
+
+// ---------- menu a comparsa ----------
+// Menu contestuali (come il tasto destro) accanto al pulsante che li apre: Visibile a, Assegnata, Scadenza,
+// Tipo. Si chiudono cliccando fuori, con Esc o scorrendo la pagina; ↑↓ passano da una voce all'altra.
+// Dopo un ridisegno il pulsante viene sostituito: se c'è ancora (stesso data-pop) il menu resta aperto lì
+// e si aggiorna, così le scelte multiple (le persone di "Visibile a") non lo chiudono.
+const pop = h('div.popmenu', { hidden: true, role: 'menu' });
+let popState = null; // { key, btn, content }
+
+export function closePop(focus = false) {
+  if (!popState) return;
+  const btn = popState.btn;
+  popState = null;
+  pop.hidden = true;
+  if (focus && btn.isConnected) btn.focus();
+}
+
+function placePop(btn) {
+  const r = btn.getBoundingClientRect();
+  const mh = pop.offsetHeight;
+  pop.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8))}px`;
+  pop.style.top = `${r.bottom + 4 + mh < window.innerHeight - 8 ? r.bottom + 4 : Math.max(8, r.top - mh - 4)}px`;
+}
+
+function drawPop() {
+  pop.replaceChildren(...[popState.content(closePop)].flat(Infinity).filter(Boolean));
+  placePop(popState.btn);
+}
+
+// Pulsante che apre un menu: content(close) disegna il contenuto (si richiama a ogni aggiornamento).
+export function popButton(key, label, content, attrs = {}) {
+  const btn = h('button.pop-b', {
+    type: 'button', 'data-pop': key, 'aria-haspopup': 'menu', 'aria-expanded': String(popState?.key === key), ...attrs,
+    onclick: ev => {
+      ev.stopPropagation();
+      if (popState?.key === key) return closePop();
+      if (!pop.isConnected) document.body.append(pop);
+      popState = { key, btn, content };
+      pop.hidden = false;
+      drawPop();
+      pop.querySelector('.pop-i.on, .pop-i, input')?.focus();
+    },
+  }, label, h('span.kpick-caret', '▾'));
+  return btn;
+}
+
+export const popCheck = () => {
+  if (!popState || popState.btn.isConnected) return;
+  const btn = document.querySelector(`[data-pop="${CSS.escape(popState.key)}"]`);
+  if (!btn) return closePop();
+  popState.btn = btn;
+  btn.setAttribute('aria-expanded', 'true');
+  drawPop();
+};
+
+// Una voce del menu: on = scelta attuale (o spuntata, nei menu a scelta multipla).
+export const popItem = (label, onclick, { on = false, check = false, hint = null } = {}) =>
+  h('button.pop-i', { type: 'button', role: check ? 'menuitemcheckbox' : 'menuitem', class: on ? 'on' : null, 'aria-checked': check ? String(on) : null, onclick },
+    check ? h('span.pop-ck', on ? icon('check') : null) : null, h('span.pop-l', label), hint && h('span.muted.pop-h', hint));
+export const popSep = title => h('div.pop-sep', title || '');
+
+document.addEventListener('pointerdown', ev => {
+  if (popState && !pop.contains(ev.target) && !popState.btn.contains(ev.target)) closePop();
+}, true);
+window.addEventListener('scroll', ev => { if (popState && !pop.contains(ev.target)) closePop(); }, true);
+window.addEventListener('resize', () => closePop());
+pop.addEventListener('keydown', ev => {
+  const items = [...pop.querySelectorAll('.pop-i, input')];
+  const i = items.indexOf(document.activeElement);
+  if ((ev.key === 'ArrowDown' || ev.key === 'ArrowUp') && document.activeElement?.type !== 'date') {
+    ev.preventDefault();
+    items[(i + (ev.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
+  } else if (ev.key === 'Escape') {
+    ev.preventDefault();
+    ev.stopPropagation();
+    closePop(true);
+  } else if (ev.key === 'Tab') {
+    closePop(true);
+  }
+});
