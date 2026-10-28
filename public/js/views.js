@@ -1,8 +1,8 @@
 import {
   h, icon, S, ui, RS, api, act, render, richText, dueInfo, dayDiff, fmtDay, fmtLongDay, fmtTime, fmtSize,
-  userName, toast, save, patchEntry, addEntry, isMine, localDay, autosize, stop, copy, hue, trashIt, contactLabel,
+  userName, toast, save, patchEntry, addEntry, isMine, localDay, autosize, stop, copy, hue, trashIt, contactNames,
   descendants, ancestors, catStyle, itemAttrs, docFileUrl, projectsOf, DOC_KINDS, docKinds, newDocKind, projHue, catHue, huePicker,
-  switchWorkspace, newWorkspace, docName, renameDoc, richField, backlinks, plainRefs,
+  switchWorkspace, newWorkspace, docName, renameDoc, richField, backlinks, plainRefs, CONTACT_COLOR,
 } from './core.js';
 import { docMeta } from './docview.js';
 import { today, addDays } from './parse.js';
@@ -50,23 +50,49 @@ function toggleOpen(id) {
 }
 
 function toggleDone(e) {
+  if (e.kind === 'mail') return advanceMail(e);
   const done = !e.done_at;
   patchEntry(e, { done });
-  if (!done) return;
-  // Una mail mandata finisce "in attesa di risposta" (Mail): se non serve una risposta lo si dice subito.
-  if (e.kind === 'mail') toast('Mail inviata: in attesa di risposta', { action: { label: 'Nessuna risposta', fn: () => patchEntry(e, { awaiting: false }) } });
-  else toast('Fatto', { action: { label: 'Annulla', fn: () => patchEntry(e, { done: false }) } });
+  if (done) toast('Fatto', { action: { label: 'Annulla', fn: () => patchEntry(e, { done: false }) } });
 }
+
+// Le mail hanno un tasto solo che le fa avanzare: da mandare → in attesa di risposta → in archivio (risposta
+// arrivata). Su una mail in archivio lo stesso tasto la rimette in attesa; la freccia ↑ la riporta da mandare.
+function advanceMail(e) {
+  if (!e.done_at) {
+    patchEntry(e, { done: true });
+    toast('Mail inviata: in attesa di risposta', { action: { label: 'Nessuna risposta', fn: () => patchEntry(e, { awaiting: false }) } });
+  } else if (e.awaiting_reply) {
+    patchEntry(e, { awaiting: false });
+    toast('Risposta arrivata: mail in archivio', { action: { label: 'Annulla', fn: () => patchEntry(e, { awaiting: true }) } });
+  } else {
+    patchEntry(e, { awaiting: true });
+    toast('Di nuovo in attesa di risposta');
+  }
+}
+
+const MAIL_STEP = {
+  open: { title: 'Segna come inviata (poi resta in attesa di risposta)', icon: 'mail' },
+  waiting: { title: 'Risposta arrivata: sposta in archivio', icon: 'wait' },
+  archived: { title: 'Rimetti in attesa di risposta', icon: 'check' },
+};
+const mailStep = e => (!e.done_at ? 'open' : e.awaiting_reply ? 'waiting' : 'archived');
+
+// Freccia in fondo alla riga di una mail mandata: torna tra quelle da mandare (es. per un sollecito).
+const mailUpBtn = e => h('button.icon-btn.mail-up', {
+  title: 'Riporta tra le mail da mandare',
+  onclick: ev => {
+    stop(ev);
+    patchEntry(e, { done: false });
+    toast('Mail di nuovo da mandare', { action: { label: 'Annulla', fn: () => patchEntry(e, { done: true, awaiting: !!e.awaiting_reply }) } });
+  },
+}, icon('up'));
 
 // Da quanto si aspetta una risposta (giorni dall'invio).
 const waitingFor = e => {
   const days = Math.floor((Date.now() - Date.parse(e.done_at)) / 864e5);
   return days < 1 ? 'da oggi' : days === 1 ? 'da ieri' : `da ${days} giorni`;
 };
-const awaitingBtn = e => h('button.chip.await', {
-  title: 'Segna che la risposta è arrivata (il thread si chiude)',
-  onclick: ev => { stop(ev); patchEntry(e, { awaiting: false }); toast('Thread chiuso', { action: { label: 'Annulla', fn: () => patchEntry(e, { awaiting: true }) } }); },
-}, icon('check'), 'risposta arrivata');
 
 function enterAdd(handler) {
   return ev => {
@@ -94,9 +120,9 @@ export function entryRow(e, opt = {}) {
     meta.push(h('span.due', { class: e.kind === 'note' ? null : d.cls }, icon('cal'), e.kind === 'note' ? fmtDay(e.due) : d.label));
   }
   if (e.done_at && e.kind !== 'note') meta.push(h('span.muted', `${e.kind === 'mail' ? 'inviata' : 'fatta'} ${fmtTime(e.done_at)}`));
-  if (e.kind === 'mail' && e.done_at && e.awaiting_reply) meta.push(h('span.awaiting', icon('mail'), `in attesa di risposta ${waitingFor(e)}`), awaitingBtn(e));
+  if (e.kind === 'mail' && e.done_at && e.awaiting_reply) meta.push(h('span.awaiting', icon('wait'), `in attesa di risposta ${waitingFor(e)}`));
   for (const p of projs) meta.push(projTag(p));
-  if (e.kind === 'mail' && e.contact) meta.push(h('span.contact', { title: e.contact }, `→ ${contactLabel(e.contact)}`));
+  if (e.kind === 'mail' && e.contact) meta.push(h('span.contact', { title: e.contact }, '→ ', contactNames(e.contact)));
   const atts = S.data.attachmentsOf.get(e.id);
   if (atts) meta.push(h('span.atts-n', { title: atts.map(a => a.filename).join(', ') }, icon('clip'), atts.length));
   if (e.assignee_id) meta.push(h('span.who', `+${userName(e.assignee_id)}`));
@@ -107,13 +133,14 @@ export function entryRow(e, opt = {}) {
   if (parent) meta.push(h('span.parent', { title: parent.title }, '↳ sotto-attività di ', h('b', parent.title)));
   if (e.pending) meta.push(h('span.pending', 'in coda offline'));
 
+  const step = e.kind === 'mail' && MAIL_STEP[mailStep(e)];
   const check = e.kind === 'note'
     ? h('span.bullet')
     : h('button.check', {
       class: e.kind,
-      title: e.done_at ? 'Riapri' : e.kind === 'mail' ? 'Segna come inviata' : 'Completa',
+      title: step ? step.title : e.done_at ? 'Riapri' : 'Completa',
       onclick: () => toggleDone(e),
-    }, e.done_at ? icon('check') : e.kind === 'mail' ? icon('mail') : null);
+    }, step ? icon(step.icon) : e.done_at ? icon('check') : null);
 
   return h('div.entry', {
     class: [`k-${e.kind}`, e.done_at && 'done', e.done_at && e.awaiting_reply && 'waiting', open && 'open', e.pinned && 'pinned', opt.nested && 'nested'].filter(Boolean).join(' '),
@@ -123,7 +150,8 @@ export function entryRow(e, opt = {}) {
       h('div.title',
         opt.showKind !== false && !opt.nested && h('span.kpill', { class: `k-${e.kind}` }, KIND_PILL[e.kind]),
         e.pinned ? icon('star', 'pin') : null, richText(e.title)),
-      meta.length > 0 && h('div.meta', meta))),
+      meta.length > 0 && h('div.meta', meta)),
+    e.kind === 'mail' && e.done_at && !e.pending && mailUpBtn(e)),
   open && entryEditor(e));
 }
 
@@ -225,7 +253,7 @@ function archivedEntry(id) {
   return h('div.view.entry-page',
     h('div.sec-b.archived',
       h('div.arch-h', h('span.kpill', { class: `k-${e.kind}` }, KIND_PILL[e.kind]), h('b', richText(e.title))),
-      h('p.muted', `${e.kind === 'mail' ? 'Mandata' : 'Fatta'} il ${fmtTime(e.done_at)}`, e.kind === 'mail' && e.contact ? ` a ${contactLabel(e.contact)}` : '',
+      h('p.muted', `${e.kind === 'mail' ? 'Mandata' : 'Fatta'} il ${fmtTime(e.done_at)}`, e.kind === 'mail' && e.contact ? [' a ', contactNames(e.contact)] : '',
         e.projects.length ? ' · ' : '', e.projects.map(p => projTag(p))),
       e.notes && h('div.arch-notes', richText(e.notes)),
       e.attachments.length > 0 && h('p.muted', icon('clip'), e.attachments.map(a => a.filename).join(', ')),
@@ -262,7 +290,7 @@ function blRow(e) {
   return h('a.bl-row', { href: `#/v/${e.id}`, class: e.done_at && e.kind !== 'mail' ? 'done' : null },
     h('span.kpill', { class: `k-${e.kind}` }, BL_PILL[e.kind]),
     h('span.bl-t', plainRefs(e.title).replace(/(^|\s)#/g, '$1')),
-    e.kind === 'mail' && e.contact && h('span.muted.bl-to', `→ ${contactLabel(e.contact)}`),
+    e.kind === 'mail' && e.contact && h('span.muted.bl-to', '→ ', contactNames(e.contact)),
     when && h('span.muted.bl-when', when));
 }
 
@@ -1055,6 +1083,12 @@ export function viewSettings() {
     ], { count: '' }),
 
     h('a.trash-link', { href: '#/cestino' }, icon('trash'), 'Cestino', h('span.muted', D.trashCount ? `${D.trashCount} elementi` : 'vuoto')),
+
+    section('set-contacts', 'Contatti', [
+      h('div.grid', h('label.f', h('span', 'Colore dei contatti'),
+        selectOf(ui.contactColor, Object.entries(CONTACT_COLOR), v => { ui.contactColor = v; save('org.contactColor', v); render(); }))),
+      h('p.muted', 'Il nome dei contatti è colorato nelle mail, in rubrica e nei collegamenti. Per azienda, fascia oraria o ruolo: stesso colore per chi ha lo stesso valore (senza quel dato, nessun colore). Vale per questo dispositivo.'),
+    ], { count: '', collapsed: true }),
 
     section('set-mail', 'Mail e Thunderbird', [
       h('p', '"Manda" apre la mail già compilata in Thunderbird, allegati compresi. Serve un piccolo helper sul computer, da installare una volta dalla cartella del progetto:'),

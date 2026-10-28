@@ -9,6 +9,11 @@ function fields(b) {
   const f = {};
   for (const [k, max] of Object.entries(FIELDS)) if (b[k] !== undefined) f[k] = str(b[k], max);
   if (f.email && !/^[^\s@]+@[^\s@]+$/.test(f.email)) fail(400, 'Email non valida');
+  // Colore: tinta 0..359, oppure null per tornare a quello automatico.
+  if (b.hue !== undefined) {
+    f.hue = b.hue === null || b.hue === '' ? null : Number(b.hue);
+    if (f.hue !== null && !(Number.isInteger(f.hue) && f.hue >= 0 && f.hue < 360)) fail(400, 'Colore non valido');
+  }
   return f;
 }
 

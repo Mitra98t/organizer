@@ -259,6 +259,10 @@ const MIGRATIONS = [
   );
   ALTER TABLE entries ADD COLUMN awaiting_reply INTEGER NOT NULL DEFAULT 0;
   `,
+  // v12: colore scelto per un contatto (tinta 0..359; NULL = automatico dall'indirizzo).
+  `
+  ALTER TABLE contacts ADD COLUMN hue INTEGER;
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

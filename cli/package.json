@@ -1,6 +1,6 @@
 {
   "name": "organizer-cli",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Organizer dal terminale: voci, progetti, magazzino, documenti e mail",
   "type": "module",
   "bin": {

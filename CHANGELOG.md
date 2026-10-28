@@ -3,6 +3,13 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.8.1 — 2026-10-28
+- Mail: un tasto solo le fa avanzare. Da mandare → (clic) in attesa di risposta, con la clessidra → (clic) risposta arrivata, in archivio. Su una mail in archivio lo stesso tasto la rimette in attesa. Tolto il pulsante "risposta arrivata".
+- Mail mandate: freccia ↑ in fondo alla riga per riportarle tra quelle da mandare (es. per un sollecito).
+- Ogni contatto ha un colore (automatico, o scelto dal pallino accanto al nome nella sua pagina): il suo nome è colorato nelle mail, in rubrica e nei backlink.
+- Impostazioni → Contatti: i contatti si colorano per contatto (automatico o scelto, come prima), oppure per azienda, fascia oraria o ruolo (stesso colore per lo stesso valore). Preferenza di questo dispositivo.
+- Schema dati v12.
+
 ## 0.8 — 2026-10-28
 
 **Mail in attesa di risposta**

@@ -1,5 +1,5 @@
 // Rubrica: elenco filtrabile, scheda modificabile, mail collegate a ogni contatto.
-import { h, icon, S, ui, api, act, render, copy, trashIt, save, richField } from './core.js';
+import { h, icon, S, ui, api, act, render, copy, trashIt, save, richField, contactHue, contactStyle, CONTACT_COLOR, hue, huePicker } from './core.js';
 import { backlinksBox } from './views.js';
 
 const lc = s => String(s || '').toLowerCase();
@@ -47,7 +47,8 @@ export function viewContacts(id) {
   const row = c => {
     const n = mailsOf(c).filter(e => !e.done_at).length;
     return h('a.item-row.contact-row', { href: `#/contatti/${c.id}` },
-      h('span.cname', c.name || h('span.muted', 'senza nome')),
+      h('span.cdot', { class: contactHue(c) == null ? null : 'cat', style: contactStyle(c) }),
+      h('span.cname.ccol', { style: contactStyle(c) }, c.name || h('span.muted', 'senza nome')),
       c.company && field !== 'company' && h('span.muted', c.company),
       h('span.item-meta',
         c.timeslot && field !== 'timeslot' && h('span.slot', icon('cal'), c.timeslot),
@@ -112,7 +113,20 @@ function viewContact(id) {
   return h('div.view',
     h('div.head',
       h('a.icon-btn', { href: '#/contatti', title: 'Contatti' }, icon('back')),
+      // Colore del contatto (nome colorato nelle mail) dietro al pallino, come per progetti e categorie.
+      ui.contactColor === 'contact' || !(ui.contactColor in CONTACT_COLOR)
+        ? h('button.cdot.big.pick.cat', {
+          style: contactStyle(c), title: 'Colore del contatto',
+          onclick: () => { ui.contactPicker = ui.contactPicker === c.id ? null : c.id; render(); },
+        })
+        // Colore per azienda / fascia oraria / ruolo: viene dal dato, il pallino non si cambia qui.
+        : h('span.cdot.big', {
+          class: contactHue(c) == null ? null : 'cat', style: contactStyle(c),
+          title: `Colore ${CONTACT_COLOR[ui.contactColor].toLowerCase()}: si cambia il modo in Impostazioni → Contatti`,
+        }),
       h('input.h-title', { value: c.name, placeholder: 'Nome', 'data-fk': `cname-${c.id}`, onchange: ev => patch({ name: ev.target.value }) })),
+    ui.contactPicker === c.id && h('div.cat-pick', h('span.muted', `Colore di ${c.name || c.email} (il suo nome nelle mail): `),
+      huePicker(c.hue ?? null, hue(String(c.email || c.name).toLowerCase()), x => { ui.contactPicker = null; patch({ hue: x }); })),
     h('div.grid',
       field('email', 'Email', { type: 'email', class: 'mono' }),
       field('phone', 'Telefono', { type: 'tel' }),

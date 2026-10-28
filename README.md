@@ -105,7 +105,7 @@ Ogni nota si può modificare, segnare come risolta (sparisce, si rivede con il f
 
 Una voce di tipo mail è una mail vera: destinatari (A, Cc) con suggerimenti dalla rubrica, oggetto (se vuoto usa il titolo), testo e allegati. Gli allegati possono essere file caricati (anche trascinandoli) o documenti già presenti in magazzino, per esempio il firmware da mandare al cliente. Nel testo `#` suggerisce gli articoli del magazzino e inserisce il codice senza `#` (es. `#sch051` → `SCH-051`).
 
-Una mail segnata come mandata resta nella sezione **In attesa di risposta** finché non premi "risposta arrivata": così i thread ancora aperti non si perdono. Se una mail non richiede risposta, "Nessuna risposta" subito dopo averla segnata mandata.
+Ogni mail ha un tasto solo che la fa avanzare: un clic la segna mandata e la mette **In attesa di risposta** (con la clessidra), un altro clic quando la risposta è arrivata la manda in archivio. Così i thread ancora aperti non si perdono. Se una mail non richiede risposta, "Nessuna risposta" subito dopo averla segnata mandata. La freccia ↑ in fondo alla riga di una mail mandata la riporta tra quelle da mandare (per un sollecito). Ogni contatto ha un colore, che si cambia dal pallino nella sua pagina: il suo nome nelle mail è colorato così. In Impostazioni → Contatti si può colorare invece per azienda, fascia oraria o ruolo.
 
 **Manda** apre la mail già compilata in Thunderbird, allegati compresi. Un link `mailto:` non può portare allegati, quindi serve un piccolo helper locale da installare una volta per computer:
 

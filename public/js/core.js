@@ -50,9 +50,11 @@ export const ui = {
   docSel: new Set(),
   catPicker: null,
   projPicker: null, // progetto con il popup del colore aperto
+  contactPicker: null, // contatto con il popup del colore aperto
   itemStatusF: null,
   hideDiscarded: load('org.hideDiscarded', false),
   contactGroup: load('org.contactGroup', 'none'),
+  contactColor: load('org.contactColor', 'contact'), // come si colorano i contatti (Impostazioni)
   contactTab: null,
 };
 
@@ -133,6 +135,8 @@ const ICONS = {
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
   logout: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 8l-4 4 4 4M6 12h10"/>',
+  up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
+  wait: '<path d="M7 3h10M7 21h10M8 3c0 5 8 6 8 9s-8 4-8 9M16 3c0 5-8 6-8 9s8 4 8 9"/>',
   chat: '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9a1.5 1.5 0 0 1-1.5 1.5H10l-5 4v-4h.5A1.5 1.5 0 0 1 4 14.5z"/><path d="M8 9h8M8 12h5"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17.5v.01"/>',
 };
@@ -700,10 +704,28 @@ export async function trashIt(type, url, label) {
   return ok;
 }
 
-// Nome leggibile dei destinatari: "Luca Bianchi" se l'email è in rubrica.
-export function contactLabel(list) {
-  return String(list || '').split(',').map(s => s.trim()).filter(Boolean)
-    .map(a => S.data?.contactByEmail.get(a.toLowerCase())?.name || a).join(', ');
+// Colore dei contatti, scelto in Impostazioni (preferenza di questo dispositivo, come il tema):
+// per contatto (quello scelto dal pallino, altrimenti automatico dall'indirizzo) oppure uguale per tutti quelli
+// con la stessa azienda, fascia oraria o ruolo (senza quel dato: nessun colore).
+export const CONTACT_COLOR = { contact: 'Per contatto (automatico o scelto)', company: 'Per azienda', timeslot: 'Per fascia oraria', role: 'Per ruolo' };
+export function contactHue(c) {
+  if (ui.contactColor in CONTACT_COLOR && ui.contactColor !== 'contact') {
+    const v = String(c[ui.contactColor] || '').trim().toLowerCase();
+    return v ? hue(v) : null;
+  }
+  return c.hue ?? hue(String(c.email || c.name).toLowerCase());
+}
+export const contactStyle = c => { const x = contactHue(c); return x == null ? null : `--h:${x}`; };
+
+// Destinatari come elementi: i contatti in rubrica con il loro nome e colore, gli altri indirizzi così come sono.
+export function contactNames(list) {
+  const out = [];
+  for (const a of String(list || '').split(',').map(s => s.trim()).filter(Boolean)) {
+    const c = S.data?.contactByEmail.get(a.toLowerCase());
+    if (out.length) out.push(', ');
+    out.push(c ? h('span.ccol', { style: contactStyle(c), title: a }, c.name || c.email) : a);
+  }
+  return out;
 }
 
 export function toast(msg, { err = false, action } = {}) {

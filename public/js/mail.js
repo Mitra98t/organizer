@@ -1,5 +1,5 @@
 // Composer delle mail: destinatari, oggetto, testo, allegati e invio verso il client di posta.
-import { h, icon, S, ui, api, act, toast, patchEntry, fmtSize, plainRefs, richField } from './core.js';
+import { h, icon, S, ui, api, act, toast, patchEntry, fmtSize, plainRefs, richField, contactStyle } from './core.js';
 
 const subjectOf = e => plainRefs(e.mail_subject || e.title.replace(/(^|\s)#/g, '$1'));
 
@@ -59,7 +59,8 @@ export function mailComposer(e) {
   const box = h('div.mail',
     h('label.mf', h('span', 'A'),
       h('input', { value: e.contact || '', placeholder: 'email o nome dalla rubrica, separati da virgola', 'data-fk': `to-${e.id}`, 'data-ac': 'email', autocomplete: 'off', spellcheck: 'false', onblur: saveField('contact') })),
-    known.length > 0 && h('div.mf-known', known.map(c => h('a', { href: `#/contatti/${c.id}` }, icon('user'), c.name || c.email, c.company && h('span.muted', ` · ${c.company}`)))),
+    known.length > 0 && h('div.mf-known', known.map(c => h('a', { href: `#/contatti/${c.id}` },
+      icon('user'), h('span.ccol', { style: contactStyle(c) }, c.name || c.email), c.company && h('span.muted', ` · ${c.company}`)))),
     h('label.mf', h('span', 'Cc'),
       h('input', { value: e.mail_cc || '', 'data-fk': `cc-${e.id}`, 'data-ac': 'email', autocomplete: 'off', spellcheck: 'false', onblur: saveField('mail_cc') })),
     h('label.mf', h('span', 'Oggetto'),

@@ -872,7 +872,12 @@ a.ref:hover { border-color: var(--accent); }
 /* ---------- mail in attesa di risposta ---------- */
 .awaiting { display: inline-flex; align-items: center; gap: 4px; color: var(--today); font-weight: 600; }
 .awaiting .ic { width: 14px; height: 14px; }
-.chip.await { padding: 1px 8px; font-size: 12px; }
+/* Tasto della mail in attesa: clessidra arancione (un clic: risposta arrivata, in archivio). */
+.entry.done.waiting .check.mail { background: transparent; border-color: var(--today); color: var(--today); }
+.entry.done.waiting .check.mail .ic { opacity: 1; }
+/* Freccia ↑ in fondo alla riga di una mail mandata: torna tra quelle da mandare. */
+.mail-up { flex: none; align-self: center; margin-left: auto; color: var(--muted); opacity: 0.7; }
+.mail-up:hover { opacity: 1; color: var(--accent); }
 .sec.waiting .sec-t { color: var(--today); }
 /* Colonne strette: dimensione e data vanno a capo invece di uscire dalla colonna. */
 .doc-groups .drow { flex-wrap: wrap; row-gap: 2px; }
@@ -881,3 +886,6 @@ a.ref:hover { border-color: var(--accent); }
 /* Mandata ma in attesa di risposta: il thread è ancora aperto, il titolo non è barrato. */
 .entry.done.waiting .title { color: var(--text); text-decoration: none; }
 .entry.done.waiting { border-left-color: var(--today); }
+/* Contatti: nome con il colore del contatto (nelle mail, in rubrica). */
+.ccol { color: hsl(var(--h) 60% var(--tag-l)); font-weight: 600; }
+.contact-row .cdot { align-self: center; opacity: 1; }

@@ -203,3 +203,16 @@ test('mail mandate in attesa di risposta e tipi di documento aggiunti', async ()
   await org(['doc', 'kinds', '--rm', 'gerber']);
   assert.equal(await kindOf(), 'altro');
 });
+
+test('colore dei contatti: tinta 0..359 o automatico', async () => {
+  const login = await call('POST', '/login', { body: { username: 'fede', password: 'password-di-prova' } });
+  const cookie = login.headers.get('set-cookie').split(';')[0];
+  const { id } = await (await call('POST', '/contacts', { cookie, body: { name: 'Luca', email: 'luca@ditta.example' } })).json();
+  const hueOf = async () => (await (await call('GET', '/sync', { cookie })).json()).contacts.find(c => c.id === id).hue;
+  assert.equal(await hueOf(), null);
+  assert.equal((await call('PATCH', `/contacts/${id}`, { cookie, body: { hue: 210 } })).status, 204);
+  assert.equal(await hueOf(), 210);
+  assert.equal((await call('PATCH', `/contacts/${id}`, { cookie, body: { hue: 400 } })).status, 400);
+  await call('PATCH', `/contacts/${id}`, { cookie, body: { hue: null } });
+  assert.equal(await hueOf(), null);
+});
