@@ -889,3 +889,7 @@ a.ref:hover { border-color: var(--accent); }
 /* Contatti: nome con il colore del contatto (nelle mail, in rubrica). */
 .ccol { color: hsl(var(--h) 60% var(--tag-l)); font-weight: 600; }
 .contact-row .cdot { align-self: center; opacity: 1; }
+
+/* Colonne "a muro": i blocchi si impilano in ogni colonna senza allinearsi alle righe (vedi masonry in core.js). */
+.masonry { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: 12px; align-items: start; }
+.mcol { display: flex; flex-direction: column; gap: 12px; min-width: 0; }

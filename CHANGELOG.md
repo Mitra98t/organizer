@@ -3,6 +3,10 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.8.2 — 2026-10-28
+- Pagina Documenti: il pulsante a pannelli ora mostra la vista per categoria del magazzino (con gli articoli e i loro documenti), come nel magazzino; l'altro pulsante la vista per tipo di documento.
+- Viste a colonne (magazzino per categoria, documenti raggruppati) disposte "a muro" come la home di Pinterest: ogni blocco va nella colonna più corta, così sotto un blocco basso non resta spazio vuoto. Si ricompongono quando la finestra cambia larghezza.
+
 ## 0.8.1 — 2026-10-28
 - Mail: un tasto solo le fa avanzare. Da mandare → (clic) in attesa di risposta, con la clessidra → (clic) risposta arrivata, in archivio. Su una mail in archivio lo stesso tasto la rimette in attesa. Tolto il pulsante "risposta arrivata".
 - Mail mandate: freccia ↑ in fondo alla riga per riportarle tra quelle da mandare (es. per un sollecito).

@@ -2,7 +2,7 @@
 // Si filtrano, si raggruppano per categoria dell'articolo (come il magazzino a colonne) o per tipo di documento,
 // e se ne scelgono fino a 3 da aprire affiancati. Qui si aggiungono anche i tipi di documento.
 import {
-  h, icon, S, ui, api, act, render, save, toast, fmtSize, fmtTime, itemAttrs, catStyle, docKinds, dkAttrs, newDocKind, docName, renameDoc,
+  h, icon, S, ui, api, act, render, save, toast, fmtSize, fmtTime, itemAttrs, catStyle, docKinds, dkAttrs, newDocKind, docName, renameDoc, masonry,
 } from './core.js';
 import { docMeta } from './docview.js';
 
@@ -97,8 +97,9 @@ export function viewDocuments() {
         oninput: ev => { ui.docFilter = ev.target.value; render(); },
       }),
       h('div.seg',
-        h('button', { class: byCat && 'on', onclick: () => setGroup('item'), title: 'Per categoria del magazzino' }, icon('box')),
-        h('button', { class: !byCat && 'on', onclick: () => setGroup('kind'), title: 'Per tipo di documento' }, icon('cols'))),
+        // Come nel magazzino: il pulsante a pannelli è la vista per categoria (con gli articoli), l'altro per tipo.
+        h('button', { class: !byCat && 'on', onclick: () => setGroup('kind'), title: 'Per tipo di documento' }, icon('file')),
+        h('button', { class: byCat && 'on', onclick: () => setGroup('item'), title: 'Per categoria del magazzino, con gli articoli' }, icon('cols'))),
       h('a.btn.ghost', { href: '#/magazzino', title: 'Torna al magazzino' }, icon('box'), h('span.only-wide', 'Magazzino'))),
     h('div.toolbar.cats',
       kinds.filter(k => counts.get(k)).map(k =>
@@ -112,7 +113,7 @@ export function viewDocuments() {
       h('p', 'I documenti si caricano dalla scheda di un articolo di magazzino (firmware, datasheet, schemi…).')),
     all.length > 0 && !docs.length && h('div.empty', h('p', 'Nessun documento corrisponde ai filtri.')),
     all.length > 0 && h('p.muted.dnd-hint', `Spunta fino a ${MAX_REVIEW} documenti per rivederli affiancati, con le loro note.`),
-    h('div.doc-groups', byCat ? byCategory(docs) : byKind(docs, filtered)),
+    masonry('doc-groups', byCat ? byCategory(docs) : byKind(docs, filtered)),
     sel.length > 0 && h('div.rv-bar',
       h('span', `${sel.length} ${sel.length === 1 ? 'documento selezionato' : 'documenti selezionati'}`),
       h('span.grow'),

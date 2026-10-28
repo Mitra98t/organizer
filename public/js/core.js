@@ -587,6 +587,50 @@ function bareCodes(text) {
   return out;
 }
 
+// ---------- colonne "a muro" (come la home di Pinterest) ----------
+// I blocchi (categorie del magazzino, gruppi di documenti) vanno in N colonne: ognuno, nell'ordine, nella
+// colonna più corta, così sotto un blocco basso non resta spazio vuoto. N: 3 su schermo grande, 2 medio,
+// 1 su telefono (come --cols nel CSS). Le altezze si misurano appena la vista è nella pagina.
+const COLS_MQ = [['(max-width: 899px)', 1], ['(max-width: 1399px)', 2]];
+const masonryCols = () => COLS_MQ.find(([q]) => matchMedia(q).matches)?.[1] ?? 3;
+
+export function masonry(cls, blocks) {
+  const list = blocks.filter(Boolean);
+  const n = masonryCols();
+  const cols = Array.from({ length: n }, () => h('div.mcol'));
+  list.forEach((b, i) => cols[i % n].append(b));
+  const box = h(`div.${cls}.masonry`, { style: `--cols:${n}` }, cols);
+  box.blocks = list;
+  queueMicrotask(() => pack(box));
+  masonryWatch.observe(box);
+  return box;
+}
+
+function pack(box) {
+  if (!box.isConnected) return;
+  const cols = [...box.children];
+  const sizes = box.blocks.map(b => b.offsetHeight); // colonne larghe uguali: altezze già giuste
+  const heights = cols.map(() => 0);
+  box.blocks.forEach((b, i) => {
+    const c = heights.indexOf(Math.min(...heights));
+    cols[c].append(b);
+    heights[c] += sizes[i] + 12; // più lo spazio tra i blocchi
+  });
+}
+
+// Quando il contenitore cambia larghezza (finestra, rotazione del telefono…): se cambia il numero di colonne
+// si ridisegna, altrimenti si ricompongono le colonne (il testo può andare a capo in modo diverso).
+let packTimer = null;
+const masonryWatch = new ResizeObserver(entries => {
+  clearTimeout(packTimer);
+  packTimer = setTimeout(() => {
+    for (const e of entries) if (!e.target.isConnected) masonryWatch.unobserve(e.target); // viste vecchie
+    const boxes = entries.map(e => e.target).filter(b => b.isConnected);
+    if (boxes.some(b => b.children.length !== masonryCols())) render();
+    else boxes.forEach(pack);
+  }, 100);
+});
+
 // ---------- campi di testo che si leggono come la chat ----------
 // Il testo si mostra già colorato (#CODICI, collegamenti [[…]], link) e i link si cliccano; un clic sul testo
 // (o Invio quando ha il focus) apre il campo per scrivere, uscendo si salva e si torna alla lettura.

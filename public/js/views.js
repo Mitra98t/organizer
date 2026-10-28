@@ -2,7 +2,7 @@ import {
   h, icon, S, ui, RS, api, act, render, richText, dueInfo, dayDiff, fmtDay, fmtLongDay, fmtTime, fmtSize,
   userName, toast, save, patchEntry, addEntry, isMine, localDay, autosize, stop, copy, hue, trashIt, contactNames,
   descendants, ancestors, catStyle, itemAttrs, docFileUrl, projectsOf, DOC_KINDS, docKinds, newDocKind, projHue, catHue, huePicker,
-  switchWorkspace, newWorkspace, docName, renameDoc, richField, backlinks, plainRefs, CONTACT_COLOR,
+  switchWorkspace, newWorkspace, docName, renameDoc, richField, backlinks, plainRefs, CONTACT_COLOR, masonry,
 } from './core.js';
 import { docMeta } from './docview.js';
 import { today, addDays } from './parse.js';
@@ -813,7 +813,7 @@ export function viewItems() {
       h('p', 'Ogni ', kbd('#CODICE'), ' scritto in una voce crea e collega automaticamente l\'articolo.')),
     D.items.length > 0 && !items.length && empty(h('p', 'Nessun articolo corrisponde al filtro.')),
     ui.itemView === 'groups'
-      ? h('div.cat-cols', ordered.map(([c, list]) => h('section.cat-col', { class: c ? 'cat' : null, style: catStyle(c), 'data-cat': c },
+      ? masonry('cat-cols', ordered.map(([c, list]) => h('section.cat-col', { class: c ? 'cat' : null, style: catStyle(c), 'data-cat': c },
         h('div.cat-h',
           c ? h('button.cdot.pick', { class: 'cat', style: catStyle(c), title: 'Cambia colore della categoria', onclick: () => { ui.catPicker = ui.catPicker === c ? null : c; render(); } })
             : h('span.cdot'),
