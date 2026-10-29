@@ -4,7 +4,7 @@ import path from 'node:path';
 import { db, tx, UPLOAD_DIR } from './db.js';
 import { route, VIS_ANY, PVIS_ANY, CVIS_ANY, NVIS_ANY, TRASH_ALONE } from './api.js';
 import { fail } from './util.js';
-import { ensureEntryThread } from './maildata.js';
+import { ensureEntryThread, ensureTopic } from './maildata.js';
 import { allows, assertCan, entryArea, readableKinds } from './perms.js';
 
 export const TRASH_DAYS = +process.env.TRASH_DAYS || 30;
@@ -30,6 +30,7 @@ const TYPES = {
     restore: t => {
       db.prepare('UPDATE mail_threads SET deleted_at = NULL, deleted_by = NULL WHERE id = ?').run(t.id);
       db.prepare('UPDATE entries SET deleted_at = NULL, deleted_by = NULL WHERE thread_id = ? AND deleted_at = ?').run(t.id, t.deleted_at);
+      ensureTopic(t.id); // il suo topic, se nel frattempo è sparito, è nuovo
     },
   },
   project: {

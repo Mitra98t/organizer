@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Organizer",
-  "version": "1.4",
+  "version": "1.5",
   "description": "Apre in Thunderbird le mail preparate in Organizer, con gli allegati, tiene aggiornate le conversazioni e porta in Organizer la posta in arrivo.",
   "author": "Organizer",
   "browser_specific_settings": {

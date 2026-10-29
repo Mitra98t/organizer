@@ -12,9 +12,9 @@ import {
   revokeApiTokens, permsIn, setPerms, mailAddressesOf, openFeedback, tourInfo,
 } from './accounts.js';
 import { HttpError, fail, now, bool, str, sendJson, clientIp } from './util.js';
-import { rev, openStream, dropUser, mailExtOn } from './events.js';
+import { rev, openStream, dropUser, mailExtOn, mailExtVersion } from './events.js';
 import { chatSync, readKey } from './chatdata.js';
-import { threadsSync, ensureEntryThread } from './maildata.js';
+import { threadsSync, ensureEntryThread, autoLink } from './maildata.js';
 import { notify, notificationsOf } from './notify.js';
 import { allows, assertCan, entryArea, readableKinds } from './perms.js';
 import { currentWorkspace } from './db.js';
@@ -203,8 +203,9 @@ export function syncEntryItems(entryId, user) {
   syncEntryLinks(entryId);
 }
 
-export const LINK_KINDS = ['doc', 'voce', 'contatto', 'progetto'];
-const REF_RE = /\[\[(doc|voce|contatto|progetto):(\d+)\]\]/g;
+// mail = una conversazione di mail (mail_threads): personale, la vede solo chi la riceve.
+export const LINK_KINDS = ['doc', 'voce', 'contatto', 'progetto', 'mail'];
+const REF_RE = /\[\[(doc|voce|contatto|progetto|mail):(\d+)\]\]/g;
 const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // Gli altri collegamenti (per i backlink): [[tipo:ID]] ovunque nel testo della voce e, nelle mail, i codici
@@ -434,12 +435,13 @@ route('GET', '/api/sync', ({ req, res, user }) => {
       JOIN entries e ON e.id = a.entry_id WHERE ${where} ORDER BY a.id`).all(p),
     // Mail con Thunderbird: se l'estensione è collegata e i messaggi delle conversazioni (senza il testo).
     mailExt: mailExtOn(uid),
+    mailExtVersion: mailExtVersion(uid),
     myAddresses: mailAddressesOf(uid),
     feedbackOpen: openFeedback(uid), // null = non gestisce i feedback
     ...tourInfo(uid), // onboarded (invito al giro già visto), tourWs (workspace di prova)
     ...notificationsOf(uid), // notifiche (di tutti i workspace), da leggere, dispositivi con le push
     // Mail a thread (personali): i thread, i loro messaggi senza il testo intero, i collegamenti.
-    ...(can('mail') ? threadsSync(uid) : { mailThreads: [], mailMsgs: [], threadLinks: [] }),
+    ...(can('mail') ? threadsSync(uid) : { mailTopics: [], topicLinks: [], mailThreads: [], mailMsgs: [], threadLinks: [] }),
     // Chat: i canali che si leggono (tutti, per chi li gestisce), gli ultimi messaggi di ognuno e i non letti.
     ...(can('chat') ? chatSync(user) : { chatChannels: [], chat: [], chatUnread: 0, canManageChannels: false }),
     // Nel cestino contano solo le aree che si possono leggere.
@@ -521,7 +523,7 @@ export function createEntry(b, user) {
   addShares('entry', id, sh.ids.filter(x => x !== user.id), p.shareAll || bool(b.shared_all));
   notifyEntry(user, { id, kind, title }, sh.ids, assigneeId);
   for (const pid of projectIds.slice(1)) addEntryProject(id, pid);
-  if (kind === 'mail') ensureEntryThread({ id, kind, title, created_by: user.id }); // ogni mail sta in un thread
+  if (kind === 'mail') autoLink(ensureEntryThread({ id, kind, title, created_by: user.id }), user.id, title); // ogni mail sta in un thread
   syncEntryItems(id, user);
   return id;
 }
@@ -595,7 +597,12 @@ export function updateEntry(e, b, user) {
   setFields('entries', e.id, f);
 
   if (f.project_id !== undefined) db.prepare('UPDATE entries SET project_id = ? WHERE parent_id = ?').run(f.project_id, e.id);
-  if (f.kind === 'mail') ensureEntryThread({ ...e, ...f });
+  // Le mail scritte qui stanno in un thread; i codici e i progetti che citano diventano suoi collegamenti.
+  if ((f.kind || e.kind) === 'mail') {
+    const m = { ...e, ...f };
+    const tid = ensureEntryThread(m);
+    if (f.kind || f.notes !== undefined || f.mail_subject !== undefined || f.title !== undefined) autoLink(tid, user.id, `${m.title} ${m.mail_subject || ''} ${m.notes || ''}`);
+  }
   // Assegnata a qualcun altro (con ++persona o dal menu Assegnata): glielo si dice.
   if (f.assignee_id && f.assignee_id !== e.assignee_id) notifyEntry(user, { ...e, ...f }, [], f.assignee_id);
   if (e.due && f.due !== undefined && f.due !== e.due) addLog(e.id, user.id, `scadenza ${fmtDate(e.due)} → ${fmtDate(f.due)}`, true);
@@ -650,6 +657,10 @@ route('POST', '/api/refs', async ({ user, body }) => {
     } else if (kind === 'doc') {
       const d = db.prepare('SELECT deleted_at FROM documents WHERE id = ?').get(id);
       out[key] = { status: !d || d.deleted_at ? 'gone' : allows(user.perms, 'documenti') ? 'ok' : 'hidden' };
+    } else if (kind === 'mail') {
+      const t = db.prepare('SELECT owner_id, topic_id, subject, deleted_at FROM mail_threads WHERE id = ?').get(id);
+      if (!t || t.deleted_at) out[key] = { status: 'gone' };
+      else out[key] = t.owner_id === uid && allows(user.perms, 'mail') ? { status: 'ok', title: t.subject, topic: t.topic_id } : { status: 'hidden' };
     }
   }
   return out;

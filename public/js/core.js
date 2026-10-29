@@ -63,8 +63,9 @@ export const ui = {
   mailHelper: load('org.mailHelper', false),
   mailFilter: '',
   mailView: load('org.mailView', 'active'), // 'active' (thread attivi) o 'archive'
-  mailType: null, // solo i thread in uno stato (da leggere, da mandare, in attesa)
-  threadAll: null, // thread di cui si vedono tutti i messaggi, anche i più vecchi
+  mailType: null, // solo i thread in uno stato (da leggere, da mandare, in attesa, con stella)
+  mailSel: null, // nella pagina di un topic: la mail scelta nell'albero { topic, type: 'msg' | 'entry', id }
+  mailSelNext: null, // bozza appena chiesta (Rispondi): si sceglie quando arriva
   mailAtt: false,
   mailProj: null,
   itemView: load('org.itemView', 'list'),
@@ -283,8 +284,19 @@ function indexData(d) {
   }
   d.mine = new Set((d.myAddresses || []).map(a => a.toLowerCase())); // i miei indirizzi (identità di Thunderbird)
   // Thread di mail (personali): messaggi, mail scritte in Organizer e collegamenti di ognuno.
+  d.mailTopics ||= [];
   d.mailThreads ||= [];
   d.threadLinks ||= [];
+  d.topicLinks ||= [];
+  d.topicById = new Map(d.mailTopics.map(t => [t.id, t]));
+  d.linksOfTopic = group(d.topicLinks, 'topic_id');
+  d.topicsOf = new Map(); // "progetto:3" → id dei topic collegati
+  for (const l of d.topicLinks) {
+    const k = `${l.kind}:${l.target_id}`;
+    if (!d.topicsOf.has(k)) d.topicsOf.set(k, new Set());
+    d.topicsOf.get(k).add(l.topic_id);
+  }
+  d.threadsOfTopic = group(d.mailThreads, 'topic_id');
   d.threadById = new Map(d.mailThreads.map(t => [t.id, t]));
   d.msgsOfThread = group(d.mailMsgs, 'thread_id');
   d.entriesOfThread = group(d.entries.filter(e => e.thread_id && e.kind === 'mail'), 'thread_id');
@@ -848,11 +860,12 @@ export function richField({ fk, value, placeholder, cls, rows = 2, attrs = {}, o
 // ---------- collegamenti [[tipo:ID]] ----------
 // Si scrivono con "[[" in qualunque campo di testo (l'autocompletamento inserisce il token) e si vedono come
 // link con il nome sempre attuale. Gli articoli restano #CODICE. Le mail li mandano come testo semplice.
-const REF_RE = /\[\[(doc|voce|contatto|progetto):(\d+)\]\]/g;
+// [[mail:ID]] è una conversazione di mail: personale, chi non la riceve vede "non hai permessi sufficienti".
+const REF_RE = /\[\[(doc|voce|contatto|progetto|mail):(\d+)\]\]/g;
 const ENTRY_ICON = { todo: 'check', mail: 'mail', note: 'diary' };
 const plainTitle = t => t.replace(/(^|\s)#/g, '$1');
 
-const REF_AREA = { doc: 'documenti', progetto: 'progetti', contatto: 'contatti' };
+const REF_AREA = { doc: 'documenti', progetto: 'progetti', contatto: 'contatti', mail: 'mail' };
 
 // Collegamenti a cose che l'app non ha nei dati (archiviate, non condivise, eliminate): si chiede al server
 // una volta, tutti insieme dopo il ridisegno. Il server dice solo lo stato (e il titolo se si può vedere).
@@ -895,6 +908,14 @@ export function refChip(kind, id) {
     return h('a.ref', { href: `#/v/${id}`, onclick: stop, class: e?.done_at ? 'done' : null },
       icon(ENTRY_ICON[e?.kind] || 'check'), e ? plainTitle(e.title.replace(REF_RE, '…')) : `voce ${id}`);
   }
+  if (kind === 'mail') {
+    const t = D.threadById.get(id);
+    const r = !t && askRef('mail', id);
+    if (r?.status === 'hidden') return noAccess();
+    if (!t && r?.status !== 'ok') return h('span.ref.gone', icon('mail'), r ? 'conversazione eliminata' : 'conversazione…');
+    const subject = t ? t.subject : r.title;
+    return h('a.ref', { href: `#/t/${t ? t.topic_id : r.topic}?th=${id}`, onclick: stop, title: 'Conversazione di mail' }, icon('mail'), plainTitle(subject || '(senza oggetto)'));
+  }
   if (kind === 'progetto') {
     const p = D.projectById.get(id);
     const st = !p && askRef('progetto', id)?.status;
@@ -920,8 +941,8 @@ function refInfoEntry(id) {
 export function plainRefs(text) {
   const D = S.data;
   return String(text || '').replace(REF_RE, (m, kind, id) => {
-    const x = { doc: D.docById, voce: D.entryById, contatto: D.contactById, progetto: D.projectById }[kind].get(+id);
-    const name = x && (kind === 'doc' ? docName(x) : kind === 'voce' ? plainTitle(x.title) : x.name || x.email);
+    const x = { doc: D.docById, voce: D.entryById, contatto: D.contactById, progetto: D.projectById, mail: D.threadById }[kind].get(+id);
+    const name = x && (kind === 'doc' ? docName(x) : kind === 'voce' ? plainTitle(x.title) : kind === 'mail' ? plainTitle(x.subject) : x.name || x.email);
     return name || m;
   });
 }

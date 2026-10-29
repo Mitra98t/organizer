@@ -6,7 +6,9 @@
 //  - con "tutta la posta in arrivo" (opzioni, attivo di base) passa anche le altre mail delle cartelle Posta in
 //    arrivo, che in Organizer vede solo chi le riceve. Spento, le altre mail non escono da Thunderbird;
 //  - dal tasto destro su una mail (anche vecchia, in qualunque cartella), "Porta il thread in Organizer" passa
-//    tutta la conversazione: i messaggi prima e tutte le risposte dopo, tra i thread attivi.
+//    tutta la conversazione: i messaggi prima e tutte le risposte dopo, tra i thread attivi;
+//  - al primo collegamento di una persona (lo dice il server) carica l'ultimo mese da tutte le cartelle, tranne
+//    spam, cestino e bozze: in Organizer si vedono tutte le conversazioni recenti, da archiviare.
 /* global browser */
 
 let cfg = { server: '', token: '', inbox: true };
@@ -50,13 +52,15 @@ async function connect() {
   if (!cfg.server || !cfg.token) return status('off', 'Inserisci indirizzo e token nelle opzioni');
   for (let wait = 2000; !ctrl.signal.aborted; wait = Math.min(wait * 2, 60000)) {
     try {
-      const r = await fetch(`${cfg.server}/api/mail/stream`, { headers: { Authorization: `Bearer ${cfg.token}` }, signal: ctrl.signal });
+      const r = await fetch(`${cfg.server}/api/mail/stream`, {
+        headers: { Authorization: `Bearer ${cfg.token}`, 'X-Organizer-Ext': browser.runtime.getManifest().version }, signal: ctrl.signal,
+      });
       if (r.status === 401) return status('error', 'Token non valido o revocato: creane uno nuovo in Organizer');
       if (!r.ok) throw new Error(`errore ${r.status}`);
       status('on', cfg.server);
       wait = 2000;
       sendIdentities();
-      refreshWatch().then(catchUp);
+      refreshWatch().then(catchUp).then(backfill);
       openPending();
       saveAttachments();
       const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -255,7 +259,7 @@ async function pass(header, extra = {}, full = null) {
   full ||= await browser.messages.getFull(header.id);
   const h = name => (full.headers?.[name] || []).join(' ');
   const refs = [...ids(h('references')), ...ids(h('in-reply-to'))];
-  if (!cfg.inbox && !extra.history && !extra.import && extra.direction !== 'out' && !refs.some(r => watch.has(r))) return null;
+  if (!cfg.inbox && !extra.history && !extra.import && !extra.backfill && extra.direction !== 'out' && !refs.some(r => watch.has(r))) return null;
   const attachments = await browser.messages.listAttachments(header.id).catch(() => []);
   const r = await call('POST', '/mail/incoming', {
     message_id: header.headerMessageId, in_reply_to: ids(h('in-reply-to'))[0] || null, references: refs,
@@ -397,6 +401,41 @@ async function catchUp() {
     console.warn('Organizer: recupero delle mail non riuscito', e);
   } finally {
     catching = false;
+  }
+}
+
+// ---------- primo caricamento: l'ultimo mese ----------
+const SKIP_FOLDERS = ['junk', 'trash', 'drafts', 'templates', 'outbox'];
+let backfilling = false;
+async function backfill() {
+  if (backfilling) return;
+  backfilling = true;
+  try {
+    const { since } = await call('GET', '/mail/backfill');
+    if (!since) return;
+    status('on', 'Carico in Organizer le mail dell\'ultimo mese…');
+    const folders = (await browser.folders.query({})).filter(f => !f.isVirtual && !f.isUnified
+      && !(f.specialUse || []).some(u => SKIP_FOLDERS.includes(u)) && !SKIP_FOLDERS.includes(f.type));
+    const all = new Map();
+    for (const f of folders) {
+      const page = await browser.messages.query({ folderId: f.id, fromDate: new Date(since) }).catch(() => null);
+      for (const m of page ? await allPages(page) : []) if (!m.junk && m.headerMessageId) all.set(m.headerMessageId, m);
+    }
+    // Dal più vecchio: i messaggi arrivano dopo quelli a cui rispondono e l'albero si forma da solo.
+    const list = [...all.values()].sort((a, b) => new Date(a.date) - new Date(b.date));
+    let n = 0;
+    for (const m of list) {
+      await pass(m, { backfill: true, direction: isMine(m) ? 'out' : 'in' }).catch(e => console.warn('Organizer: mail non caricata', e));
+      if (++n % 25 === 0) status('on', `Carico in Organizer le mail dell'ultimo mese… ${n}/${list.length}`);
+    }
+    await call('POST', '/mail/backfill/done');
+    status('on', cfg.server);
+    notify(`Caricate in Organizer le mail dell'ultimo mese (${list.length})`);
+  } catch (e) {
+    console.warn('Organizer: caricamento dell\'ultimo mese non riuscito', e);
+    status('error', `Caricamento dell'ultimo mese interrotto (${e.message}): riprovo al prossimo collegamento`);
+  } finally {
+    backfilling = false;
   }
 }
 

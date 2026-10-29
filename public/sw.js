@@ -4,9 +4,9 @@
 // I file si ricontrollano sempre con il server (cache: 'no-cache'), qualunque cosa dica la cache HTTP: dietro
 // Cloudflare JS e CSS arrivano con "tienili 4 ore" e dopo un aggiornamento l'app userebbe il codice vecchio.
 // Con l'ETag un file non cambiato non si riscarica (risposta 304).
-const CACHE = 'organizer-v47';
+const CACHE = 'organizer-v51';
 const SHELL = [
-  './', 'index.html', 'css/app.css', 'js/app.js', 'js/core.js', 'js/views.js', 'js/parse.js', 'js/autocomplete.js', 'js/mail.js', 'js/contacts.js', 'js/trash.js', 'js/docview.js', 'js/documents.js', 'js/dnd.js', 'js/chat.js', 'js/changelog.js', 'js/themes.js', 'js/perms.js', 'js/model3d.js', 'js/step-worker.js', 'js/feedback.js', 'js/notifiche.js', 'js/tour.js', 'js/cad.js',
+  './', 'index.html', 'css/app.css', 'js/app.js', 'js/core.js', 'js/views.js', 'js/parse.js', 'js/autocomplete.js', 'js/mail.js', 'js/contacts.js', 'js/trash.js', 'js/docview.js', 'js/documents.js', 'js/dnd.js', 'js/chat.js', 'js/changelog.js', 'js/themes.js', 'js/perms.js', 'js/model3d.js', 'js/step-worker.js', 'js/feedback.js', 'js/notifiche.js', 'js/tour.js', 'js/cad.js', 'js/topics.js', 'js/pickers.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/apple-touch-icon.png',
 ];
 

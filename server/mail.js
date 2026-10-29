@@ -31,10 +31,11 @@ const REF_NAME = {
   voce: 'SELECT title AS n FROM entries WHERE id = ?',
   contatto: "SELECT COALESCE(NULLIF(name, ''), email) AS n FROM contacts WHERE id = ?",
   progetto: 'SELECT name AS n FROM projects WHERE id = ?',
+  mail: 'SELECT subject AS n FROM mail_threads WHERE id = ? AND deleted_at IS NULL',
 };
 
 function plainRefs(text) {
-  return String(text || '').replace(/\[\[(doc|voce|contatto|progetto):(\d+)\]\]/g, (m, kind, id) => {
+  return String(text || '').replace(/\[\[(doc|voce|contatto|progetto|mail):(\d+)\]\]/g, (m, kind, id) => {
     const name = db.prepare(REF_NAME[kind]).get(+id)?.n;
     return name ? name.replace(/(^|\s)#/g, '$1') : m;
   });

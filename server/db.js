@@ -448,6 +448,39 @@ const MIGRATIONS = [
   ALTER TABLE mail_threads ADD COLUMN deleted_at TEXT;
   ALTER TABLE mail_threads ADD COLUMN deleted_by INTEGER;
   `,
+  // v21: la posta a topic. Un topic (personale) raccoglie una o più conversazioni (mail_threads), ognuna con
+  // stella e colore; l'albero delle mail viene da in_reply_to e refs (References). I collegamenti tolti a mano
+  // restano come hidden: non tornano. Si riparte da zero: restano solo i thread con mail scritte in Organizer
+  // (ognuno nel suo topic); il resto lo ricarica l'estensione di Thunderbird (l'ultimo mese).
+  `
+  CREATE TABLE mail_topics (
+    id INTEGER PRIMARY KEY,
+    owner_id INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
+    title TEXT NOT NULL DEFAULT '',
+    hue INTEGER,
+    starred INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX mail_topics_owner ON mail_topics(owner_id);
+  ALTER TABLE mail_threads ADD COLUMN topic_id INTEGER REFERENCES mail_topics ON DELETE SET NULL;
+  ALTER TABLE mail_threads ADD COLUMN hue INTEGER;
+  ALTER TABLE mail_threads ADD COLUMN starred INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE mail_messages ADD COLUMN in_reply_to TEXT NOT NULL DEFAULT '';
+  ALTER TABLE mail_messages ADD COLUMN refs TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE mail_thread_links ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;
+  DELETE FROM mail_threads WHERE id NOT IN (SELECT thread_id FROM entries WHERE thread_id IS NOT NULL);
+  INSERT INTO mail_topics (id, owner_id, title, created_at) SELECT id, owner_id, subject, created_at FROM mail_threads;
+  UPDATE mail_threads SET topic_id = id;
+  `,
+  // v22: anche un topic si collega (a un progetto, un articolo…), oltre alle sue conversazioni.
+  `
+  CREATE TABLE mail_topic_links (
+    topic_id INTEGER NOT NULL REFERENCES mail_topics ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    target_id INTEGER NOT NULL,
+    PRIMARY KEY (topic_id, kind, target_id)
+  );
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

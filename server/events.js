@@ -45,6 +45,9 @@ export function dropUser(userId, wsId = null) {
 const mailExt = new Map(); // id utente → Set di risposte aperte
 
 export const mailExtOn = userId => (mailExt.get(userId)?.size ?? 0) > 0;
+// La versione dell'estensione collegata (la più recente, se ce n'è più d'una); '' = prima della 1.5.
+export const mailExtVersion = userId => [...(mailExt.get(userId) || [])].map(r => r.extVersion || '')
+  .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))[0] ?? null;
 
 export function openMailExtStream(req, res, user) {
   res.writeHead(200, {
@@ -54,6 +57,7 @@ export function openMailExtStream(req, res, user) {
     'X-Accel-Buffering': 'no',
   });
   res.write('retry: 5000\nevent: hello\ndata: {}\n\n');
+  res.extVersion = String(req.headers['x-organizer-ext'] || '').slice(0, 20); // dalla 1.5
   let set = mailExt.get(user.id);
   if (!set) mailExt.set(user.id, (set = new Set()));
   set.add(res);

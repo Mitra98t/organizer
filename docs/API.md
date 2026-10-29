@@ -47,7 +47,7 @@ Magazzino e documenti sono di tutto il workspace. Voci, progetti, contatti e not
 
 `POST /api/entries` accetta anche `client_id` (generato dal client: se la voce con quel `client_id` esiste già, restituisce quella invece di crearne un'altra) e `done` (`true` o la data: la todo arriva già fatta), per le voci create offline.
 
-`POST /api/refs` `{refs: [["voce", 12], ["progetto", 3]…]}` → `{"voce:12": {status: "ok", kind, title, done} | {status: "hidden"} | {status: "gone"}}`: per i collegamenti `[[tipo:ID]]` che non sono nei dati (archiviati, non condivisi, eliminati). Di quelli non condivisi si dice solo che ci sono.
+`POST /api/refs` `{refs: [["voce", 12], ["progetto", 3]…]}` → `{"voce:12": {status: "ok", kind, title, done} | {status: "hidden"} | {status: "gone"}}`: per i collegamenti `[[tipo:ID]]` che non sono nei dati (archiviati, non condivisi, eliminati). Di quelli non condivisi si dice solo che ci sono. Tipi: `voce`, `doc`, `progetto`, `contatto`, `mail` (una conversazione: `ok` con `title` e `topic` solo per chi la riceve).
 
 In `/api/sync` ogni oggetto ha `shared_all`, e `shares` elenca `{kind, obj_id, user_id}` di ciò che vedi. Una voce la vede anche l'assegnatario, una sotto-attività chi vede la voce sopra.
 
@@ -195,12 +195,19 @@ Una mail è una voce con `kind: "mail"`. Il server non spedisce niente: la mail 
 | `GET /api/entries/:id/eml` | la mail come `.eml` (destinatari, oggetto, testo, allegati) |
 | `POST /api/entries/:id/send` | `{token}` per l'helper Thunderbird: `organizer-mail://open?server=…&token=…` (15 minuti) |
 | `POST /api/entries/:id/compose` | apre la mail nell'estensione di Thunderbird collegata (409 se non ce n'è una) |
-| `GET /api/mail/threads/:id` | un thread (personale) con i messaggi interi (`direction` `out`/`in`, `message_id`, `from_addr`, `to_addr`, `cc`, `subject`, `body`, `attachments`, `date`, `read_at`) e `entries`, le mail scritte in Organizer che ne fanno parte; l'elenco (`mailThreads`, `mailMsgs` senza il testo intero, `threadLinks`) è in `/api/sync` |
-| `PATCH /api/mail/threads/:id` | `{read, archived, subject}`: `read` segna letti (o da leggere) i messaggi ricevuti; `archived: true` archivia e segna letto, `false` lo rimette tra gli attivi |
-| `DELETE /api/mail/threads/:id` | nel cestino, con le mail di Organizer del thread (tipo `thread` in `/api/trash`: `POST /api/trash/thread/:id/restore`, `DELETE /api/trash/thread/:id`) |
-| `POST /api/mail/threads/:id/links` | `{kind, id}` con `kind` tra `articolo`, `doc`, `progetto`, `contatto`, `voce`: collega il thread |
-| `DELETE /api/mail/threads/:id/links/:kind/:id` | toglie un collegamento scelto a mano |
-| `POST /api/mail/threads/:id/draft` | `{id}` di una nuova mail nel thread (a chi ha scritto per ultimo) |
+| `GET /api/mail/threads/:id` | una conversazione (personale) con i messaggi interi (`direction` `out`/`in`, `message_id`, `in_reply_to`, `refs`, `from_addr`, `to_addr`, `cc`, `subject`, `body`, `attachments`, `date`, `read_at`) e `entries`, le mail scritte in Organizer che ne fanno parte. In `/api/sync`: `mailTopics`, `mailThreads` (con `topic_id`, `hue`, `starred`, `archived_at`), `mailMsgs` (senza il testo intero) e `threadLinks` |
+| `GET /api/mail/topics/:id` | un topic con tutte le sue conversazioni (`threads`, come sopra) |
+| `PATCH /api/mail/threads/:id` | `{read, archived, subject, starred, hue, topic}`: `archived: true` archivia e segna letto; `hue` 0..359 o `null` (automatico); `topic` sposta in un altro topic (id) o in uno nuovo (`"new"`) → `{topic}` |
+| `PATCH /api/mail/topics/:id` | `{title, starred, hue}` |
+| `POST /api/mail/topics/:id/links` | `{kind, id}`: collega il topic intero (in `/api/sync`: `topicLinks`); `DELETE /api/mail/topics/:id/links/:kind/:id` lo scollega |
+| `POST /api/mail/topics/:id/merge` | `{into}`: tutte le conversazioni passano nell'altro topic |
+| `DELETE /api/mail/topics/:id` | ogni conversazione del topic nel cestino |
+| `PATCH /api/mail/messages/:id` | `{read}` |
+| `GET /api/mail/search?q=` | id delle conversazioni (le proprie, le più recenti, fino a 30) in cui ogni parola si trova in oggetto, testo, indirizzi o nome in rubrica dei partecipanti |
+| `DELETE /api/mail/threads/:id` | nel cestino, con le mail di Organizer della conversazione (tipo `thread` in `/api/trash`: `POST /api/trash/thread/:id/restore`, `DELETE /api/trash/thread/:id`) |
+| `POST /api/mail/threads/:id/links` | `{kind, id}` con `kind` tra `articolo`, `doc`, `progetto`, `contatto`, `voce`: collega la conversazione |
+| `DELETE /api/mail/threads/:id/links/:kind/:id` | toglie un collegamento, anche automatico: resta nascosto e non torna |
+| `POST /api/mail/threads/:id/draft` | `{id}` di una nuova mail nella conversazione (a chi ha scritto per ultimo) |
 | `POST /api/mail/messages/:id/reply` | `{all}` (rispondi a tutti) → `{id}` della nuova mail di risposta a quel messaggio, nel suo thread |
 | `POST /api/mail/attachments/save` | `{id, n, item_id, kind}`: chiede all'estensione di caricare l'allegato n del messaggio `id` come documento dell'articolo |
 
@@ -216,7 +223,9 @@ L'estensione di Thunderbird (cartella `thunderbird/`) usa queste, con un token; 
 | `GET /api/mail/outbox/:ws/:id/file/:n` | allegato n |
 | `POST /api/mail/sent` | `{ws, outbox_id, message_id, from, to, cc, subject, date}`: mandata, in attesa di risposta (il messaggio entra nel thread) |
 | `GET /api/mail/watch` | Message-ID dei messaggi nei thread della persona |
-| `POST /api/mail/incoming` | `{message_id, in_reply_to, references, from, to, cc, subject, date, body, attachments, direction, inbox, history, import, thread}` → `{matched, thread, missing}`. Entra nel thread a cui risponde; se non ce n'è uno, con `inbox: true` ne apre uno nuovo. `direction: "out"` per una mail mandata da Thunderbird. `missing`: Message-ID dei messaggi precedenti che il thread non ha; l'estensione li ripassa con `history: true` e `thread` (entrano già letti, senza riattivare il thread). `import: true` per un thread portato a mano: entra già letto ma tra gli attivi, anche senza `inbox` e anche se il messaggio era in un thread nel cestino |
+| `POST /api/mail/incoming` | `{message_id, in_reply_to, references, from, to, cc, subject, date, body, attachments, direction, inbox, history, import, backfill, thread}` → `{matched, thread, missing}`. Entra nella conversazione a cui risponde (riferimenti, poi `thread`, poi stesso oggetto e una persona in comune entro 60 giorni); se non ce n'è una, con `inbox`, `import`, `backfill` o `history` ne apre una nuova in un topic suo. `direction: "out"` per una mail mandata da Thunderbird. `missing`: Message-ID dei messaggi precedenti che il thread non ha; l'estensione li ripassa con `history: true` e `thread` (entrano già letti, senza riattivare il thread). `import: true` per un thread portato a mano: entra già letto ma tra gli attivi, anche senza `inbox` e anche se il messaggio era in un thread nel cestino |
+| `GET /api/mail/backfill` | `{since}`: da quando caricare la posta al primo collegamento (l'ultimo mese), `null` se già fatto; le mail si mandano a `/api/mail/incoming` con `backfill: true` (già lette, senza notifiche) |
+| `POST /api/mail/backfill/done` | caricamento finito |
 | `POST /api/mail/identities` | `{addresses}`: i propri indirizzi, esclusi da "rispondi a tutti" |
 | `GET /api/mail/fetches` | allegati da caricare come documenti: `id`, `ws`, `item_id`, `kind`, `message_id`, `part`, `name`; si caricano con `POST /api/items/:id/docs` e l'header `X-Workspace` |
 | `POST /api/mail/fetches/:id/claim`, `/done` | presa in carico e fine (anche se non riuscita) |

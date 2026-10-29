@@ -3,6 +3,21 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.16 — 2026-10-29
+- **Posta rifatta a topic e conversazioni.** Si riparte da zero: in Organizer restano solo le mail scritte qui (con le loro conversazioni), il resto lo ricarica Thunderbird.
+  - **Primo collegamento**: l'estensione carica l'ultimo mese da tutte le cartelle (tranne spam, cestino e bozze), con i messaggi più vecchi citati; vale per ogni persona nuova e, questa volta, per tutti.
+  - **Conversazioni ad albero**: ogni risposta sotto la mail a cui risponde, anche a destinatari diversi. Senza riferimenti (Outlook e simili) una mail va nella conversazione con lo stesso oggetto e una persona in comune.
+  - **Topic**: raccolgono una o più conversazioni; di base una ciascuno. Nella pagina Mail si trascina una conversazione su un altro topic per unirle. Stella e colore (automatico) per topic e conversazioni.
+  - Un **segnalino** con il numero di mail da leggere sta in alto a destra di ogni conversazione e di ogni topic, nelle schede e nell'albero; nell'albero ogni mail da leggere ha il suo pallino.
+  - **Archiviare** vale per la singola conversazione; il topic va in archivio quando lo sono tutte e torna attivo con loro.
+  - **Pagina del topic**: albero a sinistra, mail scelta al centro (Rispondi, Rispondi a tutti, bozze), a destra collegamenti, persone e allegati della conversazione.
+  - Anche il **topic intero** si collega a un progetto (o a un articolo, un documento…), nella colonna a destra: vale per tutte le sue conversazioni, compare nel progetto e nei filtri per progetto.
+  - **Collegamenti automatici** da codici di magazzino (anche alternativi) e progetti negli oggetti e nei testi, e da quello che citi nelle mail scritte qui; si tolgono con la × e non tornano.
+- **Ricerca con `[[`**: più parole, ognuna in un campo qualsiasi (titolo, persone con il nome in rubrica o l'indirizzo, testo, tipo come "mail" o "documento", codici anche alternativi, versioni). Si possono citare anche le **conversazioni di mail** ricevute, cercando anche nel loro testo intero: `[[marco mail 500mA`. Nella conversazione citata compare "Citata in"; chi non la riceve vede "non hai permessi sufficienti".
+- **Allegati e magazzino**: "Dal magazzino…" apre un modale con la ricerca dei documenti (nome, codice, articolo, tipo, versione); ogni allegato ricevuto ha "→ magazzino" con un modale per scegliere articolo e tipo.
+- **Estensione per Thunderbird 1.5**: caricamento dell'ultimo mese e versione mostrata in Impostazioni (con un avviso se è vecchia). Va riscaricata e reinstallata.
+- Schema dati v22, account v8.
+
 ## 0.15 — 2026-10-29
 - **Mail a thread**: la pagina Mail mostra le conversazioni come schede su più colonne, divise in **Attivi** e **Archiviati**, con i filtri per stato (da leggere, da mandare, in attesa di risposta), allegati e progetto. Ogni scheda dice chi scrive, l'inizio dell'ultimo messaggio, i progetti e gli articoli collegati.
   - Aprire un thread lo **legge** e basta: resta dov'è. Il tasto a sinistra della scheda (o "Archivia" nel thread) lo **archivia**; torna attivo da solo se arriva o parte un nuovo messaggio.

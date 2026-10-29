@@ -9,7 +9,7 @@ import { viewTrash } from './trash.js';
 import { viewDoc, viewReview, docCancelDraft, setDocFocus, docSearchKey } from './docview.js';
 import { viewDocuments } from './documents.js';
 import { viewChat } from './chat.js';
-import { viewThread } from './mail.js';
+import { viewMail, viewTopic } from './topics.js';
 import { tourTick } from './tour.js';
 import { bell, updateBell, notifyNew, viewNotification } from './notifiche.js';
 import { openFeedback, viewFeedback } from './feedback.js';
@@ -17,7 +17,7 @@ import { viewChangelog, hasNews, appVersion } from './changelog.js';
 import { applyTheme, currentTheme } from './themes.js';
 import { parseQuick, extractCodes, today, parseItemLine, parseProjectLine } from './parse.js';
 import {
-  viewAgenda, viewProjects, viewProject, viewMail, viewDiary, viewItems, viewItem, viewSearch, viewSettings, viewEntryPage,
+  viewAgenda, viewProjects, viewProject, viewDiary, viewItems, viewItem, viewSearch, viewSettings, viewEntryPage,
 } from './views.js';
 
 const root = document.getElementById('root');
@@ -27,7 +27,7 @@ const VIEWS = {
   progetti: { fn: viewProjects, title: 'Progetti', nav: 'progetti' },
   p: { fn: viewProject, title: 'Progetto', nav: 'progetti' },
   mail: { fn: viewMail, title: 'Mail', nav: 'mail' },
-  t: { fn: viewThread, title: 'Mail', nav: 'mail' },
+  t: { fn: viewTopic, title: 'Mail', nav: 'mail' },
   diario: { fn: viewDiary, title: 'Diario', nav: 'diario' },
   magazzino: { fn: viewItems, title: 'Magazzino', nav: 'magazzino' },
   i: { fn: viewItem, title: 'Articolo', nav: 'magazzino' },

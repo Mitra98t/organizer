@@ -1,14 +1,26 @@
-// Thread di mail (vedi la migrazione v19 in db.js): dati e aiuti senza dipendenze da api.js, perché li usano
-// /api/sync, la creazione delle voci e il ponte con Thunderbird. Un thread è personale (owner_id).
+// Posta a topic (vedi le migrazioni v19-v21 in db.js): dati e aiuti usati da /api/sync, dalla creazione delle
+// voci e dal ponte con Thunderbird. Tutto è personale (owner_id): nessun altro vede la posta di una persona.
+//  - un topic raccoglie una o più conversazioni (mail_threads); di base ogni conversazione ha il suo;
+//  - una conversazione è l'albero dei suoi messaggi (in_reply_to, refs) più le mail scritte in Organizer;
+//  - archiviata è la conversazione; un topic è archiviato quando lo sono tutte le sue.
+// PVIS_ANY viene da api.js (che importa questo file): si usa solo dentro le funzioni, mai al caricamento.
 import { db } from './db.js';
+import { PVIS_ANY } from './api.js';
 import { now } from './util.js';
 
 // "Re: R: Fwd: I: oggetto" → "oggetto": il titolo del thread.
 export const cleanSubject = s => String(s || '').replace(/^\s*((re|r|fw|fwd|i|aw|sv)\s*(\[\d+\])?\s*:\s*)+/i, '').trim();
 
-export function newThread(ownerId, subject, at = now()) {
-  return Number(db.prepare('INSERT INTO mail_threads (owner_id, subject, last_at, created_at) VALUES (?, ?, ?, ?)')
-    .run(ownerId, cleanSubject(subject).slice(0, 300) || '(senza oggetto)', at, now()).lastInsertRowid);
+export function newTopic(ownerId, title, at = now()) {
+  return Number(db.prepare('INSERT INTO mail_topics (owner_id, title, created_at) VALUES (?, ?, ?)')
+    .run(ownerId, cleanSubject(title).slice(0, 300) || '(senza oggetto)', at).lastInsertRowid);
+}
+
+// Una conversazione nuova, nel topic dato o in uno tutto suo.
+export function newThread(ownerId, subject, at = now(), topicId = null) {
+  const topic = topicId || newTopic(ownerId, subject, at);
+  return Number(db.prepare('INSERT INTO mail_threads (owner_id, topic_id, subject, last_at, created_at) VALUES (?, ?, ?, ?, ?)')
+    .run(ownerId, topic, cleanSubject(subject).slice(0, 300) || '(senza oggetto)', at, now()).lastInsertRowid);
 }
 
 // Ogni mail scritta in Organizer sta in un thread: se non ce l'ha ancora (appena creata) gliene si dà uno.
@@ -19,41 +31,93 @@ export function ensureEntryThread(e) {
   return id;
 }
 
-// Il thread si muove: torna tra gli attivi (salvo da storia vecchia) e l'ultima data si aggiorna.
+// Un thread senza topic (il suo è sparito mentre il thread era nel cestino) ne riceve uno nuovo.
+export function ensureTopic(threadId) {
+  const t = db.prepare('SELECT id, owner_id, subject, topic_id FROM mail_threads WHERE id = ?').get(threadId);
+  if (t && !t.topic_id) db.prepare('UPDATE mail_threads SET topic_id = ? WHERE id = ?').run(newTopic(t.owner_id, t.subject), t.id);
+}
+
+// La conversazione si muove: torna tra le attive (salvo da storia vecchia) e l'ultima data si aggiorna.
 export function touchThread(threadId, date, { reactivate = true } = {}) {
   db.prepare(`UPDATE mail_threads SET last_at = MAX(last_at, ?)${reactivate ? ', archived_at = NULL' : ''} WHERE id = ?`).run(date || now(), threadId);
+  ensureTopic(threadId);
 }
 
-// Codici di magazzino scritti in un messaggio (anche senza #): diventano collegamenti del thread.
-export function autoLinkItems(threadId, text) {
+// Topic rimasti senza conversazioni (spostate altrove o eliminate): spariscono.
+export function dropEmptyTopics(ownerId) {
+  db.prepare(`DELETE FROM mail_topics WHERE owner_id = ? AND id NOT IN
+    (SELECT topic_id FROM mail_threads WHERE topic_id IS NOT NULL AND deleted_at IS NULL)`).run(ownerId);
+}
+
+// Codici di magazzino (principali e alternativi, anche senza #) e progetti (il tag, con o senza @) scritti in
+// oggetto e testo diventano collegamenti automatici. Quelli tolti a mano restano nascosti (hidden): non tornano.
+export function autoLink(threadId, uid, text) {
   const t = ` ${String(text || '')} `.toUpperCase();
-  const codes = db.prepare(`SELECT id, code FROM items WHERE deleted_at IS NULL
-    UNION SELECT item_id, code FROM item_aliases`).all();
-  for (const { id, code } of codes) {
-    if (code.length < 3) continue;
-    const at = t.indexOf(code.toUpperCase());
-    if (at < 0) continue;
-    const before = t[at - 1];
-    const after = t[at + code.length];
-    if (/[A-Z0-9]/.test(before) || /[A-Z0-9]/.test(after)) continue; // parte di una parola più lunga
-    db.prepare("INSERT OR IGNORE INTO mail_thread_links (thread_id, kind, target_id, auto) VALUES (?, 'articolo', ?, 1)").run(threadId, id);
-  }
+  const found = (code, kind, id) => {
+    const word = String(code || '').toUpperCase();
+    if (word.length < 3) return;
+    for (let at = t.indexOf(word); at >= 0; at = t.indexOf(word, at + 1)) {
+      if (/[A-Z0-9]/.test(t[at - 1]) || /[A-Z0-9]/.test(t[at + word.length])) continue; // dentro una parola più lunga
+      db.prepare('INSERT OR IGNORE INTO mail_thread_links (thread_id, kind, target_id, auto) VALUES (?, ?, ?, 1)').run(threadId, kind, id);
+      return;
+    }
+  };
+  for (const { id, code } of db.prepare(`SELECT id, code FROM items WHERE deleted_at IS NULL
+    UNION SELECT a.item_id, a.code FROM item_aliases a JOIN items i ON i.id = a.item_id WHERE i.deleted_at IS NULL`).all()) found(code, 'articolo', id);
+  for (const { id, tag } of db.prepare(`SELECT p.id, p.tag FROM projects p WHERE p.deleted_at IS NULL AND ${PVIS_ANY}`).all({ uid })) found(tag, 'progetto', id);
 }
 
-// Per /api/sync: i thread della persona, i loro messaggi (senza il testo intero) e i collegamenti: scelti a mano,
-// trovati nei messaggi, citati nelle mail scritte in Organizer (entry_links, articoli, progetti).
+// La conversazione di un messaggio che Organizer non ha ancora:
+//  1. quella di un messaggio citato (References, In-Reply-To), il più recente;
+//  2. altrimenti stesso oggetto (senza Re:, R:, Fwd:…) e almeno una persona in comune, entro 60 giorni: molti
+//     client non mandano i riferimenti. people: gli indirizzi del messaggio, senza i nostri.
+const DAY = 864e5;
+export function findThread(uid, { refs = [], subject = '', people = [], date = now() }) {
+  if (refs.length) {
+    const r = db.prepare(`SELECT m.thread_id FROM mail_messages m JOIN mail_threads t ON t.id = m.thread_id
+      WHERE m.message_id IN (${refs.map(() => '?').join(',')}) AND t.owner_id = ? AND t.deleted_at IS NULL ORDER BY m.date DESC LIMIT 1`).get(...refs, uid);
+    if (r) return r.thread_id;
+  }
+  const subj = cleanSubject(subject).toLowerCase();
+  if (subj.length < 4 || !people.length) return null;
+  const when = Date.parse(date) || Date.now();
+  const want = people.map(p => p.toLowerCase());
+  const candidates = db.prepare(`SELECT id, subject FROM mail_threads WHERE owner_id = ? AND deleted_at IS NULL
+    AND last_at BETWEEN ? AND ? ORDER BY last_at DESC LIMIT 200`)
+    .all(uid, new Date(when - 60 * DAY).toISOString(), new Date(when + 60 * DAY).toISOString());
+  for (const c of candidates) {
+    const msgs = db.prepare('SELECT subject, from_addr, to_addr, cc FROM mail_messages WHERE thread_id = ?').all(c.id);
+    const ents = db.prepare('SELECT mail_subject, title, contact, mail_cc FROM entries WHERE thread_id = ? AND deleted_at IS NULL').all(c.id);
+    const subjects = new Set([c.subject, ...msgs.map(m => m.subject), ...ents.map(e => e.mail_subject || e.title)].map(s => cleanSubject(s).toLowerCase()));
+    if (!subjects.has(subj)) continue;
+    const addrs = [...msgs.flatMap(m => [m.from_addr, m.to_addr, m.cc]), ...ents.flatMap(e => [e.contact, e.mail_cc])].join(',').toLowerCase();
+    if (want.some(a => addrs.includes(a))) return c.id;
+  }
+  return null;
+}
+
+// Per /api/sync: topic, conversazioni, messaggi (senza il testo intero) e collegamenti della persona. I
+// collegamenti: scelti a mano, trovati nei messaggi, citati nelle mail scritte in Organizer (entry_links,
+// articoli, progetti); meno quelli tolti a mano.
 export function threadsSync(uid) {
   const own = 'SELECT id FROM mail_threads WHERE owner_id = $uid AND deleted_at IS NULL';
   return {
-    mailThreads: db.prepare(`SELECT id, subject, archived_at, last_at, created_at FROM mail_threads WHERE id IN (${own}) ORDER BY last_at DESC`).all({ uid }),
-    mailMsgs: db.prepare(`SELECT id, thread_id, entry_id, direction, from_addr, to_addr, cc, subject, substr(body, 1, 240) AS snippet,
-      attachments != '[]' AS has_att, date, read_at FROM mail_messages WHERE thread_id IN (${own}) ORDER BY date, id`).all({ uid }),
-    threadLinks: db.prepare(`SELECT thread_id, kind, target_id, auto, 1 AS manual FROM mail_thread_links WHERE thread_id IN (${own})
+    mailTopics: db.prepare('SELECT id, title, hue, starred, created_at FROM mail_topics WHERE owner_id = $uid').all({ uid }),
+    topicLinks: db.prepare(`SELECT l.topic_id, l.kind, l.target_id FROM mail_topic_links l JOIN mail_topics t ON t.id = l.topic_id
+      WHERE t.owner_id = $uid`).all({ uid }),
+    mailThreads: db.prepare(`SELECT id, topic_id, subject, hue, starred, archived_at, last_at, created_at FROM mail_threads
+      WHERE id IN (${own}) ORDER BY last_at DESC`).all({ uid }),
+    mailMsgs: db.prepare(`SELECT id, thread_id, entry_id, direction, message_id, in_reply_to, refs, from_addr, to_addr, cc, subject,
+      substr(body, 1, 240) AS snippet, attachments != '[]' AS has_att, date, read_at FROM mail_messages WHERE thread_id IN (${own}) ORDER BY date, id`).all({ uid }),
+    threadLinks: db.prepare(`SELECT * FROM (
+      SELECT thread_id, kind, target_id, auto, 1 AS manual FROM mail_thread_links WHERE thread_id IN (${own}) AND hidden = 0
       UNION SELECT e.thread_id, l.kind, l.target_id, 1, 0 FROM entry_links l JOIN entries e ON e.id = l.entry_id
         WHERE e.thread_id IN (${own}) AND e.deleted_at IS NULL
       UNION SELECT e.thread_id, 'articolo', i.item_id, 1, 0 FROM entry_items i JOIN entries e ON e.id = i.entry_id
         WHERE e.thread_id IN (${own}) AND e.deleted_at IS NULL
       UNION SELECT e.thread_id, 'progetto', e.project_id, 1, 0 FROM entries e
-        WHERE e.thread_id IN (${own}) AND e.deleted_at IS NULL AND e.project_id IS NOT NULL`).all({ uid }),
+        WHERE e.thread_id IN (${own}) AND e.deleted_at IS NULL AND e.project_id IS NOT NULL
+    ) x WHERE NOT EXISTS (SELECT 1 FROM mail_thread_links h WHERE h.thread_id = x.thread_id AND h.kind = x.kind
+      AND h.target_id = x.target_id AND h.hidden = 1)`).all({ uid }),
   };
 }

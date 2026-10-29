@@ -11,6 +11,7 @@ import { route, createEntry, updateEntry, addLog, insertId, addShares } from './
 import { dropUser } from './events.js';
 import { today } from '../public/js/parse.js';
 import { now } from './util.js';
+import { newThread } from './maildata.js';
 
 const TOUR_NAME = 'Tour di Organizer';
 const FAKE = [
@@ -176,21 +177,22 @@ export function seed(ws, owner) {
     // che apre un thread suo (da leggere, collegata a un articolo).
     const tSent = entry(sent).thread_id;
     db.prepare('UPDATE mail_threads SET subject = ? WHERE id = ?').run('Consegna rover di prova', tSent);
-    const msg = (thread, direction, id, from, to, subject, body, hoursAgo, read = true) => db.prepare(`INSERT INTO mail_messages
-      (thread_id, entry_id, direction, message_id, from_addr, to_addr, subject, body, date, read_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(thread, direction === 'out' ? sent : null, direction, `tour-${ws.id}-${id}@organizer.local`, from, to, subject, body,
+    db.prepare('UPDATE mail_topics SET title = ? WHERE id = (SELECT topic_id FROM mail_threads WHERE id = ?)').run('Consegna rover di prova', tSent);
+    const mid = id => `tour-${ws.id}-${id}@organizer.local`;
+    const msg = (thread, direction, id, from, to, subject, body, hoursAgo, read = true, parent = '') => db.prepare(`INSERT INTO mail_messages
+      (thread_id, entry_id, direction, message_id, in_reply_to, refs, from_addr, to_addr, subject, body, date, read_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(thread, direction === 'out' ? sent : null, direction, mid(id), parent ? mid(parent) : '', JSON.stringify(parent ? [mid(parent)] : []), from, to, subject, body,
         new Date(Date.now() - hoursAgo * 3600e3).toISOString(), read ? now() : null, now());
     msg(tSent, 'out', 1, owner.username, 'paolo@cliente.example', 'Consegna rover di prova', 'Ciao Paolo,\nil rover di prova è pronto: lo spediamo lunedì.', 26);
-    msg(tSent, 'in', 2, 'Paolo Rossi <paolo@cliente.example>', owner.username, 'Re: Consegna rover di prova', 'Perfetto, grazie! Ci mandate anche la scheda tecnica della SCH-042?', 3, false);
+    msg(tSent, 'in', 2, 'Paolo Rossi <paolo@cliente.example>', owner.username, 'Re: Consegna rover di prova', 'Perfetto, grazie! Ci mandate anche la scheda tecnica della SCH-042?', 3, false, 1);
     db.prepare('UPDATE entries SET awaiting_reply = 0 WHERE id = ?').run(sent);
     db.prepare('UPDATE mail_threads SET last_at = ?, archived_at = NULL WHERE id = ?').run(new Date(Date.now() - 3 * 3600e3).toISOString(), tSent);
-    const tIn = Number(db.prepare('INSERT INTO mail_threads (owner_id, subject, last_at, created_at) VALUES (?, ?, ?, ?)')
-      .run(me.id, 'Disponibilità alimentatori 12V', new Date(Date.now() - 5 * 3600e3).toISOString(), now()).lastInsertRowid);
+    const tIn = newThread(me.id, 'Disponibilità alimentatori 12V', new Date(Date.now() - 5 * 3600e3).toISOString());
     msg(tIn, 'in', 3, 'Marta Neri <acquisti@pcbfab.example>', owner.username, 'Disponibilità alimentatori 12V',
       'Buongiorno,\nabbiamo di nuovo a magazzino i PSU-12 (12V 5A): ne servono? Prezzo invariato.\n\nMarta', 5, false);
-    db.prepare("INSERT INTO mail_thread_links (thread_id, kind, target_id, auto) VALUES (?, 'articolo', ?, 1)").run(tIn, psu);
-    db.prepare("INSERT INTO mail_thread_links (thread_id, kind, target_id) SELECT ?, 'progetto', id FROM projects WHERE tag = 'rover'").run(tSent);
-    out.thread = tSent;
+    db.prepare("INSERT OR IGNORE INTO mail_thread_links (thread_id, kind, target_id, auto) VALUES (?, 'articolo', ?, 1)").run(tIn, psu);
+    db.prepare("INSERT OR REPLACE INTO mail_thread_links (thread_id, kind, target_id) SELECT ?, 'progetto', id FROM projects WHERE tag = 'rover'").run(tSent);
+    out.thread = db.prepare('SELECT topic_id FROM mail_threads WHERE id = ?').get(tSent).topic_id; // il giro apre il suo topic
 
     // Chat: #generale di tutti e un canale con solo alcune persone.
     const say = (channel, user, text, minutesAgo) => db.prepare('INSERT INTO chat_messages (channel_id, user_id, text, created_at) VALUES (?, ?, ?, ?)')
@@ -220,7 +222,7 @@ function tourIds(ws, userId) {
     pdf: db.prepare("SELECT id FROM documents WHERE filename = 'sch042_revB_scheda.pdf' AND deleted_at IS NULL").get()?.id ?? null,
     model: db.prepare("SELECT id FROM documents WHERE filename = 'staffa_motore.stl' AND deleted_at IS NULL").get()?.id ?? null,
     entry: db.prepare("SELECT id FROM entries WHERE title LIKE 'flash fw 2.3.1%' AND created_by = ? AND deleted_at IS NULL").get(userId)?.id ?? null,
-    thread: db.prepare("SELECT id FROM mail_threads WHERE owner_id = ? AND subject = 'Consegna rover di prova' COLLATE NOCASE").get(userId)?.id ?? null,
+    thread: db.prepare("SELECT topic_id FROM mail_threads WHERE owner_id = ? AND subject = 'Consegna rover di prova' COLLATE NOCASE").get(userId)?.topic_id ?? null,
   }));
 }
 

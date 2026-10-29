@@ -240,6 +240,64 @@ test('thunderbird: thread, mandata, risposta, storia, collegamenti, archivio', a
   it = (await tb('GET', '/sync').then(json));
   assert.equal(it.mailThreads.find(t => t.id === i1.thread).archived_at, null);
 
+  // Senza riferimenti: stesso oggetto e una persona in comune → stessa conversazione; persona diversa → nuova.
+  const s3 = await tb('POST', '/mail/incoming', { ...old, message_id: '<s3@studio.it>', subject: 'R: Disegni staffa', date: '2025-03-03T10:00:00Z', import: true }).then(json);
+  assert.equal(s3.thread, i1.thread);
+  const s4 = await tb('POST', '/mail/incoming', { ...old, from: 'altri@ditta.it', message_id: '<s4@ditta.it>', date: '2025-03-03T11:00:00Z', import: true }).then(json);
+  assert.notEqual(s4.thread, i1.thread);
+  const tree = await tb('GET', `/mail/threads/${i1.thread}`).then(json);
+  assert.deepEqual(tree.messages.map(m => [m.message_id, m.in_reply_to]), [['s1@studio.it', ''], ['s2@studio.it', 's1@studio.it'], ['s3@studio.it', '']]);
+
+  // Topic: ogni conversazione nel suo; spostarla in un altro li unisce (il topic vuoto sparisce), "new" la separa.
+  it = await tb('GET', '/sync').then(json);
+  const topicOf = (d, t) => d.mailThreads.find(x => x.id === t).topic_id;
+  const [ta, tb4] = [topicOf(it, i1.thread), topicOf(it, s4.thread)];
+  assert.notEqual(ta, tb4);
+  await tb('PATCH', `/mail/threads/${s4.thread}`, { topic: ta, starred: true, hue: 200 });
+  it = await tb('GET', '/sync').then(json);
+  assert.deepEqual([topicOf(it, s4.thread), it.mailTopics.some(t => t.id === tb4)], [ta, false]);
+  assert.deepEqual([it.mailThreads.find(x => x.id === s4.thread).starred, it.mailThreads.find(x => x.id === s4.thread).hue], [1, 200]);
+  const topic = await tb('GET', `/mail/topics/${ta}`).then(json);
+  assert.deepEqual(topic.threads.map(t => t.id).sort(), [i1.thread, s4.thread].sort());
+  const { topic: alone } = await tb('PATCH', `/mail/threads/${s4.thread}`, { topic: 'new' }).then(json);
+  assert.notEqual(alone, ta);
+  await tb('POST', `/mail/topics/${alone}/merge`, { into: ta });
+  await tb('PATCH', `/mail/topics/${ta}`, { title: 'Staffa motore', starred: true });
+  it = await tb('GET', '/sync').then(json);
+  assert.deepEqual([topicOf(it, s4.thread), it.mailTopics.find(t => t.id === ta).title, it.mailTopics.some(t => t.id === alone)], [ta, 'Staffa motore', false]);
+
+  // Anche il topic intero si collega (es. al suo progetto); unendo i topic i collegamenti passano.
+  const proj = await tb('POST', '/projects', { name: 'Staffe', tag: 'staffe' }).then(json);
+  await tb('POST', `/mail/topics/${ta}/links`, { kind: 'progetto', id: proj.id });
+  const { topic: t2 } = await tb('PATCH', `/mail/threads/${s4.thread}`, { topic: 'new' }).then(json);
+  await tb('POST', `/mail/topics/${ta}/merge`, { into: t2 });
+  it = await tb('GET', '/sync').then(json);
+  assert.deepEqual(it.topicLinks.filter(l => l.topic_id === t2).map(l => [l.kind, l.target_id]), [['progetto', proj.id]]);
+  await tb('DELETE', `/mail/topics/${t2}/links/progetto/${proj.id}`);
+  assert.equal((await tb('GET', '/sync').then(json)).topicLinks.length, 0);
+
+  // Collegamento automatico tolto a mano: non torna, nemmeno con un'altra mail che cita il codice.
+  await tb('DELETE', `/mail/threads/${tid}/links/articolo/${sch.id}`);
+  await tb('POST', '/mail/incoming', { message_id: '<r3@fornitore.it>', in_reply_to: '<r2@fornitore.it>', from: 'mario@fornitore.it', subject: 'Re: Offerta relè', body: 'SCH-042 di nuovo' });
+  assert.ok(!(await tb('GET', '/sync').then(json)).threadLinks.some(l => l.thread_id === tid && l.kind === 'articolo' && l.target_id === sch.id));
+
+  // Ricerca nel testo intero (per "[["): ogni parola in oggetto, testo, indirizzi o nome in rubrica.
+  await tb('POST', '/mail/incoming', { message_id: '<p1@cliente.it>', from: 'mb@cliente.it', to: 'fede@organizer.test', subject: 'Alimentazione banco',
+    body: 'Il regolatore regge solo 500mA, serve un PSU più grosso.', inbox: true });
+  await tb('POST', '/contacts', { name: 'Marco Bianchi', email: 'mb@cliente.it' });
+  const found = await tb('GET', `/mail/search?${new URLSearchParams({ q: 'marco 500mA' })}`).then(json);
+  assert.equal(found.length, 1);
+  assert.deepEqual(await tb('GET', `/mail/search?${new URLSearchParams({ q: 'marco 800mA' })}`).then(json), []);
+  // [[mail:ID]] in una voce: la conversazione è citata (backlink); per gli altri resta "non accessibile".
+  const { id: cite } = await tb('POST', '/entries', { text: `chiedere a Marco [[mail:${found[0]}]]` }).then(json);
+  assert.deepEqual((await tb('GET', `/backlinks/mail/${found[0]}`).then(json)).map(e => e.id), [cite]);
+  assert.equal((await tb('POST', '/refs', { refs: [['mail', found[0]]] }).then(json))[`mail:${found[0]}`].status, 'ok');
+
+  // Primo collegamento: l'estensione carica l'ultimo mese, poi lo segna fatto.
+  assert.ok((await tb('GET', '/mail/backfill').then(json)).since);
+  await tb('POST', '/mail/backfill/done');
+  assert.equal((await tb('GET', '/mail/backfill').then(json)).since, null);
+
   // Rinomina; Elimina porta il thread nel cestino con la sua bozza (una riga sola), Ripristina li riporta.
   await tb('PATCH', `/mail/threads/${tid}`, { subject: 'Relè per il banco' });
   assert.equal((await tb('GET', '/sync').then(json)).mailThreads.find(t => t.id === tid).subject, 'Relè per il banco');
@@ -272,6 +330,8 @@ test('thunderbird: thread, mandata, risposta, storia, collegamenti, archivio', a
   const other = await call('GET', '/sync', { cookie }).then(json);
   assert.deepEqual([other.entries.length, other.mailThreads.length, other.mailMsgs.length], [0, 0, 0]);
   assert.equal((await call('GET', `/mail/threads/${tid}`, { cookie })).status, 404);
+  assert.equal((await call('POST', '/refs', { cookie, body: { refs: [['mail', tid]] } }).then(json))[`mail:${tid}`].status, 'hidden');
+  assert.deepEqual(await call('GET', `/mail/search?q=offerta`, { cookie }).then(json), []);
 
   // L'estensione si scarica già impostata per questo server.
   const xpi = Buffer.from(await (await tb('GET', '/mail/thunderbird.xpi')).arrayBuffer());

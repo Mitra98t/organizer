@@ -14,7 +14,7 @@
 // data-ac-bare: si inserisce il valore senza simbolo (testo delle mail: "#SCH" → "SCH-042").
 // Nella barra in alto: modalità 'item' (/categoria, @progetto) e 'project' (@progetto padre).
 // Un solo menu flottante per tutta l'app, agganciato al campo che ha il focus: sopravvive ai re-render.
-import { h, S, fmtDay, hue, catStyle, projHue, docName } from './core.js';
+import { h, S, api, fmtDay, hue, catStyle, projHue, docName } from './core.js';
 import { parseDate, parseQuick, today, fromYmd } from './parse.js';
 
 const box = h('div.ac', { hidden: true, role: 'listbox' });
@@ -66,7 +66,7 @@ function update(el) {
   const kind = kindOf(el);
   // Le barre per creare articoli e progetti non hanno collegamenti.
   if (kind !== 'item' && kind !== 'project') {
-    const r = el.value.slice(0, pos).match(/\[\[([^\]\n]{0,40})$/);
+    const r = el.value.slice(0, pos).match(/\[\[([^\]\n]{0,60})$/);
     if (r) return updateRef(el, pos, r[1]);
   }
   const allowed = el.dataset.acOnly || { item: '/@', project: '@+' }[kind] || '@#!+>';
@@ -107,39 +107,94 @@ function updateWhole(el) {
 }
 
 function updateRef(el, pos, q) {
-  const items = refSuggestions(lc(q.trim()), { bare: el.dataset.acBare != null, self: +el.dataset.acEntry || null });
+  const ql = lc(q.trim());
+  const items = refSuggestions(ql, { bare: el.dataset.acBare != null, self: +el.dataset.acEntry || null });
+  askMailSearch(ql, el);
   if (!items.length) return close();
   st = { el, start: pos - q.length - 2, end: pos, items, index: 0, token: `[[${q}`, suffix: ' ' };
   draw();
 }
 
-// Etichette di tipo nel menu dei collegamenti, per distinguere al volo cosa si sta collegando.
-const PILL = { todo: 'todo', mail: 'mail', note: 'nota', doc: 'documento', item: 'articolo', project: 'progetto', contact: 'contatto' };
+// Il testo intero delle mail ricevute non è nei dati dell'app: per "[[" si chiede al server in quali
+// conversazioni stanno le parole (poco dopo che si è smesso di scrivere); arrivata la risposta il menu si rifà.
+const mailSearch = new Map(); // ricerca → id delle conversazioni (null = in arrivo)
+let mailTimer = null;
+function askMailSearch(ql, el) {
+  if (ql.replace(/\s/g, '').length < 2 || mailSearch.has(ql) || !S.data?.mailThreads?.length) return;
+  clearTimeout(mailTimer);
+  mailTimer = setTimeout(() => {
+    mailSearch.set(ql, null);
+    api('GET', `/mail/search?${new URLSearchParams({ q: ql })}`)
+      .then(ids => { mailSearch.set(ql, ids); if (document.activeElement === el) update(el); })
+      .catch(() => mailSearch.delete(ql));
+  }, 250);
+}
 
-// Tutto insieme; senza testo: le voci aperte più recenti, poi un po' di ogni altro tipo.
+// Etichette di tipo nel menu dei collegamenti, per distinguere al volo cosa si sta collegando.
+const PILL = { todo: 'todo', mail: 'mail', note: 'nota', doc: 'documento', item: 'articolo', project: 'progetto', contact: 'contatto', conv: 'conversazione' };
+
+// Punteggio di più parole su più campi (più basso = meglio, null = qualche parola non c'è): ogni parola deve
+// trovarsi in almeno un campo, conta il campo migliore. Campi: [testo, peso, lungo]. Nei campi brevi (titoli,
+// nomi, codici) le lettere possono essere sparse; nei testi lunghi (note, corpo delle mail) serve il pezzo
+// intero, altrimenti lettere sparse si trovano quasi ovunque.
+function scoreWords(words, fields) {
+  let total = 0;
+  for (const w of words) {
+    let top = null;
+    for (const [v, weight = 0, long = false] of fields) {
+      if (!v) continue;
+      const r = long ? (lc(v).includes(w) ? 3 : null) : fuzzy(v, w);
+      if (r != null && (top == null || r + weight < top)) top = r + weight;
+    }
+    if (top == null) return null;
+    total += top;
+  }
+  return total;
+}
+
+// Tutto insieme; senza testo: le voci aperte più recenti, poi un po' di ogni altro tipo. Si cerca anche per
+// tipo ("mail", "todo", "nota", "documento"…), persone (nomi in rubrica e indirizzi) e testo.
 function refSuggestions(ql, { bare, self }) {
   const D = S.data;
   const words = ql.split(/\s+/).filter(Boolean);
-  // Ogni parola scritta deve trovarsi (anche sparsa) in uno dei campi.
-  const hit = (...v) => words.every(w => v.some(x => fuzzy(x, w) != null));
   const plain = t => t.replace(/(^|\s)#/g, '$1').replace(/\[\[\w+:\d+\]\]/g, '…');
   const entryState = e => (e.done_at ? (e.kind === 'mail' ? 'mandata' : e.kind === 'todo' ? 'fatta' : '') : e.kind === 'mail' ? 'da mandare' : '');
+  const names = list => String(list || '').split(',').map(a => (a.match(/<([^>]+)>/)?.[1] || a).trim().toLowerCase()).filter(Boolean)
+    .map(a => D.contactByEmail.get(a)?.name || '').join(' ');
+  const KIND_WORD = { todo: 'todo', mail: 'mail', note: 'nota' };
+  const scored = (list, fields, make) => list.map(x => ({ x, r: scoreWords(words, fields(x)) })).filter(o => o.r != null)
+    .map(o => ({ ...make(o.x), r: o.r }));
+  const mailIds = mailSearch.get(ql) || [];
   const groups = [
-    D.entries.filter(e => e.id !== self && hit(e.title, e.contact) && (ql || !e.done_at))
-      .sort((a, b) => !!a.done_at - !!b.done_at || b.updated_at.localeCompare(a.updated_at))
-      .map(e => ({ insert: `[[voce:${e.id}]]`, label: plain(e.title), hint: e.kind === 'mail' ? e.contact || '' : '', extra: entryState(e), pill: e.kind, r: rank(e.title, ql) })),
-    D.docs.filter(d => D.itemById.has(d.item_id) && hit(docName(d), d.filename, d.kind, D.itemById.get(d.item_id).code))
-      .map(d => ({ insert: `[[doc:${d.id}]]`, label: docName(d), hint: D.itemById.get(d.item_id).code, extra: d.kind, pill: 'doc', r: rank(docName(d), ql) })),
-    D.items.filter(i => hit(i.code, i.name))
-      .map(i => ({ insert: bare ? i.code : `#${i.code}`, label: i.code, hint: i.name, extra: i.category, code: true, cat: i.category, pill: 'item', r: rank(i.code, ql) })),
-    D.projects.filter(p => hit(p.name, p.tag) && (ql || p.status !== 'closed'))
-      .map(p => ({ insert: `[[progetto:${p.id}]]`, label: p.name, hint: `@${p.tag}`, extra: STATUS[p.status] || '', pill: 'project', r: rank(p.name, ql) })),
-    D.contacts.filter(c => hit(c.name, c.email, c.company))
-      .map(c => ({ insert: `[[contatto:${c.id}]]`, label: c.name || c.email, hint: c.company || (c.name ? c.email : ''), pill: 'contact', r: rank(c.name, ql) })),
+    scored(D.entries.filter(e => e.id !== self && (ql || !e.done_at)), e => [
+      [e.title], [e.mail_subject, 0.2], [e.contact, 0.5], [names(`${e.contact},${e.mail_cc}`), 0.5], [e.mail_cc, 0.8],
+      [KIND_WORD[e.kind], 1], ...projectsOfEntry(e).map(p => [p.tag, 1]), [e.notes, 0, true],
+    ], e => ({ insert: `[[voce:${e.id}]]`, label: plain(e.title), hint: e.kind === 'mail' ? e.contact || '' : '', extra: entryState(e), pill: e.kind, sort: e.updated_at })),
+    scored(D.mailThreads, t => {
+      const msgs = D.msgsOfThread.get(t.id) || [];
+      const addrs = msgs.map(m => `${m.from_addr},${m.to_addr},${m.cc}`).join(',');
+      return [[t.subject], [D.topicById.get(t.topic_id)?.title, 0.3], [addrs, 0.5, true], [names(addrs), 0.3, true], ['mail', 1], ['conversazione', 1],
+        ...msgs.map(m => [m.snippet, 0.5, true]), ...(mailIds.includes(t.id) ? [[ql, 0, true]] : [])];
+    }, t => ({ insert: `[[mail:${t.id}]]`, label: plain(t.subject), hint: names((D.msgsOfThread.get(t.id) || []).map(m => m.direction === 'in' ? m.from_addr : m.to_addr).join(',')).trim(),
+      extra: t.archived_at ? 'archiviata' : '', pill: 'conv', sort: t.last_at })),
+    scored(D.docs.filter(d => D.itemById.has(d.item_id)), d => {
+      const it = D.itemById.get(d.item_id);
+      return [[docName(d)], [d.filename, 0.3], [d.kind, 0.5], [it.code, 0.3], ...(D.aliasesOf.get(it.id) || []).map(a => [a.code, 0.4]), [it.name, 0.8], [d.version, 1], ['documento', 1]];
+    }, d => ({ insert: `[[doc:${d.id}]]`, label: docName(d), hint: D.itemById.get(d.item_id).code, extra: d.kind, pill: 'doc', sort: d.created_at })),
+    scored(D.items, i => [[i.code], ...(D.aliasesOf.get(i.id) || []).map(a => [a.code, 0.2]), [i.name, 0.5], [i.category, 1], [i.firmware, 1], ['articolo', 1]],
+      i => ({ insert: bare ? i.code : `#${i.code}`, label: i.code, hint: i.name, extra: i.category, code: true, cat: i.category, pill: 'item', sort: i.updated_at || '' })),
+    scored(D.projects.filter(p => ql || p.status !== 'closed'), p => [[p.name], [p.tag], ['progetto', 1], [p.notes, 0.5, true]],
+      p => ({ insert: `[[progetto:${p.id}]]`, label: p.name, hint: `@${p.tag}`, extra: STATUS[p.status] || '', pill: 'project', sort: p.updated_at || '' })),
+    scored(D.contacts, c => [[c.name], [c.email, 0.2], [c.company, 0.5], [c.role, 0.8], ['contatto', 1]],
+      c => ({ insert: `[[contatto:${c.id}]]`, label: c.name || c.email, hint: c.company || (c.name ? c.email : ''), pill: 'contact', sort: c.updated_at || '' })),
   ];
-  if (!ql) return groups.flatMap((g, i) => g.slice(0, [4, 2, 2, 1, 1][i]));
-  return groups.flat().sort((a, b) => a.r - b.r).slice(0, 10);
+  const recent = (a, b) => String(b.sort).localeCompare(String(a.sort));
+  if (!ql) return groups.flatMap((g, i) => g.sort(recent).slice(0, [4, 2, 2, 2, 1, 1][i]));
+  return groups.flat().sort((a, b) => a.r - b.r || recent(a, b)).slice(0, 12);
 }
+
+const projectsOfEntry = e => [e.project_id, ...(S.data.extraProjectsOf.get(e.id) || []).map(x => x.project_id)]
+  .map(id => id && S.data.projectById.get(id)).filter(Boolean);
 
 function contactFieldSuggestions(field, ql) {
   const counts = new Map();

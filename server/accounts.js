@@ -152,6 +152,11 @@ const MIGRATIONS = [
   UPDATE users SET onboarded_at = created_at;
   ALTER TABLE workspaces ADD COLUMN tour_of INTEGER REFERENCES users ON DELETE CASCADE;
   `,
+  // Posta a topic: mail_backfill_at = l'estensione di Thunderbird ha già caricato l'ultimo mese (NULL = da
+  // fare al prossimo collegamento, anche per chi c'era già: la posta riparte da zero).
+  `
+  ALTER TABLE users ADD COLUMN mail_backfill_at TEXT;
+  `,
 ];
 
 {
