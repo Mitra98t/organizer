@@ -534,7 +534,12 @@ body.tdnd .topic-new { display: block; }
 .th-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .th-subj { margin: 0; font-size: 20px; overflow-wrap: anywhere; min-width: 0; cursor: text; }
 .th-count { font-size: 13px; }
-.tp-cols { display: grid; grid-template-columns: minmax(240px, 300px) minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
+/* Albero a sinistra (resta in vista scorrendo), mail al centro, collegamenti a destra; più stretto la colonna
+   dei collegamenti va sotto la mail, sempre a destra dell'albero (che così non le finisce sopra). */
+.tp-cols { display: grid; grid-template-columns: minmax(240px, 300px) minmax(0, 1fr) 360px; grid-template-areas: "tree mail side"; gap: 16px; align-items: start; }
+.tp-tree { grid-area: tree; }
+.tp-mail { grid-area: mail; }
+.tp-cols > .mail-side { grid-area: side; }
 .tp-cols > .mail-side .ms-b { font-size: 14px; }
 .tp-cols > .mail-side .tl-row { flex-wrap: wrap; row-gap: 0; }
 .tp-cols > .mail-side .tl-row > .muted:not(.tl-auto) { flex-basis: 100%; order: 9; padding-left: 20px; white-space: normal; font-size: 12.5px; }
@@ -575,12 +580,11 @@ body.tdnd .topic-new { display: block; }
 .tside-h { border-left: 3px solid hsl(var(--h) 60% 52%); }
 .tside-subj { font-weight: 650; overflow-wrap: anywhere; }
 @media (max-width: 1400px) {
-  .tp-cols { grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); }
-  .tp-cols > .mail-side { grid-column: 1 / -1; }
+  .tp-cols { grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); grid-template-rows: auto 1fr; grid-template-areas: "tree mail" "tree side"; }
 }
 @media (max-width: 800px) {
   .th-count { display: none; }
-  .tp-cols { grid-template-columns: minmax(0, 1fr); }
+  .tp-cols { grid-template-columns: minmax(0, 1fr); grid-template-areas: "tree" "mail" "side"; }
   .tp-tree { position: static; max-height: none; }
 }
 /* Modali per scegliere dal magazzino. */

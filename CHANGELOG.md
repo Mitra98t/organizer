@@ -3,6 +3,9 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.16.1 — 2026-10-29
+- Correzione: nella pagina di un topic, su schermi non larghissimi, l'albero delle mail (che resta in vista scorrendo) finiva sopra la colonna dei collegamenti. Ora l'albero ha la sua colonna a sinistra e mail e collegamenti stanno uno sotto l'altro a destra.
+
 ## 0.16 — 2026-10-29
 - **Posta rifatta a topic e conversazioni.** Si riparte da zero: in Organizer restano solo le mail scritte qui (con le loro conversazioni), il resto lo ricarica Thunderbird.
   - **Primo collegamento**: l'estensione carica l'ultimo mese da tutte le cartelle (tranne spam, cestino e bozze), con i messaggi più vecchi citati; vale per ogni persona nuova e, questa volta, per tutti.
