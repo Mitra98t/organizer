@@ -62,12 +62,11 @@ export const ui = {
   ignoredAddrs: new Set(load('org.ignoredAddrs', [])), // indirizzi da non proporre in rubrica
   mailHelper: load('org.mailHelper', false),
   mailFilter: '',
-  mailView: load('org.mailView', 'todo'), // 'todo' (da fare) o 'archive'
-  mailType: null, // una sola sezione della pagina Mail
+  mailView: load('org.mailView', 'active'), // 'active' (thread attivi) o 'archive'
+  mailType: null, // solo i thread in uno stato (da leggere, da mandare, in attesa)
+  threadAll: null, // thread di cui si vedono tutti i messaggi, anche i più vecchi
   mailAtt: false,
   mailProj: null,
-  inboxOpen: null,
-  inboxKeep: new Set(), // mail lette ora: restano in "da fare" finché non si lascia la pagina
   itemView: load('org.itemView', 'list'),
   itemCat: null,
   projDeep: load('org.projDeep', true),
@@ -282,9 +281,20 @@ function indexData(d) {
     if (!d.sharesOf.has(k)) d.sharesOf.set(k, []);
     d.sharesOf.get(k).push(x.user_id);
   }
-  d.inbox ||= [];
   d.mine = new Set((d.myAddresses || []).map(a => a.toLowerCase())); // i miei indirizzi (identità di Thunderbird)
-  d.mailMsgsOf = group(d.mailMsgs, 'entry_id');
+  // Thread di mail (personali): messaggi, mail scritte in Organizer e collegamenti di ognuno.
+  d.mailThreads ||= [];
+  d.threadLinks ||= [];
+  d.threadById = new Map(d.mailThreads.map(t => [t.id, t]));
+  d.msgsOfThread = group(d.mailMsgs, 'thread_id');
+  d.entriesOfThread = group(d.entries.filter(e => e.thread_id && e.kind === 'mail'), 'thread_id');
+  d.linksOfThread = group(d.threadLinks, 'thread_id');
+  d.threadsOf = new Map(); // "articolo:12" → id dei thread collegati
+  for (const l of d.threadLinks) {
+    const k = `${l.kind}:${l.target_id}`;
+    if (!d.threadsOf.has(k)) d.threadsOf.set(k, new Set());
+    d.threadsOf.get(k).add(l.thread_id);
+  }
   d.itemsOfProject = group(d.projectItems, 'project_id');
   d.extraProjectsOf = group(d.entryProjects, 'entry_id');
   d.projectsOfItem = group(d.projectItems, 'item_id');

@@ -30,8 +30,9 @@ async function org(args, { input, env = {} } = {}) {
   return (await p).stdout;
 }
 
-const call = (method, p, { body, token, cookie } = {}) => fetch(`${url}/api${p}`, {
+const call = (method, p, { body, token, cookie, signal } = {}) => fetch(`${url}/api${p}`, {
   method,
+  signal,
   headers: {
     ...(token ? { Authorization: `Bearer ${token}` } : { 'X-Requested-With': 'organizer' }),
     ...(cookie ? { Cookie: cookie } : {}),
@@ -129,13 +130,15 @@ test('documenti: carica, rinomina, scarica', async () => {
   assert.deepEqual(fs.readFileSync(path.join(out, 'firmware relè.bin')), fs.readFileSync(src));
 });
 
-test('thunderbird: manda, mandata, risposta, conversazione, rispondi', async () => {
+test('thunderbird: thread, mandata, risposta, storia, collegamenti, archivio', async () => {
   const { token } = config();
   const tb = (method, p, body) => call(method, p, { token, body });
   const json = r => (r.status === 204 ? null : r.json());
   const { id } = await tb('POST', '/entries', { text: 'offerta relè', kind: 'mail' }).then(json);
   await tb('PATCH', `/entries/${id}`, { contact: 'mario@fornitore.it', mail_subject: 'Offerta relè' });
   assert.equal((await tb('POST', `/entries/${id}/compose`)).status, 409); // nessuna estensione collegata
+  const tid = (await tb('GET', `/entries/${id}`).then(json)).thread_id;
+  assert.ok(tid); // ogni mail scritta in Organizer sta in un thread
 
   // L'estensione tiene aperto il flusso: il server sa che c'è e la avvisa delle mail da aprire.
   const ctrl = new AbortController();
@@ -155,74 +158,120 @@ test('thunderbird: manda, mandata, risposta, conversazione, rispondi', async () 
 
   await tb('POST', '/mail/sent', { ws, outbox_id: req.id, message_id: '<abc@organizer.test>', to: 'mario@fornitore.it', subject: 'Offerta relè' });
   let e = await tb('GET', `/entries/${id}`).then(json);
-  assert.ok(e.done_at);
-  assert.equal(e.awaiting_reply, 1);
+  assert.deepEqual([!!e.done_at, e.awaiting_reply], [true, 1]);
   assert.deepEqual(await tb('GET', '/mail/watch').then(json), ['abc@organizer.test']);
 
-  // Una mail qualsiasi non entra; la risposta sì, e la mail non è più in attesa.
-  assert.deepEqual(await tb('POST', '/mail/incoming', { message_id: 'altro@x', in_reply_to: '<nessuno@x>' }).then(json), { matched: false });
-  const reply = { message_id: '<r1@fornitore.it>', in_reply_to: '<abc@organizer.test>', references: ['abc@organizer.test'],
-    from: 'Mario Rossi <mario@fornitore.it>', subject: 'Re: Offerta relè', body: 'Va bene, mando il preventivo.\n\nIl giorno 28/10 Fede ha scritto:\n> Offerta' };
-  assert.deepEqual(await tb('POST', '/mail/incoming', reply).then(json), { matched: true });
-  assert.deepEqual(await tb('POST', '/mail/incoming', reply).then(json), { matched: true }); // già vista: nessun doppione
+  // Solo risposte: una mail qualsiasi non entra; la risposta sì e chiude l'attesa. Cita una mail vecchia che
+  // Organizer non ha: il server la chiede (missing) e l'estensione la manda come storia.
+  assert.deepEqual(await tb('POST', '/mail/incoming', { message_id: 'altro@x', in_reply_to: '<nessuno@x>' }).then(json), { matched: false, missing: [] });
+  const reply = { message_id: '<r1@fornitore.it>', in_reply_to: '<abc@organizer.test>', references: ['<old@fornitore.it>', '<abc@organizer.test>'],
+    from: 'Mario Rossi <mario@fornitore.it>', subject: 'Re: Offerta relè', body: 'Va bene, mando il preventivo per la SCH-042.\n\nIl giorno 28/10 Fede ha scritto:\n> Offerta' };
+  const r1 = await tb('POST', '/mail/incoming', reply).then(json);
+  assert.deepEqual([r1.thread, r1.missing], [tid, ['old@fornitore.it']]);
+  assert.deepEqual((await tb('POST', '/mail/incoming', reply).then(json)).thread, tid); // già vista: nessun doppione
+  await tb('POST', '/mail/incoming', { message_id: '<old@fornitore.it>', from: 'Mario Rossi <mario@fornitore.it>', subject: 'Listino',
+    body: 'listino vecchio', date: '2026-09-01T10:00:00.000Z', history: true, thread: r1.thread });
   e = await tb('GET', `/entries/${id}`).then(json);
   assert.equal(e.awaiting_reply, 0);
-  const thread = await tb('GET', `/entries/${id}/thread`).then(json);
-  assert.deepEqual(thread.map(m => [m.direction, m.message_id]), [['out', 'abc@organizer.test'], ['in', 'r1@fornitore.it']]);
+  const th = await tb('GET', `/mail/threads/${tid}`).then(json);
+  assert.deepEqual(th.messages.map(m => [m.direction, m.message_id, !!m.read_at]),
+    [['in', 'old@fornitore.it', true], ['out', 'abc@organizer.test', true], ['in', 'r1@fornitore.it', false]]);
 
-  // Rispondi: una mail nuova nella stessa conversazione, che Thunderbird aprirà come risposta.
-  const { id: rid } = await tb('POST', `/mail/messages/${thread[1].id}/reply`).then(json);
+  // Il codice di magazzino scritto nella risposta collega il thread all'articolo; i collegamenti si aggiungono a mano.
+  let s = await tb('GET', '/sync').then(json);
+  const sch = s.items.find(i => i.code === 'SCH-042');
+  assert.ok(s.threadLinks.some(l => l.thread_id === tid && l.kind === 'articolo' && l.target_id === sch.id));
+  const contact = await tb('POST', '/contacts', { name: 'Mario', email: 'mario@fornitore.it' }).then(json);
+  await tb('POST', `/mail/threads/${tid}/links`, { kind: 'contatto', id: contact.id });
+  s = await tb('GET', '/sync').then(json);
+  assert.ok(s.threadLinks.some(l => l.thread_id === tid && l.kind === 'contatto' && l.manual));
+
+  // Leggere non archivia; archiviare sì (e segna letto). Una risposta nuova riporta il thread tra gli attivi.
+  await tb('PATCH', `/mail/threads/${tid}`, { read: true });
+  s = await tb('GET', '/sync').then(json);
+  assert.deepEqual([s.mailThreads.find(t => t.id === tid).archived_at, s.mailMsgs.filter(m => m.thread_id === tid && !m.read_at).length], [null, 0]);
+  await tb('PATCH', `/mail/threads/${tid}`, { archived: true });
+  assert.ok((await tb('GET', '/sync').then(json)).mailThreads.find(t => t.id === tid).archived_at);
+  await tb('POST', '/mail/incoming', { message_id: '<r2@fornitore.it>', in_reply_to: '<r1@fornitore.it>', from: 'mario@fornitore.it', subject: 'Re: Offerta relè', body: 'ancora io' });
+  assert.equal((await tb('GET', '/sync').then(json)).mailThreads.find(t => t.id === tid).archived_at, null);
+
+  // Rispondi: una mail nuova nel thread, che Thunderbird aprirà come risposta al messaggio.
+  const { id: rid } = await tb('POST', `/mail/messages/${th.messages[2].id}/reply`).then(json);
   const r = await tb('GET', `/entries/${rid}`).then(json);
-  assert.deepEqual([r.kind, r.contact, r.mail_subject, r.mail_thread], ['mail', 'mario@fornitore.it', 'Re: Offerta relè', id]);
+  assert.deepEqual([r.kind, r.contact, r.mail_subject, r.thread_id], ['mail', 'mario@fornitore.it', 'Re: Offerta relè', tid]);
   await tb('POST', `/entries/${rid}/compose`);
-  const pending = await tb('GET', '/mail/outbox').then(json);
-  assert.equal(pending.at(-1).reply_to, 'r1@fornitore.it');
-  assert.equal((await tb('GET', `/entries/${rid}/thread`).then(json)).length, 2);
+  assert.equal((await tb('GET', '/mail/outbox').then(json)).at(-1).reply_to, 'r1@fornitore.it');
 
-  // Tutta la posta in arrivo: personale, con Rispondi e Rispondi a tutti (senza i nostri indirizzi).
+  // Tutta la posta in arrivo: una mail nuova apre un thread; Rispondi a tutti senza i nostri indirizzi.
   await tb('POST', '/mail/identities', { addresses: ['Fede <fede@organizer.test>'] });
   const news = { message_id: '<n1@cliente.it>', from: 'Anna Bianchi <anna@cliente.it>', to: 'fede@organizer.test, luca@cliente.it',
-    cc: 'Ufficio <ufficio@cliente.it>', subject: 'Richiesta campioni', body: 'Ci servono 5 campioni @ 12V !urgente', inbox: true };
-  assert.deepEqual(await tb('POST', '/mail/incoming', news).then(json), { matched: false });
-  const [inMail] = (await tb('GET', '/sync').then(json)).inbox;
-  assert.deepEqual([inMail.subject, inMail.read_at], ['Richiesta campioni', null]);
-  const { id: aid } = await tb('POST', `/mail/inbox/${inMail.id}/reply`, { all: true }).then(json);
+    cc: 'Ufficio <ufficio@cliente.it>', subject: 'Richiesta campioni', body: 'Ci servono 5 campioni @ 12V !urgente', inbox: true,
+    attachments: [{ name: 'relè.pdf', part: '1.2', size: 1234, type: 'application/pdf' }] };
+  const n1 = await tb('POST', '/mail/incoming', news).then(json);
+  assert.ok(n1.thread && n1.thread !== tid);
+  const nt = await tb('GET', `/mail/threads/${n1.thread}`).then(json);
+  assert.deepEqual([nt.subject, nt.messages.length], ['Richiesta campioni', 1]);
+  const { id: aid } = await tb('POST', `/mail/messages/${nt.messages[0].id}/reply`, { all: true }).then(json);
   const a = await tb('GET', `/entries/${aid}`).then(json);
-  assert.deepEqual([a.title, a.contact, a.mail_cc, a.mail_subject, a.project_id], ['Re: Richiesta campioni', 'anna@cliente.it', 'luca@cliente.it, ufficio@cliente.it', 'Re: Richiesta campioni', null]);
-  assert.deepEqual((await tb('GET', `/entries/${aid}/thread`).then(json)).map(m => [m.direction, m.message_id]), [['in', 'n1@cliente.it']]);
-  const { id: sid } = await tb('POST', `/mail/inbox/${inMail.id}/reply`, { all: false }).then(json);
-  assert.deepEqual(await tb('GET', `/entries/${sid}`).then(json).then(x => [x.contact, x.mail_cc, x.mail_thread]), ['anna@cliente.it', null, aid]);
-  await tb('POST', `/entries/${aid}/compose`);
-  assert.equal((await tb('GET', '/mail/outbox').then(json)).find(o => o.subject === 'Re: Richiesta campioni').reply_to, 'n1@cliente.it');
-  const linked = (await tb('GET', '/sync').then(json)).inbox[0];
-  assert.deepEqual([linked.thread_entry, !!linked.read_at], [aid, true]);
-  await tb('PATCH', `/mail/inbox/${inMail.id}`, { archived: true });
-  assert.equal((await tb('GET', '/sync').then(json)).inbox.length, 0);
+  assert.deepEqual([a.contact, a.mail_cc, a.mail_subject, a.thread_id], ['anna@cliente.it', 'luca@cliente.it, ufficio@cliente.it', 'Re: Richiesta campioni', n1.thread]);
 
   // Allegato ricevuto → documento: Organizer lo chiede all'estensione, che lo carica sull'articolo.
-  await tb('POST', '/mail/incoming', { message_id: '<n2@cliente.it>', from: 'anna@cliente.it', subject: 'Datasheet', inbox: true,
-    attachments: [{ name: 'relè.pdf', part: '1.2', size: 1234, type: 'application/pdf' }] });
-  const s2 = await tb('GET', '/sync').then(json);
-  const ds = s2.inbox.find(m => m.subject === 'Datasheet');
-  const item = s2.items.find(i => i.code === 'SCH-042');
-  assert.equal((await tb('POST', '/mail/attachments/save', { source: 'inbox', id: ds.id, n: 0, item_id: item.id, kind: 'datasheet' })).status, 200);
+  assert.equal((await tb('POST', '/mail/attachments/save', { id: nt.messages[0].id, n: 0, item_id: sch.id, kind: 'datasheet' })).status, 200);
   const [f] = await tb('GET', '/mail/fetches').then(json);
-  assert.deepEqual([f.part, f.name, f.kind, f.message_id, f.item_id], ['1.2', 'relè.pdf', 'datasheet', 'n2@cliente.it', item.id]);
+  assert.deepEqual([f.part, f.name, f.kind, f.message_id, f.item_id], ['1.2', 'relè.pdf', 'datasheet', 'n1@cliente.it', sch.id]);
   assert.equal((await tb('POST', `/mail/fetches/${f.id}/claim`)).status, 204);
   const up = await fetch(`${url}/api/items/${f.item_id}/docs?${new URLSearchParams({ name: f.name, kind: f.kind })}`, {
     method: 'POST', headers: { Authorization: `Bearer ${token}`, 'X-Workspace': String(f.ws), 'Content-Type': 'application/pdf' }, body: Buffer.from('%PDF-1.4 prova') });
   assert.equal(up.status, 200);
   await tb('POST', `/mail/fetches/${f.id}/done`);
   assert.deepEqual(await tb('GET', '/mail/fetches').then(json), []);
-  assert.ok((await tb('GET', '/sync').then(json)).docs.some(d => d.filename === 'relè.pdf' && d.kind === 'datasheet'));
 
-  // La posta è personale: un altro membro del workspace non vede le mail né la posta in arrivo, nemmeno da admin.
+  // Thread portato a mano da Thunderbird (anche vecchio, anche senza "tutta la posta"): dal più vecchio, tutto
+  // nello stesso thread, già letto ma tra gli attivi; un thread archiviato con un messaggio già visto torna attivo.
+  const old = { from: 'Giulia <giulia@studio.it>', to: 'fede@organizer.test', subject: 'Disegni staffa', date: '2025-03-01T10:00:00Z' };
+  const i1 = await tb('POST', '/mail/incoming', { ...old, message_id: '<s1@studio.it>', body: 'ecco il DXF', import: true }).then(json);
+  const i2 = await tb('POST', '/mail/incoming', { ...old, message_id: '<s2@studio.it>', in_reply_to: '<s1@studio.it>', references: ['<s1@studio.it>'],
+    subject: 'Re: Disegni staffa', date: '2025-03-02T10:00:00Z', import: true, thread: i1.thread }).then(json);
+  assert.equal(i2.thread, i1.thread);
+  let it = (await tb('GET', '/sync').then(json));
+  assert.deepEqual([it.mailThreads.find(t => t.id === i1.thread).archived_at, it.mailMsgs.filter(m => m.thread_id === i1.thread && !m.read_at).length], [null, 0]);
+  await tb('PATCH', `/mail/threads/${i1.thread}`, { archived: true });
+  await tb('POST', '/mail/incoming', { ...old, message_id: '<s1@studio.it>', import: true });
+  it = (await tb('GET', '/sync').then(json));
+  assert.equal(it.mailThreads.find(t => t.id === i1.thread).archived_at, null);
+
+  // Rinomina; Elimina porta il thread nel cestino con la sua bozza (una riga sola), Ripristina li riporta.
+  await tb('PATCH', `/mail/threads/${tid}`, { subject: 'Relè per il banco' });
+  assert.equal((await tb('GET', '/sync').then(json)).mailThreads.find(t => t.id === tid).subject, 'Relè per il banco');
+  const trashBefore = (await tb('GET', '/sync').then(json)).trashCount;
+  assert.equal((await tb('DELETE', `/mail/threads/${n1.thread}`)).status, 204);
+  let d = await tb('GET', '/sync').then(json);
+  assert.ok(!d.mailThreads.some(t => t.id === n1.thread) && !d.entries.some(x => x.id === aid));
+  assert.equal(d.trashCount, trashBefore + 1);
+  let bin = await tb('GET', '/trash').then(json);
+  assert.deepEqual(bin.threads.map(t => [t.subject, t.messages]), [['Richiesta campioni', 1]]);
+  assert.ok(!bin.entries.some(x => x.id === aid));
+  assert.equal((await tb('GET', `/mail/threads/${n1.thread}`)).status, 404);
+  // Thunderbird la ripassa (es. al riavvio): già vista, non riapre niente.
+  assert.deepEqual(await tb('POST', '/mail/incoming', news).then(json), { matched: true, thread: null, missing: [] });
+  assert.equal((await tb('GET', '/sync').then(json)).mailThreads.length, d.mailThreads.length);
+  await tb('POST', `/trash/thread/${n1.thread}/restore`);
+  d = await tb('GET', '/sync').then(json);
+  assert.ok(d.mailThreads.some(t => t.id === n1.thread) && d.entries.find(x => x.id === aid)?.thread_id === n1.thread);
+  // Eliminato definitivamente: via anche la bozza.
+  await tb('DELETE', `/mail/threads/${n1.thread}`);
+  assert.equal((await tb('DELETE', `/trash/thread/${n1.thread}`)).status, 204);
+  bin = await tb('GET', '/trash').then(json);
+  assert.deepEqual([bin.threads.length, bin.entries.some(x => x.id === aid)], [0, false]);
+  assert.equal((await tb('GET', `/entries/${aid}`)).status, 404);
+
+  // La posta è personale: un altro membro del workspace non vede né mail né thread, nemmeno da admin.
   const { code } = await tb('POST', '/admin/invites').then(json);
   const reg = await call('POST', '/register', { body: { code, username: 'luca', password: 'password-di-luca' } });
   const cookie = reg.headers.get('set-cookie').split(';')[0];
   const other = await call('GET', '/sync', { cookie }).then(json);
-  assert.deepEqual([other.entries.length, other.inbox.length, other.mailMsgs.length], [0, 0, 0]);
-  assert.equal((await call('GET', `/entries/${id}/thread`, { cookie })).status, 404);
+  assert.deepEqual([other.entries.length, other.mailThreads.length, other.mailMsgs.length], [0, 0, 0]);
+  assert.equal((await call('GET', `/mail/threads/${tid}`, { cookie })).status, 404);
 
   // L'estensione si scarica già impostata per questo server.
   const xpi = Buffer.from(await (await tb('GET', '/mail/thunderbird.xpi')).arrayBuffer());
@@ -341,6 +390,40 @@ test('notifiche: assegnate, condivise, citate, chat (anche silenziata)', async (
   assert.deepEqual(await luca('GET', `/notifications/${note.id}`).then(x => [x.url.split('?')[0], !!x.workspace_id]), [`#/d/${doc.id}`, true]);
   assert.equal((await luca('GET', '/sync')).notifications[0].read_at !== null, true);
   assert.equal((await call('POST', '/push/subscribe', { cookie, body: { endpoint: 'http://non-https', keys: {} } })).status, 400);
+});
+
+test('giro di Organizer: workspace di prova con contenuti finti, poi eliminato', async () => {
+  const cookie = (await call('POST', '/login', { body: { username: 'fede', password: 'password-di-prova' } })).headers.get('set-cookie').split(';')[0];
+  const json = r => (r.status === 204 ? null : r.json());
+  const me = (method, p, body) => call(method, p, { cookie, body }).then(json);
+  const before = await me('GET', '/sync');
+  assert.equal(before.onboarded, false); // account nuovo: riceve l'invito al giro
+  const start = await me('POST', '/tour/start');
+  assert.ok(start.ids.pdf && start.ids.model && start.ids.entry && start.ids.thread);
+  assert.equal((await me('GET', '/sync')).onboarded, true);
+  assert.deepEqual(await me('POST', '/tour/start').then(x => x.workspace_id), start.workspace_id); // si riprende lo stesso
+  await me('POST', `/workspaces/${start.workspace_id}/switch`);
+  const d = await me('GET', '/sync');
+  assert.equal(d.tourWs, start.workspace_id);
+  assert.ok(d.workspaces.find(w => w.id === start.workspace_id).tour);
+  assert.deepEqual(d.users.filter(u => u.member).map(u => u.username).sort(), ['anna', 'fede', 'luca'].sort());
+  assert.ok(d.entries.some(e => e.title.startsWith('calibrare sensori') && e.assignee_id === d.me.id)); // di Anna, assegnata a te
+  assert.ok(d.entries.some(e => e.kind === 'mail' && e.awaiting_reply === 0 && e.done_at));
+  assert.deepEqual([d.mailThreads.length, d.mailMsgs.length], [3, 3]); // preventivo (bozza), consegna (2 messaggi), alimentatori
+  assert.deepEqual(d.chatChannels.map(c => c.name), ['generale', 'officina']);
+  assert.ok(d.docNotes.some(n => n.z != null));
+  assert.equal((await call('GET', `/docs/${start.ids.pdf}/file`, { cookie })).headers.get('content-type'), 'application/pdf');
+  // Con l'app aperta nel workspace di prova (aggiornamenti in diretta): eliminarlo chiude la connessione e il
+  // server non deve più scriverci.
+  const live = new AbortController();
+  const stream = await call('GET', '/events', { cookie, signal: live.signal });
+  await stream.body.getReader().read();
+  await me('POST', '/tour/end', { delete: true });
+  live.abort();
+  const after = await me('GET', '/sync');
+  assert.equal(after.tourWs, null);
+  assert.ok(!after.workspaces.some(w => w.id === start.workspace_id));
+  assert.notEqual(after.workspace.id, start.workspace_id);
 });
 
 test('voci create offline: niente doppioni se l\'invio si ripete, todo già fatta', async () => {

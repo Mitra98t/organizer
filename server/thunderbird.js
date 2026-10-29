@@ -4,13 +4,16 @@
 //  - prende dalla coda (mail_outbox) le mail da aprire, allegati compresi, anche come risposta a un messaggio;
 //  - segnala le mail inviate (diventano "mandate", con il loro Message-ID) e le risposte che arrivano a una
 //    conversazione seguita (la mail esce da "in attesa di risposta").
-// Le chiamate dell'estensione valgono per tutti i workspace dell'utente: il server cerca in ognuno.
+// Le mail stanno in thread personali (maildata.js): ricevute, mandate e scritte in Organizer. Quando arriva o
+// parte una risposta a mail che Organizer non ha, il server le chiede all'estensione (missing) per completare
+// il thread. Le chiamate dell'estensione valgono per tutti i workspace dell'utente: il server cerca in ognuno.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { db, tx, withWorkspace } from './db.js';
-import { acc, workspacesOf, workspaceById, permsIn, mailAddressesOf } from './accounts.js';
-import { route, entryFor, updateEntry, addLog, insertId, syncEntryItems, docKind, VIS_ANY } from './api.js';
+import { acc, workspacesOf, workspaceById, permsIn, mailAddressesOf, defaultWorkspace } from './accounts.js';
+import { route, entryFor, updateEntry, addLog, insertId, syncEntryItems, docKind } from './api.js';
+import { newThread, ensureEntryThread, touchThread, autoLinkItems } from './maildata.js';
 import { mailParts, sendFile } from './mail.js';
 import { allows } from './perms.js';
 import { bump, mailExtOn, openMailExtStream, notifyMailExt } from './events.js';
@@ -65,13 +68,60 @@ route('POST', '/api/entries/:id/compose', ({ params, user }) => {
   notifyMailExt(user.id, 'outbox');
 }, { area: 'mail', level: 'read', quiet: true });
 
-// Tutta la conversazione di una mail: i messaggi della prima mail e delle risposte scritte in Organizer.
-route('GET', '/api/entries/:id/thread', ({ params, user }) => {
-  const e = entryFor(params.id, user, 'read');
-  const root = e.mail_thread ?? e.id;
-  return db.prepare(`SELECT m.* FROM mail_messages m JOIN entries e ON e.id = m.entry_id
-    WHERE (e.id = $root OR e.mail_thread = $root) AND e.deleted_at IS NULL AND ${VIS_ANY} ORDER BY m.date, m.id`)
-    .all({ root, uid: user.id }).map(m => ({ ...m, attachments: JSON.parse(m.attachments || '[]') }));
+// ---------- thread ----------
+const parseMsg = m => ({ ...m, attachments: JSON.parse(m.attachments || '[]') });
+const getThread = (id, user) => db.prepare('SELECT * FROM mail_threads WHERE id = ? AND owner_id = ? AND deleted_at IS NULL').get(+id, user.id) || fail(404, 'Thread non trovato');
+
+// Il thread con i messaggi interi (dal più vecchio) e le mail scritte in Organizer che ne fanno parte.
+route('GET', '/api/mail/threads/:id', ({ params, user }) => {
+  const t = getThread(params.id, user);
+  return {
+    ...t,
+    messages: db.prepare('SELECT * FROM mail_messages WHERE thread_id = ? ORDER BY date, id').all(t.id).map(parseMsg),
+    entries: db.prepare('SELECT id FROM entries WHERE thread_id = ? AND deleted_at IS NULL ORDER BY id').all(t.id).map(r => r.id),
+  };
+}, { area: 'mail' });
+
+// Letto (i messaggi ricevuti), archiviato o di nuovo attivo. Archiviare lo segna anche letto.
+route('PATCH', '/api/mail/threads/:id', async ({ params, user, body }) => {
+  const b = await body();
+  const t = getThread(params.id, user);
+  const at = now();
+  if (b.read !== undefined || b.archived) {
+    db.prepare(`UPDATE mail_messages SET read_at = ${b.read === false ? 'NULL' : 'COALESCE(read_at, ?)'} WHERE thread_id = ? AND direction = 'in'`)
+      .run(...(b.read === false ? [t.id] : [at, t.id]));
+  }
+  if (b.archived !== undefined) db.prepare('UPDATE mail_threads SET archived_at = ? WHERE id = ?').run(b.archived ? at : null, t.id);
+  if (b.subject !== undefined) db.prepare('UPDATE mail_threads SET subject = ? WHERE id = ?').run(str(b.subject, 300) || t.subject, t.id);
+  // Letto il thread, anche le sue notifiche.
+  if (b.read || b.archived) acc.prepare('UPDATE notifications SET read_at = ? WHERE user_id = ? AND url = ? AND read_at IS NULL').run(at, user.id, `#/t/${t.id}`);
+}, { area: 'mail' });
+
+// Nel cestino, con le mail scritte in Organizer che ne fanno parte (tornano insieme con Ripristina). In
+// Thunderbird le mail restano; se le ripassa, i messaggi già visti non riaprono il thread.
+route('DELETE', '/api/mail/threads/:id', ({ params, user }) => {
+  const t = getThread(params.id, user);
+  const at = now();
+  tx(() => {
+    db.prepare('UPDATE mail_threads SET deleted_at = ?, deleted_by = ? WHERE id = ?').run(at, user.id, t.id);
+    db.prepare('UPDATE entries SET deleted_at = ?, deleted_by = ? WHERE thread_id = ? AND deleted_at IS NULL').run(at, user.id, t.id);
+  });
+  acc.prepare('UPDATE notifications SET read_at = ? WHERE user_id = ? AND url = ? AND read_at IS NULL').run(at, user.id, `#/t/${t.id}`);
+}, { area: 'mail' });
+
+// Collegamenti scelti a mano: articoli, documenti, progetti, contatti, voci (come i [[…]] e i #codici).
+const THREAD_LINK = { articolo: 'items', doc: 'documents', progetto: 'projects', contatto: 'contacts', voce: 'entries' };
+route('POST', '/api/mail/threads/:id/links', async ({ params, user, body }) => {
+  const b = await body();
+  const t = getThread(params.id, user);
+  const table = THREAD_LINK[b.kind] || fail(400, 'Tipo di collegamento non valido');
+  if (!db.prepare(`SELECT 1 FROM ${table} WHERE id = ? AND deleted_at IS NULL`).get(+b.id)) fail(404, 'Elemento non trovato');
+  db.prepare('INSERT INTO mail_thread_links (thread_id, kind, target_id) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET auto = 0').run(t.id, b.kind, +b.id);
+}, { area: 'mail' });
+
+route('DELETE', '/api/mail/threads/:id/links/:kind/:target', ({ params, user }) => {
+  const t = getThread(params.id, user);
+  db.prepare('DELETE FROM mail_thread_links WHERE thread_id = ? AND kind = ? AND target_id = ?').run(t.id, params.kind, +params.target);
 }, { area: 'mail' });
 
 // ---------- risposte ----------
@@ -88,74 +138,59 @@ function replyAddresses(m, all, userId) {
   return { contact: to.join(', ') || null, mail_cc: cc.join(', ') || null };
 }
 
-// La mail di risposta in Organizer (si scrive lì, poi "Manda" la apre in Thunderbird come risposta).
-// Senza passare dalla riga rapida: un oggetto con "@" o "!" non deve diventare un progetto o una scadenza.
-function insertReply(user, f) {
-  const t = now();
-  const id = insertId(db.prepare(`INSERT INTO entries (kind, title, contact, mail_cc, mail_subject, project_id, mail_thread, reply_to, created_by, created_at, updated_at)
+// La mail di risposta in Organizer, nel thread (si scrive lì, poi "Manda" la apre in Thunderbird come
+// risposta). Senza passare dalla riga rapida: un oggetto con "@" o "!" non deve diventare un progetto o una
+// scadenza. I progetti sono quelli delle altre mail del thread.
+function insertReply(user, t, f) {
+  const at = now();
+  const last = db.prepare('SELECT id, title, project_id FROM entries WHERE thread_id = ? AND deleted_at IS NULL ORDER BY id DESC').get(t.id);
+  const id = insertId(db.prepare(`INSERT INTO entries (kind, title, contact, mail_cc, mail_subject, project_id, thread_id, reply_to, created_by, created_at, updated_at)
     VALUES ('mail', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(str(f.title, 1000) || 'Risposta', f.contact, f.mail_cc, str(f.subject, 300) || null, f.project_id ?? null, f.thread ?? null, f.reply_to ?? null, user.id, t, t));
+    .run(str(re(last?.title || t.subject), 1000), f.contact, f.mail_cc, str(f.subject, 300) || null, last?.project_id ?? null, t.id, f.reply_to ?? null, user.id, at, at));
+  if (last) db.prepare('INSERT OR IGNORE INTO entry_projects (entry_id, project_id) SELECT ?, project_id FROM entry_projects WHERE entry_id = ?').run(id, last.id);
   syncEntryItems(id, user);
+  touchThread(t.id, at);
   return id;
 }
 
-// "Rispondi" su un messaggio della conversazione: una mail nuova, nella stessa conversazione e negli stessi progetti.
+// "Rispondi" (o "a tutti") su un messaggio del thread.
 route('POST', '/api/mail/messages/:id/reply', async ({ params, user, body }) => {
   const b = await body();
   const m = db.prepare('SELECT * FROM mail_messages WHERE id = ?').get(+params.id) || fail(404, 'Messaggio non trovato');
-  const e0 = entryFor(m.entry_id, user, 'read');
-  const id = tx(() => {
-    const id = insertReply(user, { title: re(e0.title), subject: re(m.subject || e0.mail_subject || e0.title), project_id: e0.project_id,
-      thread: e0.mail_thread ?? e0.id, reply_to: m.id, ...replyAddresses(m, !!b.all, user.id) });
-    db.prepare('INSERT OR IGNORE INTO entry_projects (entry_id, project_id) SELECT ?, project_id FROM entry_projects WHERE entry_id = ?').run(id, e0.id);
-    return id;
-  });
-  return { id };
+  const t = getThread(m.thread_id, user);
+  return { id: tx(() => insertReply(user, t, { subject: re(m.subject || t.subject), reply_to: m.id, ...replyAddresses(m, !!b.all, user.id) })) };
 }, { area: 'mail' });
 
-// ---------- posta in arrivo (personale) ----------
-const inboxRow = (id, user) => acc.prepare('SELECT * FROM mail_inbox WHERE id = ? AND user_id = ?').get(+id, user.id) || fail(404, 'Mail non trovata');
-
-route('GET', '/api/mail/inbox/:id', ({ params, user }) => {
-  const m = inboxRow(params.id, user);
-  return { ...m, attachments: JSON.parse(m.attachments) };
-}, { ws: false });
-
-route('PATCH', '/api/mail/inbox/:id', async ({ params, user, body }) => {
-  const b = await body();
-  const m = inboxRow(params.id, user);
-  if (b.read !== undefined) acc.prepare('UPDATE mail_inbox SET read_at = ? WHERE id = ?').run(b.read ? m.read_at || now() : null, m.id);
-  if (b.archived !== undefined) acc.prepare('UPDATE mail_inbox SET archived_at = ? WHERE id = ?').run(b.archived ? now() : null, m.id);
-}, { ws: false });
-
-// "Rispondi" (o "a tutti") su una mail in arrivo: la risposta nasce nel workspace attivo. Se la mail fa già
-// parte di una conversazione di qui, la risposta entra lì; altrimenti la mail ricevuta diventa il primo
-// messaggio della conversazione della risposta.
-route('POST', '/api/mail/inbox/:id/reply', async ({ params, user, body }) => {
-  const b = await body();
-  const m = inboxRow(params.id, user);
-  const id = tx(() => {
-    const known = db.prepare('SELECT * FROM mail_messages WHERE message_id = ?').get(m.message_id);
-    if (known) {
-      const e0 = entryFor(known.entry_id, user, 'read');
-      const id = insertReply(user, { title: re(e0.title), subject: re(known.subject || e0.mail_subject || e0.title), project_id: e0.project_id,
-        thread: e0.mail_thread ?? e0.id, reply_to: known.id, ...replyAddresses(known, !!b.all, user.id) });
-      db.prepare('INSERT OR IGNORE INTO entry_projects (entry_id, project_id) SELECT ?, project_id FROM entry_projects WHERE entry_id = ?').run(id, e0.id);
-      return id;
-    }
-    const msg = { ...m, direction: 'in' };
-    const id = insertReply(user, { title: re(m.subject || 'mail'), subject: re(m.subject), ...replyAddresses(msg, !!b.all, user.id) });
-    const mid = insertId(db.prepare(`INSERT INTO mail_messages (entry_id, direction, message_id, from_addr, to_addr, cc, subject, body, attachments, date, created_at)
-      VALUES (?, 'in', ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, m.message_id, m.from_addr, m.to_addr, m.cc, m.subject, m.body, m.attachments, m.date, now()));
-    db.prepare('UPDATE entries SET reply_to = ? WHERE id = ?').run(mid, id);
-    return id;
-  });
-  const e = db.prepare('SELECT mail_thread FROM entries WHERE id = ?').get(id);
-  acc.prepare('UPDATE mail_inbox SET read_at = COALESCE(read_at, ?), thread_ws = ?, thread_entry = ? WHERE id = ?')
-    .run(now(), user.workspace_id, e.mail_thread ?? id, m.id);
-  notifyMailExt(user.id, 'watch');
-  return { id };
+// Una mail nuova nel thread, a chi c'era (senza rispondere a un messaggio preciso).
+route('POST', '/api/mail/threads/:id/draft', ({ params, user }) => {
+  const t = getThread(params.id, user);
+  const last = db.prepare('SELECT * FROM mail_messages WHERE thread_id = ? ORDER BY date DESC').get(t.id);
+  return { id: tx(() => insertReply(user, t, { subject: re(t.subject), ...(last ? replyAddresses(last, true, user.id) : { contact: null, mail_cc: null }) })) };
 }, { area: 'mail' });
+
+// ---------- posta in arrivo di prima (fino alla v0.14) ----------
+// Stava in accounts.db (mail_inbox); ora ogni mail è in un thread del workspace della posta. Si sposta una volta.
+export function migrateInbox() {
+  const users = acc.prepare('SELECT DISTINCT user_id FROM mail_inbox').all().map(r => r.user_id);
+  for (const uid of users) {
+    const wsId = defaultWorkspace(uid);
+    const ws = wsId && workspaceById(wsId);
+    if (!ws) continue;
+    const rows = acc.prepare('SELECT * FROM mail_inbox WHERE user_id = ? AND archived_at IS NULL ORDER BY date').all(uid);
+    withWorkspace(ws, () => tx(() => {
+      for (const m of rows) {
+        if (db.prepare('SELECT 1 FROM mail_messages m JOIN mail_threads t ON t.id = m.thread_id WHERE t.owner_id = ? AND m.message_id = ?').get(uid, m.message_id)) continue;
+        // Lette = già viste: si mettono tra gli archiviati, come stavano nell'Archivio di prima.
+        const tid = newThread(uid, m.subject, m.date);
+        db.prepare(`INSERT INTO mail_messages (thread_id, direction, message_id, from_addr, to_addr, cc, subject, body, attachments, date, read_at, created_at)
+          VALUES (?, 'in', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(tid, m.message_id, m.from_addr, m.to_addr, m.cc, m.subject, m.body, m.attachments, m.date, m.read_at, now());
+        if (m.read_at) db.prepare('UPDATE mail_threads SET archived_at = ? WHERE id = ?').run(m.read_at, tid);
+        autoLinkItems(tid, `${m.subject} ${m.body}`);
+      }
+    }));
+    acc.prepare('DELETE FROM mail_inbox WHERE user_id = ?').run(uid);
+  }
+}
 
 // Gli indirizzi delle identità di Thunderbird (l'estensione li manda quando si collega).
 route('POST', '/api/mail/identities', async ({ user, body }) => {
@@ -227,12 +262,15 @@ route('POST', '/api/mail/sent', async ({ user, body }) => {
     const e = entryFor(o.entry_id, u, 'write');
     tx(() => {
       updateEntry(e, { done: true, awaiting: true }, u);
+      const tid = ensureEntryThread(e);
       const mid = cleanId(b.message_id);
+      const date = str(b.date, 40) || now();
       if (mid) {
-        db.prepare(`INSERT OR IGNORE INTO mail_messages (entry_id, direction, message_id, from_addr, to_addr, cc, subject, body, date, created_at)
-          VALUES (?, 'out', ?, ?, ?, ?, ?, ?, ?, ?)`).run(e.id, mid, str(b.from, 300), str(b.to, 1000) || e.contact || '',
-          str(b.cc, 1000) || e.mail_cc || '', str(b.subject, 300), mailParts(e).body, str(b.date, 40) || now(), now());
+        db.prepare(`INSERT OR IGNORE INTO mail_messages (thread_id, entry_id, direction, message_id, from_addr, to_addr, cc, subject, body, date, read_at, created_at)
+          VALUES (?, ?, 'out', ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(tid, e.id, mid, str(b.from, 300), str(b.to, 1000) || e.contact || '',
+          str(b.cc, 1000) || e.mail_cc || '', str(b.subject, 300), mailParts(e).body, date, now(), now());
       }
+      touchThread(tid, date);
       db.prepare('DELETE FROM mail_outbox WHERE id = ?').run(o.id);
       addLog(e.id, u.id, 'mandata da Thunderbird', true);
     });
@@ -246,58 +284,80 @@ route('POST', '/api/mail/sent', async ({ user, body }) => {
 route('GET', '/api/mail/watch', ({ user }) => {
   const since = new Date(Date.now() - WATCH_DAYS * 864e5).toISOString();
   return mailWorkspaces(user, 'read').flatMap(({ ws }) => withWorkspace(ws, () =>
-    db.prepare(`SELECT m.message_id FROM mail_messages m JOIN entries e ON e.id = m.entry_id
-      WHERE e.deleted_at IS NULL AND ${VIS_ANY} AND m.date > $since`).all({ uid: user.id, since }).map(r => r.message_id)));
+    db.prepare(`SELECT m.message_id FROM mail_messages m JOIN mail_threads t ON t.id = m.thread_id
+      WHERE t.owner_id = ? AND t.deleted_at IS NULL AND m.date > ?`).all(user.id, since).map(r => r.message_id)));
 }, { ws: false });
 
-// Mail arrivata. Se risponde a una conversazione si aggiunge al filo e la mail non è più in attesa; con
-// inbox: true (l'estensione passa tutta la posta in arrivo) entra anche nella posta in arrivo personale.
+// Una mail di Thunderbird (arrivata, o mandata senza passare da Organizer, o una vecchia chiesta per completare
+// un thread). Entra nel thread a cui risponde, in qualunque workspace; se non risponde a niente ne apre uno
+// nuovo nel workspace della posta (quello predefinito), ma solo con inbox: true ("tutta la posta") o import: true
+// (thread portato a mano: entra già letto, ma tra gli attivi, anche se era nel cestino). Risponde con i
+// Message-ID citati che Organizer non ha: l'estensione li cerca in Thunderbird e li manda con history: true.
 route('POST', '/api/mail/incoming', async ({ user, body }) => {
   const b = await body();
   const mid = cleanId(b.message_id) || fail(400, 'Manca il Message-ID');
-  const refs = [...new Set([b.in_reply_to, ...(Array.isArray(b.references) ? b.references : [])].map(cleanId).filter(Boolean))].slice(-50);
-  const attachments = cleanAttachments(b.attachments);
-  const matched = []; // { ws, entry }
-  for (const { ws, u } of refs.length ? mailWorkspaces(user, 'write') : []) {
-    withWorkspace(ws, () => {
-      const seen = db.prepare('SELECT entry_id FROM mail_messages WHERE message_id = ?').get(mid);
-      if (seen) return matched.push({ ws: ws.id, entry: seen.entry_id });
-      const hit = db.prepare(`SELECT m.entry_id FROM mail_messages m JOIN entries e ON e.id = m.entry_id
-        WHERE m.message_id IN (${refs.map(() => '?').join(',')}) AND e.deleted_at IS NULL
-        AND (e.created_by = ? OR e.assignee_id = ?) ORDER BY m.date DESC LIMIT 1`).get(...refs, u.id, u.id); // posta personale
-      if (!hit) return;
-      const e = db.prepare('SELECT * FROM entries WHERE id = ?').get(hit.entry_id);
-      const from = str(b.from, 300);
-      tx(() => {
-        insertId(db.prepare(`INSERT INTO mail_messages (entry_id, direction, message_id, from_addr, to_addr, cc, subject, body, attachments, date, created_at)
-          VALUES (?, 'in', ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(e.id, mid, from, str(b.to, 1000), str(b.cc, 1000), str(b.subject, 300),
-          str(b.body, 100000), attachments, str(b.date, 40) || now(), now()));
-        const root = e.mail_thread ?? e.id;
-        db.prepare('UPDATE entries SET awaiting_reply = 0, updated_at = ? WHERE (id = ? OR mail_thread = ?) AND awaiting_reply = 1').run(now(), root, root);
-        addLog(e.id, u.id, `risposta da ${from || 'sconosciuto'}`, true);
-      });
-      matched.push({ ws: ws.id, entry: e.id });
+  const refs = [...new Set([...(Array.isArray(b.references) ? b.references : []), b.in_reply_to].map(cleanId).filter(Boolean))].slice(-50);
+  const direction = b.direction === 'out' ? 'out' : 'in';
+  const history = !!b.history;
+  const imported = !!b.import; // scelta a mano in Thunderbird ("Porta il thread in Organizer")
+  const date = str(b.date, 40) || now();
+  const spaces = mailWorkspaces(user, 'write');
+  const ownThread = 'SELECT 1 FROM mail_threads t WHERE t.id = m.thread_id AND t.owner_id = ? AND t.deleted_at IS NULL';
+  // Un messaggio di un thread nel cestino è già visto: non lo riapre e non ne crea un altro.
+  for (const { ws } of imported ? [] : spaces) {
+    const trashed = withWorkspace(ws, () => db.prepare(`SELECT 1 FROM mail_messages m JOIN mail_threads t ON t.id = m.thread_id
+      WHERE m.message_id = ? AND t.owner_id = ? AND t.deleted_at IS NOT NULL`).get(mid, user.id));
+    if (trashed) return { matched: true, thread: null, missing: [] };
+  }
+  // Il thread: quello che ha già questo messaggio, o quello di un messaggio citato (il più recente).
+  let hit = null;
+  for (const { ws } of spaces) {
+    hit ||= withWorkspace(ws, () => {
+      const seen = db.prepare(`SELECT m.thread_id FROM mail_messages m WHERE m.message_id = ? AND EXISTS (${ownThread})`).get(mid, user.id);
+      if (seen) return { ws, thread: seen.thread_id, seen: true };
+      const r = refs.length && db.prepare(`SELECT m.thread_id FROM mail_messages m WHERE m.message_id IN (${refs.map(() => '?').join(',')})
+        AND EXISTS (${ownThread}) ORDER BY m.date DESC LIMIT 1`).get(...refs, user.id);
+      return r ? { ws, thread: r.thread_id } : null;
     });
   }
-  const thread = matched[0] || null;
-  // Notifica per le mail appena arrivate (non per quelle recuperate dei giorni passati al primo collegamento).
-  const fresh = Date.now() - Date.parse(str(b.date, 40) || now()) < 15 * 60e3;
-  const fromName = (String(b.from || '').replace(/<[^>]*>/, '').replace(/"/g, '').trim() || emailOf(b.from) || 'qualcuno');
-  if (b.inbox) {
-    const r = acc.prepare(`INSERT OR IGNORE INTO mail_inbox (user_id, message_id, from_addr, to_addr, cc, subject, body, attachments, date, thread_ws, thread_entry, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(user.id, mid, str(b.from, 300), str(b.to, 1000), str(b.cc, 1000), str(b.subject, 300),
-      str(b.body, 100000), attachments, str(b.date, 40) || now(), thread?.ws ?? null, thread?.entry ?? null, now());
-    if (r.changes) bump(user.id);
-    if (r.changes && fresh) {
-      notify([user.id], { ws: thread?.ws ?? null, kind: 'mail', title: `${thread ? 'Risposta' : 'Mail'} da ${fromName}`, body: str(b.subject, 300) || '(senza oggetto)',
-        url: thread ? `#/v/${thread.entry}` : '#/mail', tag: `mail-${mid}` });
+  // Una mail vecchia chiesta dal server (missing) arriva con il thread che l'ha chiesta.
+  if (!hit && b.thread) {
+    for (const { ws } of spaces) {
+      hit ||= withWorkspace(ws, () => (db.prepare('SELECT 1 FROM mail_threads WHERE id = ? AND owner_id = ? AND deleted_at IS NULL').get(+b.thread, user.id) ? { ws, thread: +b.thread } : null));
     }
-  } else if (thread && fresh) {
-    notify([user.id], { ws: thread.ws, kind: 'mail', title: `Risposta da ${fromName}`, body: str(b.subject, 300) || '(senza oggetto)', url: `#/v/${thread.entry}`, tag: `mail-${mid}` });
   }
-  for (const { ws } of matched) bump(user.id, ws);
-  if (matched.length) notifyMailExt(user.id, 'watch');
-  return { matched: matched.length > 0 };
+  if (!hit && !b.inbox && !history && !imported) return { matched: false, missing: [] };
+  if (!hit) {
+    const ws = spaces.find(x => x.ws.id === defaultWorkspace(user.id))?.ws || spaces[0]?.ws || fail(409, 'Nessun workspace in cui mettere la posta');
+    hit = { ws, thread: withWorkspace(ws, () => newThread(user.id, b.subject, date)) };
+  }
+  const fromName = (String(b.from || '').replace(/<[^>]*>/, '').replace(/"/g, '').trim() || emailOf(b.from) || 'qualcuno');
+  const missing = withWorkspace(hit.ws, () => {
+    if (!hit.seen) {
+      tx(() => {
+        db.prepare(`INSERT OR IGNORE INTO mail_messages (thread_id, direction, message_id, from_addr, to_addr, cc, subject, body, attachments, date, read_at, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(hit.thread, direction, mid, str(b.from, 300), str(b.to, 1000), str(b.cc, 1000), str(b.subject, 300),
+          str(b.body, 100000), cleanAttachments(b.attachments), date, direction === 'out' || history || imported ? now() : null, now());
+        // Una risposta nuova (o un thread portato a mano) torna tra gli attivi e chiude le attese; la storia no.
+        touchThread(hit.thread, date, { reactivate: !history || imported });
+        if (direction === 'in' && !history) {
+          db.prepare('UPDATE entries SET awaiting_reply = 0, updated_at = ? WHERE thread_id = ? AND awaiting_reply = 1').run(now(), hit.thread);
+        }
+        autoLinkItems(hit.thread, `${b.subject || ''} ${b.body || ''}`);
+      });
+    }
+    if (hit.seen && imported) touchThread(hit.thread, date);
+    const have = new Set(db.prepare('SELECT message_id FROM mail_messages WHERE thread_id = ?').all(hit.thread).map(r => r.message_id));
+    return refs.filter(r => !have.has(r));
+  });
+  // Notifica per le mail appena arrivate (non per la storia né per quelle recuperate al primo collegamento).
+  const fresh = Date.now() - Date.parse(date) < 15 * 60e3;
+  if (!hit.seen && direction === 'in' && !history && !imported && fresh) {
+    notify([user.id], { ws: hit.ws.id, kind: 'mail', title: `Mail da ${fromName}`, body: str(b.subject, 300) || '(senza oggetto)', url: `#/t/${hit.thread}`, tag: `mail-${hit.thread}` });
+  }
+  bump(user.id, hit.ws.id);
+  notifyMailExt(user.id, 'watch');
+  return { matched: true, thread: hit.thread, missing };
 }, { ws: false, quiet: true });
 
 // ---------- allegati ricevuti → documenti del magazzino ----------
@@ -310,12 +370,8 @@ let fetchSeq = 0;
 route('POST', '/api/mail/attachments/save', async ({ user, body }) => {
   const b = await body();
   const it = db.prepare('SELECT id, code FROM items WHERE id = ? AND deleted_at IS NULL').get(+b.item_id) || fail(404, 'Articolo non trovato');
-  let src;
-  if (b.source === 'inbox') src = inboxRow(b.id, user);
-  else {
-    src = db.prepare('SELECT * FROM mail_messages WHERE id = ?').get(+b.id) || fail(404, 'Messaggio non trovato');
-    entryFor(src.entry_id, user, 'read');
-  }
+  const src = db.prepare('SELECT * FROM mail_messages WHERE id = ?').get(+b.id) || fail(404, 'Messaggio non trovato');
+  getThread(src.thread_id, user);
   const att = JSON.parse(src.attachments || '[]')[+b.n];
   if (!att?.part) fail(400, 'Questo allegato non si può prendere: la mail è arrivata con una versione vecchia dell\'estensione');
   if (!mailExtOn(user.id)) fail(409, 'Thunderbird non è collegato: il file è lì, aprilo e riprova');

@@ -195,12 +195,14 @@ Una mail è una voce con `kind: "mail"`. Il server non spedisce niente: la mail 
 | `GET /api/entries/:id/eml` | la mail come `.eml` (destinatari, oggetto, testo, allegati) |
 | `POST /api/entries/:id/send` | `{token}` per l'helper Thunderbird: `organizer-mail://open?server=…&token=…` (15 minuti) |
 | `POST /api/entries/:id/compose` | apre la mail nell'estensione di Thunderbird collegata (409 se non ce n'è una) |
-| `GET /api/entries/:id/thread` | i messaggi della conversazione: `direction` (`out`, `in`), `message_id`, `from_addr`, `to_addr`, `subject`, `body`, `attachments`, `date` |
-| `POST /api/mail/messages/:id/reply` | `{all}` (rispondi a tutti) → `{id}` della nuova mail di risposta a quel messaggio |
-| `PATCH /api/mail/inbox/:id` | `{read, archived}` su una mail in arrivo (personale; l'elenco è `inbox` in `/api/sync`) |
-| `GET /api/mail/inbox/:id` | la mail in arrivo con il testo intero |
-| `POST /api/mail/inbox/:id/reply` | `{all}` → `{id}` della mail di risposta, nel workspace attivo |
-| `POST /api/mail/attachments/save` | `{source: "inbox" o "message", id, n, item_id, kind}`: chiede all'estensione di caricare l'allegato n come documento dell'articolo |
+| `GET /api/mail/threads/:id` | un thread (personale) con i messaggi interi (`direction` `out`/`in`, `message_id`, `from_addr`, `to_addr`, `cc`, `subject`, `body`, `attachments`, `date`, `read_at`) e `entries`, le mail scritte in Organizer che ne fanno parte; l'elenco (`mailThreads`, `mailMsgs` senza il testo intero, `threadLinks`) è in `/api/sync` |
+| `PATCH /api/mail/threads/:id` | `{read, archived, subject}`: `read` segna letti (o da leggere) i messaggi ricevuti; `archived: true` archivia e segna letto, `false` lo rimette tra gli attivi |
+| `DELETE /api/mail/threads/:id` | nel cestino, con le mail di Organizer del thread (tipo `thread` in `/api/trash`: `POST /api/trash/thread/:id/restore`, `DELETE /api/trash/thread/:id`) |
+| `POST /api/mail/threads/:id/links` | `{kind, id}` con `kind` tra `articolo`, `doc`, `progetto`, `contatto`, `voce`: collega il thread |
+| `DELETE /api/mail/threads/:id/links/:kind/:id` | toglie un collegamento scelto a mano |
+| `POST /api/mail/threads/:id/draft` | `{id}` di una nuova mail nel thread (a chi ha scritto per ultimo) |
+| `POST /api/mail/messages/:id/reply` | `{all}` (rispondi a tutti) → `{id}` della nuova mail di risposta a quel messaggio, nel suo thread |
+| `POST /api/mail/attachments/save` | `{id, n, item_id, kind}`: chiede all'estensione di caricare l'allegato n del messaggio `id` come documento dell'articolo |
 
 Le mail sono personali: le voci `kind: "mail"` le vedono solo chi le ha create e l'assegnatario, anche per gli admin.
 
@@ -212,9 +214,9 @@ L'estensione di Thunderbird (cartella `thunderbird/`) usa queste, con un token; 
 | `GET /api/mail/outbox` | mail da aprire: `ws`, `id`, `to`, `cc`, `subject`, `body`, `reply_to` (Message-ID), `files` |
 | `POST /api/mail/outbox/:ws/:id/claim` | la prende (409 se l'ha già presa un altro Thunderbird) |
 | `GET /api/mail/outbox/:ws/:id/file/:n` | allegato n |
-| `POST /api/mail/sent` | `{ws, outbox_id, message_id, from, to, cc, subject, date}`: mandata, in attesa di risposta |
-| `GET /api/mail/watch` | Message-ID delle conversazioni seguite |
-| `POST /api/mail/incoming` | `{message_id, in_reply_to, references, from, to, cc, subject, date, body, attachments, inbox}` → `{matched}`; con `inbox: true` entra anche nella posta in arrivo |
+| `POST /api/mail/sent` | `{ws, outbox_id, message_id, from, to, cc, subject, date}`: mandata, in attesa di risposta (il messaggio entra nel thread) |
+| `GET /api/mail/watch` | Message-ID dei messaggi nei thread della persona |
+| `POST /api/mail/incoming` | `{message_id, in_reply_to, references, from, to, cc, subject, date, body, attachments, direction, inbox, history, import, thread}` → `{matched, thread, missing}`. Entra nel thread a cui risponde; se non ce n'è uno, con `inbox: true` ne apre uno nuovo. `direction: "out"` per una mail mandata da Thunderbird. `missing`: Message-ID dei messaggi precedenti che il thread non ha; l'estensione li ripassa con `history: true` e `thread` (entrano già letti, senza riattivare il thread). `import: true` per un thread portato a mano: entra già letto ma tra gli attivi, anche senza `inbox` e anche se il messaggio era in un thread nel cestino |
 | `POST /api/mail/identities` | `{addresses}`: i propri indirizzi, esclusi da "rispondi a tutti" |
 | `GET /api/mail/fetches` | allegati da caricare come documenti: `id`, `ws`, `item_id`, `kind`, `message_id`, `part`, `name`; si caricano con `POST /api/items/:id/docs` e l'header `X-Workspace` |
 | `POST /api/mail/fetches/:id/claim`, `/done` | presa in carico e fine (anche se non riuscita) |

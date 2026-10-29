@@ -1,4 +1,5 @@
-// Visualizzatore di documenti con note: PDF (PDF.js), immagini, testo e modelli 3D (model3d.js), più una barra
+// Visualizzatore di documenti con note: PDF (PDF.js), immagini, disegni DXF (cad.js, come immagini), testo e
+// modelli 3D (model3d.js), più una barra
 // laterale di note. Le note con pagina e coordinate (0..1) sono segnaposto su un punto del file (nei modelli 3D
 // anche z, page = 1); le altre sono note generali.
 //
@@ -26,18 +27,20 @@ function loadPdfjs() {
 const isPdfLink = d => d.url && /\.pdf$/i.test((() => { try { return new URL(d.url).pathname; } catch { return ''; } })());
 
 const MODEL_EXT = /\.(stl|3mf|stp|step)$/i;
+const CAD_MAX = 40 * 1024 * 1024;
 
 function kindOf(d) {
   if (isPdfLink(d)) return 'pdf';
   if (d.url) return 'link';
   if (MODEL_EXT.test(d.filename || '')) return 'model';
+  if (/\.dxf$/i.test(d.filename || '')) return 'cad';
   if (d.mime === 'application/pdf' || /\.pdf$/i.test(d.filename || '')) return 'pdf';
   if (/^image\/(png|jpeg|gif|webp)$/.test(d.mime || '')) return 'image';
   if (/^text\//.test(d.mime || '') || /\.(txt|log|md|csv|ini|cfg|json|ya?ml|h|c|cpp|py|sh)$/i.test(d.filename || '')) return 'text';
   return 'none';
 }
 
-const pinnable = v => v.kind === 'pdf' || v.kind === 'image' || v.kind === 'model';
+const pinnable = v => v.kind === 'pdf' || v.kind === 'image' || v.kind === 'cad' || v.kind === 'model';
 
 // ---------- anteprima piccola (scheda al passaggio del mouse nella pagina Documenti) ----------
 // PDF: la prima pagina disegnata una volta e tenuta in memoria; immagini: il file; testo: le prime righe.
@@ -46,6 +49,10 @@ export function docThumb(d, width = 300) {
   const kind = kindOf(d);
   const key = `${d.id}:${d.sha256 || d.url}`;
   if (kind === 'image') return Promise.resolve(h('img.peek-img', { src: docFileUrl(d, { inline: true }), alt: '' }));
+  if (kind === 'cad' && (d.size ?? 0) < CAD_MAX) {
+    if (!thumbs.has(key)) thumbs.set(key, cadImage(d).then(x => x.url).catch(() => null));
+    return thumbs.get(key).then(src => src && h('img.peek-img.cad', { src, alt: '' }));
+  }
   if (kind === 'pdf' && !d.url && !thumbs.has(key)) {
     thumbs.set(key, (async () => {
       const pdfjs = await loadPdfjs();
@@ -104,6 +111,7 @@ function getViewer(d) {
   viewers.set(d.id, v);
   if (v.kind === 'pdf') openPdf(v, d);
   else if (v.kind === 'image') openImage(v, d);
+  else if (v.kind === 'cad') openCad(v, d);
   else if (v.kind === 'text') openText(v, d);
   else if (v.kind === 'model') openModel(v, d);
   else v.status = 'ready';
@@ -117,6 +125,7 @@ function destroyViewer(v) {
   v.resize.disconnect();
   v.io?.disconnect();
   v.stage?.dispose();
+  if (v.blobUrl) URL.revokeObjectURL(v.blobUrl);
   closePdf(v);
   viewers.delete(v.id);
 }
@@ -194,6 +203,34 @@ function openImage(v, d) {
     ready(v);
   };
   img.onerror = () => fail(v, 'Impossibile caricare l\'immagine');
+}
+
+// DXF: il disegno diventa un'immagine SVG (cad.js) e da lì in poi è un'immagine come le altre.
+async function cadImage(d) {
+  const [cad, text] = await Promise.all([
+    import('./cad.js'),
+    fetch(docFileUrl(d), { credentials: 'same-origin' }).then(r => {
+      if (!r.ok) throw new Error(`errore ${r.status}`);
+      return r.text();
+    }),
+  ]);
+  return cad.dxfImage(text);
+}
+
+async function openCad(v, d) {
+  if (d.size > CAD_MAX) return fail(v, `Disegno troppo grande per l'anteprima (${fmtSize(d.size)}): scaricalo.`);
+  v.pagesEl.replaceChildren(h('div.empty', 'Disegno il DXF…'));
+  try {
+    const { url, width, height } = await cadImage(d);
+    if (viewers.get(v.id) !== v) return URL.revokeObjectURL(url);
+    v.blobUrl = url;
+    const img = h('img.dv-img.dv-cad', { src: url, alt: d.filename || '', draggable: 'false' });
+    v.pagesEl.replaceChildren(newPage(v, 1, width, height, { img }));
+    ready(v);
+  } catch (e) {
+    console.warn(e);
+    fail(v, `Impossibile leggere il DXF: ${e.message}`);
+  }
 }
 
 async function openText(v, d) {
@@ -381,7 +418,7 @@ function renderPage(v, p) {
 
 function setZoom(v, z) {
   const ratio = v.scroller.scrollTop / Math.max(1, v.scroller.scrollHeight);
-  v.zoom = Math.min(4, Math.max(0.4, z));
+  v.zoom = Math.min(v.kind === 'cad' ? 12 : 4, Math.max(0.4, z)); // nei disegni si va nei dettagli
   layout(v);
   v.scroller.scrollTop = ratio * v.scroller.scrollHeight;
 }

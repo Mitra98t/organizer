@@ -40,7 +40,8 @@ export function viewTrash() {
     h('div.sec-b', rows));
 
   T.docNotes ||= [];
-  const total = T.entries.length + T.projects.length + T.items.length + T.docs.length + T.contacts.length + T.docNotes.length;
+  T.threads ||= [];
+  const total = T.threads.length + T.entries.length + T.projects.length + T.items.length + T.docs.length + T.contacts.length + T.docNotes.length;
 
   return h('div.view',
     h('p.muted.trash-info', `Gli elementi eliminati restano qui ${T.days} giorni, poi vengono cancellati definitivamente.`),
@@ -48,6 +49,8 @@ export function viewTrash() {
     block('Voci', T.entries.map(e => row('entry', e,
       [h('span.kpill', { class: `k-${e.kind}` }, KINDS[e.kind]), richText(e.title)],
       e.parent_id && h('span', 'sotto-attività')))),
+    block('Thread di mail', T.threads.map(t => row('thread', t, t.subject,
+      h('span', t.messages === 1 ? '1 messaggio' : `${t.messages} messaggi`)))),
     block('Progetti', T.projects.map(p => row('project', p, [p.name, ' ', h('span.muted.mono', `@${p.tag}`)]))),
     block('Magazzino', T.items.map(i => row('item', i, [h('span.code-t', i.code), ' ', i.name]))),
     block('Documenti', T.docs.map(d => row('doc', d, d.label || d.filename || d.url, h('span.mono', d.item_code)))),

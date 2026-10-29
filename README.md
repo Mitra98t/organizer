@@ -94,6 +94,7 @@ Un progetto può stare dentro un altro (campo "Dentro" nella sua pagina, o `@pad
 Cliccando un documento nella scheda di un articolo si apre il visualizzatore con le note a lato. Il documento usa tutta la larghezza della pagina; con **note** nascondi la barra delle note (la preferenza resta), con **espandi** sparisce anche il resto dell'app e il documento occupa tutta la finestra (Esc per tornare).
 
 - **PDF** (con PDF.js, incluso nel progetto in `public/vendor/pdfjs`, nessuna connessione esterna) e **immagini**: clicchi un punto e lasci una nota lì; il segnaposto numerato resta al suo posto a ogni zoom e si trascina per spostarlo, anche su un’altra pagina. Cliccando una nota il documento scorre al punto, e viceversa.
+- **Disegni DXF** (con dxf-parser, incluso nel progetto): il disegno diventa un'immagine su carta bianca (linee, polilinee, cerchi, archi, ellissi, spline, testi, blocchi, quote; i layer spenti no) e funziona come un'immagine: zoom fino a 12×, note nei punti. I DWG no: il formato è chiuso, si esportano in DXF dal programma CAD.
 - **Modelli 3D** (STL, 3MF, STEP, con three.js e OpenCascade inclusi nel progetto): il modello si gira, si sposta e si ingrandisce; clicchi un punto della superficie e lasci una nota lì. I segnaposto seguono la vista e si trascinano sul modello; cliccando una nota la vista si gira verso il punto. Gli STEP si convertono nel browser: un modello grande può richiedere qualche secondo.
 - **File di testo**: anteprima del contenuto.
 - **Cerca nel documento**: ⌘F (Ctrl+F su Linux) apre la ricerca nel PDF o nel file di testo aperto; Invio e Maiusc+Invio passano da un risultato all'altro, Esc chiude. Nella revisione affiancata cerca nel documento toccato per ultimo. Funziona sui PDF con testo vero (non sulle scansioni).
@@ -123,12 +124,14 @@ L'estensione **Organizer per Thunderbird** collega l'app al tuo Thunderbird (car
 Poi, con Thunderbird aperto:
 - **Manda** apre la mail in Thunderbird con destinatari, oggetto, testo e allegati, anche se premi dal telefono (si apre sul computer). Le risposte scritte in Organizer si aprono come risposta al messaggio originale.
 - Quando la invii diventa **mandata** e **in attesa di risposta** da sola.
-- Quando arriva una risposta, compare nella **conversazione** della mail (e la mail esce da "in attesa"); da lì **Rispondi** o **Rispondi a tutti** crea la mail di risposta in Organizer.
-- **Da leggere** (pagina Mail): le mail ricevute nelle cartelle Posta in arrivo, con Rispondi e Rispondi a tutti. Le vede solo chi le riceve. Lette, passano in **Archivio**. Rispondendo, la mail ricevuta diventa il primo messaggio della conversazione.
+- Le mail ricevute e mandate si raccolgono in **thread** (pagina Mail, schede su più colonne): **Attivi** e **Archiviati**, con i filtri da leggere, da mandare, in attesa di risposta. Aprire un thread lo legge e basta; il tasto a sinistra della scheda lo archivia, e torna attivo da solo quando arriva o parte un messaggio. Dal menu ⋯ della scheda (o accanto al titolo) si rinomina o si elimina: va nel cestino con le sue mail scritte in Organizer. Li vede solo chi li riceve.
+- Nel thread **Rispondi** o **Rispondi a tutti** crea la mail di risposta lì sotto; quando arriva una risposta la mail esce da "in attesa". Se una risposta arriva su una conversazione di cui Organizer non ha i messaggi precedenti, l'estensione glieli passa (fino a 30).
+- **Porta il thread in Organizer** (tasto destro su una mail in Thunderbird, in qualunque cartella): arriva tutta la conversazione, i messaggi prima e le risposte dopo (cercate per oggetto, fino a 200), in un thread tra gli attivi. Utile per le conversazioni di prima dell'estensione, finite in Archivio.
+- **Collegamenti**: a destra nel thread lo colleghi ad articoli, progetti, documenti, contatti e voci; i codici di magazzino scritti nelle mail si collegano da soli. Gli elementi collegati mostrano i loro thread in "Thread di mail".
 - In Contatti, **Da salvare** elenca gli indirizzi delle mail che non sono in rubrica.
 - **Allegati nel magazzino**: su un allegato di una mail ricevuta, "→ magazzino" con codice dell'articolo e tipo: Thunderbird carica il file e compare tra i documenti dell'articolo.
 
-Thunderbird resta l'unico a conoscere le password della posta. Con "Passa a Organizer tutta la posta in arrivo" (opzioni dell'estensione, attivo di base) le mail ricevute vengono copiate nel database di Organizer (`accounts.db`, solo per te; dopo 180 giorni si cancellano). Spento, l'estensione manda a Organizer solo le risposte alle tue conversazioni, riconosciute confrontando gli identificativi dei messaggi (Message-ID). Con più computer si può installarla su ognuno: la mail si apre su uno solo.
+Thunderbird resta l'unico a conoscere le password della posta. Con "Passa a Organizer tutta la posta in arrivo" (opzioni dell'estensione, attivo di base) le mail ricevute vengono copiate nel database di Organizer (nel tuo workspace predefinito, visibili solo a te). Spento, l'estensione manda a Organizer solo le risposte alle tue conversazioni, riconosciute confrontando gli identificativi dei messaggi (Message-ID). Con più computer si può installarla su ognuno: la mail si apre su uno solo.
 
 ### Senza estensione
 
@@ -148,7 +151,7 @@ Rubrica condivisa con nome, email, telefono, azienda, ruolo, **fascia oraria** (
 
 ## Cestino
 
-Eliminare sposta nel cestino: voci (con le loro sotto-attività), progetti, articoli, documenti e contatti. Dopo ogni eliminazione compare "Annulla". Dal Cestino si ripristina o si elimina definitivamente; dopo 30 giorni (variabile `TRASH_DAYS`) gli elementi spariscono da soli, file compresi. Scrivere `@tag` o `#CODICE` di qualcosa che è nel cestino lo ripristina.
+Eliminare sposta nel cestino: voci (con le loro sotto-attività), progetti, articoli, documenti, contatti e thread di mail (con le loro mail scritte in Organizer). Dopo ogni eliminazione compare "Annulla". Dal Cestino si ripristina o si elimina definitivamente; dopo 30 giorni (variabile `TRASH_DAYS`) gli elementi spariscono da soli, file compresi. Scrivere `@tag` o `#CODICE` di qualcosa che è nel cestino lo ripristina.
 
 ## Magazzino
 
@@ -191,6 +194,10 @@ Senza rete l'app mostra gli ultimi dati sincronizzati in sola lettura. Si posson
 ## Feedback
 
 "Feedback" accanto a Novità (su telefono in Impostazioni → App e aiuto) manda un errore o un'idea con testo e screenshot. Li rivede chi gestisce l'istanza (gli admin del primo workspace) nella pagina Feedback; dal terminale `make feedback` li esporta in `feedback/` (una cartella per feedback con `feedback.md` e le immagini; `ALL=1` anche i risolti). Le immagini stanno in `/data/feedback` e finiscono nei backup.
+
+## Giro di Organizer
+
+Alla prima entrata l'app chiede se fare il giro (si rifà da Impostazioni → App e aiuto). Il giro apre un **workspace di prova** solo tuo, con contenuti finti (progetti, magazzino, un PDF e un modello 3D con le note, mail, chat; Anna e Luca esistono solo lì e non ricevono niente), e mostra le parti dell'app una alla volta sull'app vera: ci si può scrivere e provare. Alla fine si elimina con un clic e si torna al proprio workspace, oppure si tiene (nel menu dei workspace è segnato "di prova") e si elimina più tardi dalla stessa sezione delle Impostazioni.
 
 ## Terminale (CLI) e API
 
@@ -274,6 +281,7 @@ thunderbird/  estensione Organizer per Thunderbird (si scarica da Impostazioni)
 public/vendor/pdfjs  PDF.js 6.4.299 (Apache-2.0), solo i file necessari al visualizzatore
 public/vendor/three  three.js 0.186.1 (MIT) e i suoi addon per STL, 3MF e la rotazione della vista
 public/vendor/occt   occt-import-js 0.0.23 (LGPL-2.1, OpenCascade) per leggere gli STEP, in un worker
+public/vendor/dxf-parser  dxf-parser 1.1.2 (MIT) per leggere i DXF
 ```
 
 Dati: `/data/organizer.db` (SQLite, WAL) e `/data/uploads/` nel volume `organizer-data`.

@@ -9,7 +9,7 @@ export const rev = () => REV;
 export function bump(by, wsId = null) {
   REV++;
   const msg = `event: change\ndata: ${JSON.stringify({ rev: REV, by })}\n\n`;
-  for (const c of clients) if (wsId == null || c.wsId === wsId) c.res.write(msg);
+  for (const c of clients) if ((wsId == null || c.wsId === wsId) && !c.res.writableEnded) c.res.write(msg);
 }
 
 export function openStream(req, res, user) {
@@ -22,7 +22,7 @@ export function openStream(req, res, user) {
   res.write(`retry: 3000\nevent: change\ndata: ${JSON.stringify({ rev: REV })}\n\n`);
   const client = { res, userId: user.id, wsId: user.workspace_id };
   clients.add(client);
-  const heartbeat = setInterval(() => res.write(': ping\n\n'), 25000);
+  const heartbeat = setInterval(() => { if (!res.writableEnded) res.write(': ping\n\n'); }, 25000);
   req.on('close', () => {
     clearInterval(heartbeat);
     clients.delete(client);
@@ -31,7 +31,13 @@ export function openStream(req, res, user) {
 
 // Chiude le connessioni di una persona (in un workspace o in tutti): il client si riconnette e rilegge.
 export function dropUser(userId, wsId = null) {
-  for (const c of clients) if (c.userId === userId && (wsId == null || c.wsId === wsId)) c.res.end();
+  // Fuori subito dall'elenco: chiusa, una connessione non si può più scrivere ('close' arriva dopo).
+  for (const c of clients) {
+    if (c.userId === userId && (wsId == null || c.wsId === wsId)) {
+      clients.delete(c);
+      c.res.end();
+    }
+  }
 }
 
 // Estensione di Thunderbird (server/thunderbird.js): ogni utente può averne più di una collegata (più computer).
@@ -52,7 +58,7 @@ export function openMailExtStream(req, res, user) {
   if (!set) mailExt.set(user.id, (set = new Set()));
   set.add(res);
   if (set.size === 1) bump(user.id);
-  const heartbeat = setInterval(() => res.write(': ping\n\n'), 25000);
+  const heartbeat = setInterval(() => { if (!res.writableEnded) res.write(': ping\n\n'); }, 25000);
   req.on('close', () => {
     clearInterval(heartbeat);
     set.delete(res);
@@ -62,5 +68,5 @@ export function openMailExtStream(req, res, user) {
 
 // event: 'outbox' (c'è una mail da aprire) o 'watch' (cambiate le conversazioni da seguire).
 export function notifyMailExt(userId, event) {
-  for (const res of mailExt.get(userId) || []) res.write(`event: ${event}\ndata: {}\n\n`);
+  for (const res of mailExt.get(userId) || []) if (!res.writableEnded) res.write(`event: ${event}\ndata: {}\n\n`);
 }

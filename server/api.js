@@ -9,11 +9,12 @@ import { hashPassword, verifyPassword, sessionCookie, validUsername, validPasswo
 import {
   acc, atx, userCount, getAccount, workspaceById, workspacesOf, membersOf, roleIn, adminCount,
   addMember, createWorkspace, removeMember, syncMirror, createSession, destroySession, defaultWorkspace, setSessionWorkspace,
-  revokeApiTokens, permsIn, setPerms, inboxOf, mailAddressesOf, openFeedback,
+  revokeApiTokens, permsIn, setPerms, mailAddressesOf, openFeedback, tourInfo,
 } from './accounts.js';
 import { HttpError, fail, now, bool, str, sendJson, clientIp } from './util.js';
 import { rev, openStream, dropUser, mailExtOn } from './events.js';
 import { chatSync, readKey } from './chatdata.js';
+import { threadsSync, ensureEntryThread } from './maildata.js';
 import { notify, notificationsOf } from './notify.js';
 import { allows, assertCan, entryArea, readableKinds } from './perms.js';
 import { currentWorkspace } from './db.js';
@@ -48,6 +49,11 @@ export function route(method, pattern, handler, { auth = 'user', ws = auth !== '
 // sopra. Le versioni *_ANY includono anche ciò che sta nel cestino (deleted_at valorizzato).
 const sharedWith = (kind, a) => `(${a}.created_by = $uid OR ${a}.shared_all = 1
   OR EXISTS (SELECT 1 FROM shares s WHERE s.kind = '${kind}' AND s.obj_id = ${a}.id AND s.user_id = $uid))`;
+// Voci da elencare da sole nel cestino: non le sotto-attività eliminate con la madre, né le mail eliminate con
+// il loro thread (tornano con loro). Anche per il conteggio in /api/sync.
+export const TRASH_ALONE = `(e.parent_id IS NULL OR NOT EXISTS (SELECT 1 FROM entries x WHERE x.id = e.parent_id AND x.deleted_at = e.deleted_at))
+  AND NOT EXISTS (SELECT 1 FROM mail_threads t WHERE t.id = e.thread_id AND t.deleted_at = e.deleted_at)`;
+
 export const VIS_ANY = `(${sharedWith('entry', 'e')} OR e.assignee_id = $uid
   OR (e.parent_id IS NOT NULL AND EXISTS (SELECT 1 FROM entries pe WHERE pe.id = e.parent_id AND (${sharedWith('entry', 'pe')} OR pe.assignee_id = $uid))))`;
 export const PVIS_ANY = sharedWith('project', 'p');
@@ -428,18 +434,18 @@ route('GET', '/api/sync', ({ req, res, user }) => {
       JOIN entries e ON e.id = a.entry_id WHERE ${where} ORDER BY a.id`).all(p),
     // Mail con Thunderbird: se l'estensione è collegata e i messaggi delle conversazioni (senza il testo).
     mailExt: mailExtOn(uid),
-    inbox: can('mail') ? inboxOf(uid) : [], // posta in arrivo personale (solo di chi è collegato)
     myAddresses: mailAddressesOf(uid),
     feedbackOpen: openFeedback(uid), // null = non gestisce i feedback
+    ...tourInfo(uid), // onboarded (invito al giro già visto), tourWs (workspace di prova)
     ...notificationsOf(uid), // notifiche (di tutti i workspace), da leggere, dispositivi con le push
-    mailMsgs: db.prepare(`SELECT m.id, m.entry_id, m.direction, m.from_addr, m.date FROM mail_messages m
-      JOIN entries e ON e.id = m.entry_id WHERE ${where} ORDER BY m.date`).all(p),
+    // Mail a thread (personali): i thread, i loro messaggi senza il testo intero, i collegamenti.
+    ...(can('mail') ? threadsSync(uid) : { mailThreads: [], mailMsgs: [], threadLinks: [] }),
     // Chat: i canali che si leggono (tutti, per chi li gestisce), gli ultimi messaggi di ognuno e i non letti.
     ...(can('chat') ? chatSync(user) : { chatChannels: [], chat: [], chatUnread: 0, canManageChannels: false }),
     // Nel cestino contano solo le aree che si possono leggere.
     trashCount: [
-      `SELECT COUNT(*) AS n FROM entries e WHERE e.deleted_at IS NOT NULL AND ${VIS_ANY} AND e.kind IN (${kinds})
-        AND (e.parent_id IS NULL OR NOT EXISTS (SELECT 1 FROM entries x WHERE x.id = e.parent_id AND x.deleted_at = e.deleted_at))`,
+      `SELECT COUNT(*) AS n FROM entries e WHERE e.deleted_at IS NOT NULL AND ${VIS_ANY} AND e.kind IN (${kinds}) AND ${TRASH_ALONE}`,
+      can('mail') && 'SELECT COUNT(*) AS n FROM mail_threads WHERE owner_id = $uid AND deleted_at IS NOT NULL',
       can('progetti') && `SELECT COUNT(*) AS n FROM projects p WHERE p.deleted_at IS NOT NULL AND ${PVIS_ANY}`,
       can('magazzino') && 'SELECT COUNT(*) AS n FROM items WHERE deleted_at IS NOT NULL',
       can('documenti') && `SELECT COUNT(*) AS n FROM documents d WHERE d.deleted_at IS NOT NULL
@@ -515,6 +521,7 @@ export function createEntry(b, user) {
   addShares('entry', id, sh.ids.filter(x => x !== user.id), p.shareAll || bool(b.shared_all));
   notifyEntry(user, { id, kind, title }, sh.ids, assigneeId);
   for (const pid of projectIds.slice(1)) addEntryProject(id, pid);
+  if (kind === 'mail') ensureEntryThread({ id, kind, title, created_by: user.id }); // ogni mail sta in un thread
   syncEntryItems(id, user);
   return id;
 }
@@ -588,6 +595,7 @@ export function updateEntry(e, b, user) {
   setFields('entries', e.id, f);
 
   if (f.project_id !== undefined) db.prepare('UPDATE entries SET project_id = ? WHERE parent_id = ?').run(f.project_id, e.id);
+  if (f.kind === 'mail') ensureEntryThread({ ...e, ...f });
   // Assegnata a qualcun altro (con ++persona o dal menu Assegnata): glielo si dice.
   if (f.assignee_id && f.assignee_id !== e.assignee_id) notifyEntry(user, { ...e, ...f }, [], f.assignee_id);
   if (e.due && f.due !== undefined && f.due !== e.due) addLog(e.id, user.id, `scadenza ${fmtDate(e.due)} → ${fmtDate(f.due)}`, true);

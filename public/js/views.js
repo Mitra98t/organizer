@@ -10,10 +10,11 @@ import { docMeta, docPeek } from './docview.js';
 import { openFeedback } from './feedback.js';
 import { pushState, enablePush, disablePush } from './notifiche.js';
 import { today, addDays, parseQuick } from './parse.js';
-import { mailComposer, mailThread, mailSide, inboxRow } from './mail.js';
+import { mailComposer, mailSide, threadLink, threadInfo, threadCard, threadSubject } from './mail.js';
 import { THEMES, BASE_THEMES, currentTheme, setTheme } from './themes.js';
 import { AREAS, LEVELS, CAPS, WRITE_NEEDS, READ_NEEDS, PRIVACY_NOTE, fullAccess, setLevel, isRestricted } from './perms.js';
 import { draggable } from './dnd.js';
+import { startTour, deleteTour, tourState } from './tour.js';
 
 const KIND_LABEL = { todo: 'Todo', mail: 'Mail', note: 'Nota' };
 const KIND_PILL = { todo: 'todo', mail: 'mail', note: 'nota' };
@@ -130,8 +131,9 @@ export function entryRow(e, opt = {}) {
   if (e.kind === 'mail' && e.done_at && e.awaiting_reply) meta.push(h('span.awaiting', icon('wait'), `in attesa di risposta ${waitingFor(e)}`));
   for (const p of projs) meta.push(projTag(p));
   if (e.kind === 'mail' && e.contact) meta.push(h('span.contact', { title: e.contact }, '→ ', contactNames(e.contact)));
-  // Risposte arrivate (non la mail ricevuta a cui questa risponde).
-  const replies = (S.data.mailMsgsOf.get(e.id) || []).filter(m => m.direction === 'in' && m.id !== e.reply_to);
+  // Risposte arrivate nel thread dopo che è stata mandata.
+  const replies = e.kind === 'mail' && e.done_at
+    ? (S.data.msgsOfThread.get(e.thread_id) || []).filter(m => m.direction === 'in' && m.date > e.done_at) : [];
   if (replies.length) meta.push(h('span.replies', { title: `Risposte arrivate (l'ultima ${fmtTime(replies.at(-1).date)})` }, '↩ ', replies.length));
   const atts = S.data.attachmentsOf.get(e.id);
   if (atts) meta.push(h('span.atts-n', { title: atts.map(a => a.filename).join(', ') }, icon('clip'), atts.length));
@@ -306,7 +308,7 @@ function entryEditor(e) {
     return h('div.editor.mail-ed',
       title,
       h('div.mail-cols',
-        h('div.mail-main', mailThread(e), mailComposer(e), log),
+        h('div.mail-main', threadLink(e), mailComposer(e), log),
         h('aside.mail-side', h('div.ms-b', h('div.ms-h', 'Dettagli'), fields), mailSide(e))),
       foot);
   }
@@ -379,22 +381,47 @@ function blRow(e) {
 
 export function backlinksBox(kind, id, { title = 'Collegato in', mailsOnly = false, compact = false } = {}) {
   const list = backlinks(kind, id);
-  if (!list) return null;
-  const drafts = list.filter(e => e.kind === 'mail' && !e.done_at);
-  const sent = list.filter(e => e.kind === 'mail' && e.done_at);
-  const others = mailsOnly ? [] : list.filter(e => e.kind !== 'mail');
-  const total = drafts.length + sent.length + others.length;
+  const threads = linkedThreads(kind, id);
+  if (!list && !threads.length) return null;
+  const drafts = (list || []).filter(e => e.kind === 'mail' && !e.done_at);
+  const sent = (list || []).filter(e => e.kind === 'mail' && e.done_at);
+  const others = mailsOnly ? [] : (list || []).filter(e => e.kind !== 'mail');
+  const total = threads.length + drafts.length + sent.length + others.length;
   if (!total) return null;
-  const group = (ic, label, rows) => rows.length > 0 && h('div.bl-g',
-    h('div.bl-h', icon(ic), label, h('span.count', rows.length)), rows.map(blRow));
+  const group = (ic, label, rows, fn = blRow) => rows.length > 0 && h('div.bl-g',
+    h('div.bl-h', icon(ic), label, h('span.count', rows.length)), rows.map(fn));
   const groups = [
-    group('mail', 'Mail da mandare', drafts),
+    group('mail', 'Thread di mail', threads, threadBlRow),
+    group('edit', 'Mail da mandare', drafts),
     group('send', 'Mail mandate', sent),
     group('log', 'Todo e note', others),
   ];
   return compact
     ? h('div.backlinks', h('div.bl-title', title), groups)
     : section(`bl-${kind}-${id}`, title, groups, { count: total });
+}
+
+// I miei thread collegati all'elemento (a mano, dai codici nei messaggi, dalle mail scritte); per un contatto
+// anche quelli in cui scrive o riceve.
+function linkedThreads(kind, id) {
+  const D = S.data;
+  const ids = new Set(D.threadsOf.get(`${kind}:${id}`) || []);
+  const email = kind === 'contatto' && D.contactById.get(id)?.email?.toLowerCase();
+  if (email) {
+    for (const m of D.mailMsgs) if (`${m.from_addr},${m.to_addr},${m.cc}`.toLowerCase().includes(email)) ids.add(m.thread_id);
+  }
+  // In un thread le mail scritte lì sono già "collegate": non lo si ripropone nella mail stessa.
+  if (kind === 'voce') ids.delete(D.entryById.get(id)?.thread_id);
+  return [...ids].map(t => D.threadById.get(t)).filter(Boolean).sort((a, b) => b.last_at.localeCompare(a.last_at));
+}
+
+function threadBlRow(t) {
+  const x = threadInfo(t);
+  return h('a.bl-row', { href: `#/t/${t.id}`, class: x.unread ? 'unread' : null },
+    h('span.kpill.k-mail', 'thread'),
+    h('span.bl-t', threadSubject(t)),
+    x.who.length > 0 && h('span.muted.bl-to', x.who.map(a => S.data.contactByEmail.get(a.email.toLowerCase())?.name || a.name || a.email).slice(0, 2).join(', ')),
+    h('span.muted.bl-when', t.archived_at ? `archiviato · ${fmtTime(t.last_at)}` : fmtTime(t.last_at)));
 }
 
 // Voci create offline e ancora in coda (vedi core.js): come le altre, con "in coda offline".
@@ -683,43 +710,35 @@ export function viewProject(id) {
 }
 
 // ---------- mail ----------
-// "Da fare": ricevute da leggere, da mandare, in attesa di risposta. "Archivio": ricevute già lette e mandate
-// che non aspettano niente. In alto si filtra per testo, tipo, allegati e progetto.
-const MAIL_TYPES = {
-  todo: [['in', 'Da leggere'], ['draft', 'Da mandare'], ['wait', 'In attesa di risposta']],
-  archive: [['read', 'Lette'], ['sent', 'Inviate (ultimi 30 giorni)']],
-};
+// La posta a thread, in schede su più colonne: "Attivi" (quelli che si muovono: ricevuti da leggere, da
+// mandare, in attesa di risposta, letti ma non ancora archiviati) e "Archiviati". Aprire un thread lo legge e
+// basta; il tasto a sinistra della scheda lo archivia. In alto si filtra per testo, stato, allegati e progetto.
+const MAIL_STATES = [['unread', 'Da leggere'], ['draft', 'Da mandare'], ['wait', 'In attesa di risposta']];
 
 export function viewMail() {
   const D = S.data;
   const lcs = s => String(s || '').toLowerCase();
   const f = lcs(ui.mailFilter.trim());
-  const has = (...vals) => !f || vals.some(v => lcs(v).includes(f));
   const proj = ui.mailProj && D.projectById.get(ui.mailProj);
-  const inProj = e => !proj || projectsOf(e).some(p => p.id === proj.id);
-  const mails = D.entries.filter(e => e.kind === 'mail' && has(e.title, e.contact, e.mail_cc, e.mail_subject, e.notes)
-    && inProj(e) && (!ui.mailAtt || D.attachmentsOf.has(e.id)));
-  // Le ricevute non hanno progetti: con un progetto scelto restano quelle della sua conversazione.
-  const inbox = D.inbox.filter(m => has(m.subject, m.from_addr, m.to_addr, m.cc, m.snippet) && (!ui.mailAtt || m.has_att)
-    && (!proj || (m.thread_ws === D.workspace.id && D.entryById.has(m.thread_entry) && inProj(D.entryById.get(m.thread_entry)))));
-  const groups = {
-    in: inbox.filter(m => !m.read_at || ui.inboxKeep.has(m.id)),
-    draft: mails.filter(e => !e.done_at).sort(byDue),
-    // Thread aperti: mandate e in attesa di risposta, dalla più vecchia (anche oltre i 30 giorni).
-    wait: mails.filter(e => e.done_at && e.awaiting_reply).sort((a, b) => a.done_at.localeCompare(b.done_at)),
-    read: inbox.filter(m => m.read_at && !ui.inboxKeep.has(m.id)),
-    sent: mails.filter(e => e.done_at && !e.awaiting_reply).sort(byDoneDesc),
+  const all = D.mailThreads.map(threadInfo);
+  const has = x => !f || [x.t.subject, ...x.msgs.flatMap(m => [m.from_addr, m.to_addr, m.cc, m.snippet]),
+    ...x.ents.flatMap(e => [e.title, e.contact, e.mail_cc, e.notes]), ...x.who.map(a => D.contactByEmail.get(lcs(a.email))?.name)]
+    .some(v => lcs(v).includes(f));
+  const state = {
+    unread: x => x.unread > 0,
+    draft: x => x.drafts.length > 0,
+    wait: x => x.waiting.length > 0,
   };
-  const view = ui.mailView === 'archive' ? 'archive' : 'todo';
-  const types = MAIL_TYPES[view];
-  if (ui.mailType && !types.some(([k]) => k === ui.mailType)) ui.mailType = null;
-  const count = v => MAIL_TYPES[v].reduce((n, [k]) => n + groups[k].length, 0);
+  const shown = all.filter(x => has(x) && (!ui.mailAtt || x.att) && (!proj || x.projects.some(p => p.id === proj.id)));
+  const view = ui.mailView === 'archive' ? 'archive' : 'active';
+  const inView = v => shown.filter(x => !!x.t.archived_at === (v === 'archive'));
+  const cards = inView(view).filter(x => !ui.mailType || state[ui.mailType](x));
   const setView = v => { ui.mailView = v; ui.mailType = null; save('org.mailView', v); render(); };
-  const rows = k => (k === 'in' || k === 'read' ? groups[k].map(inboxRow) : groups[k].map(e => entryRow(e, { showKind: false })));
-  const projects = [...new Map(D.entries.filter(e => e.kind === 'mail').flatMap(projectsOf).map(p => [p.id, p])).values()]
-    .sort((a, b) => a.tag.localeCompare(b.tag));
+  const projects = [...new Map(all.flatMap(x => x.projects).map(p => [p.id, p])).values()].sort((a, b) => a.tag.localeCompare(b.tag));
   const filtered = !!(f || ui.mailAtt || proj || ui.mailType);
-  const shown = types.filter(([k]) => !ui.mailType || ui.mailType === k);
+  // Mail condivise da altri (i thread sono personali: di queste non ho il thread).
+  const shared = D.entries.filter(e => e.kind === 'mail' && !D.threadById.has(e.thread_id) && (view === 'archive') === !!(e.done_at && !e.awaiting_reply)
+    && (!f || [e.title, e.contact, e.notes].some(v => lcs(v).includes(f))));
 
   return h('div.view.mailpage',
     h('div.toolbar',
@@ -728,28 +747,27 @@ export function viewMail() {
         oninput: ev => { ui.mailFilter = ev.target.value; render(); },
       }),
       h('div.seg',
-        h('button', { class: view === 'todo' && 'on', onclick: () => setView('todo'), title: 'Da leggere, da mandare, in attesa di risposta' }, 'Da fare', h('span.n', count('todo'))),
-        h('button', { class: view === 'archive' && 'on', onclick: () => setView('archive'), title: 'Ricevute già lette e mail mandate' }, 'Archivio', h('span.n', count('archive'))))),
+        h('button', { class: view === 'active' && 'on', onclick: () => setView('active'), title: 'I thread in corso' }, 'Attivi', h('span.n', inView('active').length)),
+        h('button', { class: view === 'archive' && 'on', onclick: () => setView('archive'), title: 'I thread archiviati: tornano attivi se arriva o parte un messaggio' }, 'Archiviati', h('span.n', inView('archive').length)))),
     h('div.toolbar.cats',
-      types.map(([k, label]) => filterChip({
-        on: ui.mailType === k, label: label.replace(/ \(.*\)$/, ''), n: groups[k].length, cls: k === 'in' || k === 'read' ? 'tint k-mail' : null,
+      MAIL_STATES.map(([k, label]) => filterChip({
+        on: ui.mailType === k, label, n: inView(view).filter(state[k]).length, cls: k === 'unread' ? 'tint k-mail' : null,
         onclick: () => { ui.mailType = ui.mailType === k ? null : k; render(); },
       })),
       h('span.tsep'),
       filterChip({ on: ui.mailAtt, label: [icon('clip'), 'con allegati'], onclick: () => { ui.mailAtt = !ui.mailAtt; render(); } }),
       projects.length > 0 && h('select.sm', {
-        value: proj ? String(proj.id) : '', title: 'Solo le mail di un progetto',
+        value: proj ? String(proj.id) : '', title: 'Solo i thread di un progetto',
         onchange: ev => { ui.mailProj = +ev.target.value || null; render(); },
       }, h('option', { value: '' }, 'tutti i progetti'), projects.map(p => h('option', { value: p.id }, `@${p.tag}`)))),
-    h('p.muted.fhint', view === 'todo'
-      ? 'Da fare: le mail ricevute da leggere, quelle da mandare e quelle che aspettano risposta. Aperta, una mail ricevuta è letta e quando lasci la pagina passa in Archivio.'
-      : 'Archivio: le mail ricevute già lette (il tasto a sinistra le rimette da leggere) e quelle mandate che non aspettano risposta.'),
-    shown.map(([k, label]) => groups[k].length > 0 && section(`mail-${k}`, label, rows(k), { cls: k === 'wait' ? 'waiting' : null })),
-    !shown.some(([k]) => groups[k].length) && (filtered
-      ? empty(h('p', 'Nessuna mail corrisponde ai filtri.'))
-      : view === 'todo'
-        ? empty(h('p', 'Niente da fare con la posta.'), h('p', 'Nuova mail dalla barra in alto, ad esempio: ', kbd('offerta 50 schede >acquisti@ditta.it !ven')))
-        : empty(h('p', 'L\'archivio è vuoto.'))));
+    cards.length > 0 && masonry('thread-cols', cards.map(threadCard)),
+    shared.length > 0 && section('mail-shared', 'Condivise con te', shared.map(e => entryRow(e, { showKind: false }))),
+    !cards.length && !shared.length && (filtered
+      ? empty(h('p', 'Nessun thread corrisponde ai filtri.'))
+      : view === 'active'
+        ? empty(h('p', 'Nessun thread attivo.'), h('p', 'Nuova mail dalla barra in alto, ad esempio: ', kbd('offerta 50 schede >acquisti@ditta.it !ven')),
+          h('p', 'Con l\'estensione di Thunderbird (Impostazioni → Mail) qui arrivano anche le mail ricevute.'))
+        : empty(h('p', 'Nessun thread archiviato.'))));
 }
 
 // ---------- diario ----------
@@ -1400,7 +1418,8 @@ function settingsPane(sec, D) {
     ];
     case 'notifiche': return notificationsPane(D);
     case 'mail': return [card('set-mail', 'Collegare Thunderbird', [
-      h('p', 'Con l\'estensione Organizer per Thunderbird, "Manda" apre la mail in Thunderbird con gli allegati (anche se premi dal telefono: si apre sul computer). Quando la invii diventa "mandata" da sola, e le risposte compaiono nella conversazione della mail, da cui puoi rispondere.'),
+      h('p', 'Con l\'estensione Organizer per Thunderbird, "Manda" apre la mail in Thunderbird con gli allegati (anche se premi dal telefono: si apre sul computer). Quando la invii diventa "mandata" da sola. Le mail ricevute e mandate si raccolgono in thread (pagina Mail): se una risposta arriva su una conversazione vecchia, Organizer si fa passare da Thunderbird anche i messaggi precedenti.'),
+      h('p.muted', 'Hai già l\'estensione? La versione 1.4 serve per i thread e per "Porta il thread in Organizer" (tasto destro su una mail): scaricala di nuovo e reinstallala (token e impostazioni restano).'),
       h('p', D.mailExt ? h('span.chip.on', icon('check'), 'Thunderbird collegato') : h('span.chip', 'Thunderbird non collegato')),
       h('ol.steps',
         h('li', h('a.btn.sm', { href: 'api/mail/thunderbird.xpi', download: '' }, icon('download'), 'Scarica l\'estensione'), ' già impostata per questo indirizzo.'),
@@ -1434,6 +1453,13 @@ function settingsPane(sec, D) {
       h('p.muted', 'Da tastiera: ', kbd('n'), ' o ', kbd('/'), ' scrive una voce, ', kbd('Ctrl/⌘ K'), ' cerca, ', kbd('Esc'), ' esce dal campo.'),
     ])];
     case 'app': return [
+      card('set-tour', 'Giro di Organizer', [
+        h('p.muted', 'Un giro guidato delle funzioni, su un workspace di prova con contenuti finti (Anna e Luca non esistono). Puoi toccare tutto; alla fine lo elimini con un clic.'),
+        h('div.toolbar',
+          h('button.btn.primary', { onclick: () => act(startTour) }, icon('help'), tourState() ? 'Riprendi il giro' : 'Fai il giro'),
+          D.tourWs && h('button.btn.ghost', { onclick: () => confirm('Eliminare il workspace di prova e tutto quello che contiene?') && act(deleteTour) },
+            icon('trash'), 'Elimina il workspace di prova')),
+      ]),
       card('set-help', 'Novità e feedback', [
         h('div.set-links',
           h('a.set-link', { href: '#/novita' }, icon('news'), h('span', h('b', 'Novità'), h('span.muted', S.version ? `versione ${S.version}` : 'cosa è cambiato'))),

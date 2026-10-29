@@ -9,6 +9,8 @@ import { viewTrash } from './trash.js';
 import { viewDoc, viewReview, docCancelDraft, setDocFocus, docSearchKey } from './docview.js';
 import { viewDocuments } from './documents.js';
 import { viewChat } from './chat.js';
+import { viewThread } from './mail.js';
+import { tourTick } from './tour.js';
 import { bell, updateBell, notifyNew, viewNotification } from './notifiche.js';
 import { openFeedback, viewFeedback } from './feedback.js';
 import { viewChangelog, hasNews, appVersion } from './changelog.js';
@@ -25,6 +27,7 @@ const VIEWS = {
   progetti: { fn: viewProjects, title: 'Progetti', nav: 'progetti' },
   p: { fn: viewProject, title: 'Progetto', nav: 'progetti' },
   mail: { fn: viewMail, title: 'Mail', nav: 'mail' },
+  t: { fn: viewThread, title: 'Mail', nav: 'mail' },
   diario: { fn: viewDiary, title: 'Diario', nav: 'diario' },
   magazzino: { fn: viewItems, title: 'Magazzino', nav: 'magazzino' },
   i: { fn: viewItem, title: 'Articolo', nav: 'magazzino' },
@@ -51,9 +54,18 @@ const NAV = [
   ['contatti', 'Contatti', 'contacts'],
 ];
 
+// Barra laterale: gruppi di voci; la quarta colonna dice che la voce sta sotto quella prima (rientrata).
+const SIDE = [
+  [['agenda', 'Agenda', 'agenda'], ['diario', 'Diario', 'diary', 'sub']],
+  [['progetti', 'Progetti', 'folder']],
+  [['mail', 'Mail', 'mail'], ['contatti', 'Contatti', 'contacts', 'sub']],
+  [['magazzino', 'Magazzino', 'box'], ['documenti', 'Documenti', 'file', 'sub']],
+  [['chat', 'Chat', 'chat']],
+];
+
 // Permessi: l'area che serve leggere per vedere ogni pagina (e la sua voce nel menu).
 const PAGE_AREA = {
-  agenda: () => can('voci') || can('mail'), diario: () => can('voci'), mail: () => can('mail'),
+  agenda: () => can('voci') || can('mail'), diario: () => can('voci'), mail: () => can('mail'), t: () => can('mail'),
   progetti: () => can('progetti'), p: () => can('progetti'),
   magazzino: () => can('magazzino'), i: () => can('magazzino'),
   documenti: () => can('documenti'), d: () => can('documenti'), review: () => can('documenti'),
@@ -308,7 +320,9 @@ function buildShell() {
         h('div.brand', h('img', { src: 'icons/icon.svg', alt: '' }), h('span', 'Organizer')),
         wsSwitch,
         // Documenti solo nella barra laterale (su telefono si raggiunge dal Magazzino): le tab in basso sono già 6.
-        h('nav.side-nav', [...NAV.slice(0, 5), ['documenti', 'Documenti', 'file'], ...NAV.slice(5), ['chat', 'Chat', 'chat']].map(([k, l, i]) => navLink(k, l, i, navLinks, 'nav')),
+        // Gruppi separati da un divisore leggero; Diario, Contatti e Documenti stanno sotto la voce a cui si legano.
+        h('nav.side-nav', SIDE.map(group => h('div.nav-group',
+          group.map(([k, l, i, sub]) => navLink(k, l, i, navLinks, sub ? 'nav.sub' : 'nav')))),
           h('span.sep'), navLink('cestino', 'Cestino', 'trash', navLinks, 'nav'),
           navLink('impostazioni', 'Impostazioni', 'settings', navLinks, 'nav')),
         // In fondo alla barra: le novità della versione (il changelog), con "nuovo" finché non si leggono.
@@ -353,8 +367,9 @@ function updateBadges() {
   updateBell();
   const open = D.entries.filter(e => !e.done_at && e.kind !== 'note');
   const urgent = open.filter(e => e.due && dayDiff(e.due) <= 0 && isMine(e)).length;
-  // Mail: da mandare più quelle arrivate da leggere.
-  const mails = open.filter(e => e.kind === 'mail').length + (D.inbox || []).filter(m => !m.read_at).length;
+  // Mail: da mandare più i thread con messaggi da leggere.
+  const mails = open.filter(e => e.kind === 'mail').length
+    + D.mailThreads.filter(t => (D.msgsOfThread.get(t.id) || []).some(m => m.direction === 'in' && !m.read_at)).length;
   for (const map of [navLinks, tabLinks]) {
     map.get('agenda').badge.textContent = urgent || '';
     map.get('mail').badge.textContent = mails || '';
@@ -384,7 +399,7 @@ function renderWsMenu() {
     ...D.workspaces.map(w => h('button.ws-item', {
       class: w.id === D.workspace.id ? 'on' : null,
       onclick: () => { if (w.id !== D.workspace.id) switchWorkspace(w.id); },
-    }, h('span', w.name), h('span.muted', w.role === 'admin' ? 'admin' : 'membro'))),
+    }, h('span', w.name), h('span.muted', w.tour ? 'di prova' : w.role === 'admin' ? 'admin' : 'membro'))),
     h('button.ws-item.new', { onclick: newWorkspace }, icon('plus'), 'Nuovo workspace'));
 }
 
@@ -457,7 +472,7 @@ function renderApp() {
     document.body.classList.toggle('doc-page', !!S.data && (r.name === 'd' || r.name === 'review'));
     document.body.classList.toggle('chat-page', !!S.data && r.name === 'chat');
     // Pagine senza la barra rapida in alto (lì non c'è niente da aggiungere).
-    document.body.classList.toggle('no-quick', r.name === 'novita' || (!!S.data && !quickAllowed(quickContext())));
+    document.body.classList.toggle('no-quick', r.name === 'novita' || r.name === 't' || (!!S.data && !quickAllowed(quickContext())));
   } catch (e) {
     console.error(e);
     viewEl.replaceChildren(h('div.empty', `Errore di visualizzazione: ${e.message}`));
@@ -472,6 +487,7 @@ function renderApp() {
   acCheck();
   kindMenuCheck();
   popCheck();
+  tourTick();
   if (keep) {
     const el = viewEl.querySelector(`[data-fk="${CSS.escape(keep.fk)}"]`);
     if (el) {
@@ -640,7 +656,7 @@ function goUp(field) {
   }
   const r = route();
   const doc = r.name === 'd' && S.data?.docById.get(+r.id);
-  const up = { p: '#/progetti', i: '#/magazzino', cerca: '#/agenda', review: '#/documenti' }[r.name]
+  const up = { p: '#/progetti', i: '#/magazzino', cerca: '#/agenda', review: '#/documenti', t: '#/mail' }[r.name]
     || (r.name === 'contatti' && r.id ? '#/contatti' : null)
     || (doc ? `#/i/${doc.item_id}` : null);
   if (up) location.hash = up;

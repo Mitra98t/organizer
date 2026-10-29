@@ -25,10 +25,7 @@ function unknownAddresses() {
       seen.set(k, x);
     }
   };
-  for (const m of D.inbox) {
-    add(m.from_addr, m.date, 'ti ha scritto');
-    add(`${m.to_addr},${m.cc}`, m.date, 'in copia');
-  }
+  for (const m of D.mailMsgs) if (m.direction === 'in') add(`${m.to_addr},${m.cc}`, m.date, 'in copia');
   for (const e of D.entries) if (e.kind === 'mail') add(`${e.contact || ''},${e.mail_cc || ''}`, e.done_at || e.updated_at, 'gli hai scritto');
   for (const m of D.mailMsgs) if (m.direction === 'in') add(m.from_addr, m.date, 'ti ha scritto');
   return [...seen.values()].sort((a, b) => b.last.localeCompare(a.last));

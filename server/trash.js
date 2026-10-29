@@ -2,18 +2,35 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { db, tx, UPLOAD_DIR } from './db.js';
-import { route, VIS_ANY, PVIS_ANY, CVIS_ANY, NVIS_ANY } from './api.js';
+import { route, VIS_ANY, PVIS_ANY, CVIS_ANY, NVIS_ANY, TRASH_ALONE } from './api.js';
 import { fail } from './util.js';
+import { ensureEntryThread } from './maildata.js';
 import { allows, assertCan, entryArea, readableKinds } from './perms.js';
 
 export const TRASH_DAYS = +process.env.TRASH_DAYS || 30;
+
 
 // Per ogni tipo: come trovare un elemento nel cestino visibile all'utente e come ripristinarlo.
 const TYPES = {
   entry: {
     find: (id, uid) => db.prepare(`SELECT e.* FROM entries e WHERE e.id = $id AND e.deleted_at IS NOT NULL AND ${VIS_ANY}`).get({ id, uid }),
-    restore: e => db.prepare('UPDATE entries SET deleted_at = NULL, deleted_by = NULL WHERE id = $id OR (parent_id = $id AND deleted_at = $t)')
-      .run({ id: e.id, t: e.deleted_at }),
+    restore: e => {
+      db.prepare('UPDATE entries SET deleted_at = NULL, deleted_by = NULL WHERE id = $id OR (parent_id = $id AND deleted_at = $t)')
+        .run({ id: e.id, t: e.deleted_at });
+      // Una mail il cui thread è ora nel cestino torna in un thread suo.
+      if (e.kind === 'mail' && db.prepare('SELECT 1 FROM mail_threads WHERE id = ? AND deleted_at IS NOT NULL').get(e.thread_id)) {
+        db.prepare('UPDATE entries SET thread_id = NULL WHERE id = ?').run(e.id);
+        ensureEntryThread({ ...e, thread_id: null });
+      }
+    },
+  },
+  // Un thread di mail (personale) con le mail scritte in Organizer eliminate insieme a lui.
+  thread: {
+    find: (id, uid) => db.prepare('SELECT *, owner_id AS created_by FROM mail_threads WHERE id = ? AND owner_id = ? AND deleted_at IS NOT NULL').get(id, uid),
+    restore: t => {
+      db.prepare('UPDATE mail_threads SET deleted_at = NULL, deleted_by = NULL WHERE id = ?').run(t.id);
+      db.prepare('UPDATE entries SET deleted_at = NULL, deleted_by = NULL WHERE thread_id = ? AND deleted_at = ?').run(t.id, t.deleted_at);
+    },
   },
   project: {
     find: (id, uid) => db.prepare(`SELECT p.* FROM projects p WHERE p.id = $id AND p.deleted_at IS NOT NULL AND ${PVIS_ANY}`).get({ id, uid }),
@@ -40,7 +57,7 @@ const TYPES = {
   },
 };
 
-const TABLE = { entry: 'entries', project: 'projects', item: 'items', doc: 'documents', contact: 'contacts', docnote: 'doc_notes' };
+const TABLE = { entry: 'entries', project: 'projects', item: 'items', doc: 'documents', contact: 'contacts', docnote: 'doc_notes', thread: 'mail_threads' };
 
 function getTrashed(type, id, user) {
   const t = TYPES[type] || fail(404, 'Tipo sconosciuto');
@@ -48,7 +65,7 @@ function getTrashed(type, id, user) {
 }
 
 // Permessi: ogni tipo nel cestino appartiene a un'area (le voci secondo il tipo: todo/note o mail).
-const AREA_OF = { project: 'progetti', item: 'magazzino', doc: 'documenti', docnote: 'documenti', contact: 'contatti' };
+const AREA_OF = { project: 'progetti', item: 'magazzino', doc: 'documenti', docnote: 'documenti', contact: 'contatti', thread: 'mail' };
 const areaOf = (type, el) => (type === 'entry' ? entryArea(el.kind) : AREA_OF[type]);
 
 route('GET', '/api/trash', ({ user }) => {
@@ -58,11 +75,14 @@ route('GET', '/api/trash', ({ user }) => {
   const all = (area, sql, args = {}) => (can(area) ? db.prepare(sql).all(args) : []);
   return {
     days: TRASH_DAYS,
-    // Le sotto-attività eliminate insieme alla voce madre tornano con lei: si elencano solo le altre.
+    // Le sotto-attività eliminate insieme alla voce madre tornano con lei, le mail con il loro thread: si
+    // elencano solo le altre.
     entries: db.prepare(`SELECT e.* FROM entries e WHERE e.deleted_at IS NOT NULL AND ${VIS_ANY}
-      AND e.kind IN (SELECT value FROM json_each($kinds))
-      AND (e.parent_id IS NULL OR NOT EXISTS (SELECT 1 FROM entries x WHERE x.id = e.parent_id AND x.deleted_at = e.deleted_at))
+      AND e.kind IN (SELECT value FROM json_each($kinds)) AND ${TRASH_ALONE}
       ORDER BY e.deleted_at DESC`).all({ uid, kinds }),
+    threads: all('mail', `SELECT t.id, t.subject, t.owner_id AS created_by, t.deleted_at, t.deleted_by,
+      (SELECT COUNT(*) FROM mail_messages m WHERE m.thread_id = t.id) AS messages
+      FROM mail_threads t WHERE t.owner_id = $uid AND t.deleted_at IS NOT NULL ORDER BY t.deleted_at DESC`, { uid }),
     projects: all('progetti', `SELECT p.* FROM projects p WHERE p.deleted_at IS NOT NULL AND ${PVIS_ANY} ORDER BY p.deleted_at DESC`, { uid }),
     items: all('magazzino', 'SELECT * FROM items WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC'),
     docs: all('documenti', `SELECT d.id, d.item_id, d.kind, d.label, d.version, d.filename, d.url, d.size, d.created_by, d.deleted_at, d.deleted_by,
@@ -99,6 +119,14 @@ function purge(cond, only) {
   const files = [];
   const collect = sql => files.push(...db.prepare(sql).all().map(r => r.stored));
   tx(() => {
+    // Un thread se ne va con le sue mail eliminate insieme a lui (messaggi e collegamenti cadono con il thread).
+    if (want('mail_threads')) {
+      const threads = `SELECT id FROM mail_threads WHERE ${cond}`;
+      const ents = `SELECT e.id FROM entries e JOIN mail_threads t ON t.id = e.thread_id WHERE t.id IN (${threads}) AND e.deleted_at = t.deleted_at`;
+      collect(`SELECT stored FROM mail_attachments WHERE stored IS NOT NULL AND entry_id IN (${ents})`);
+      db.prepare(`DELETE FROM entries WHERE id IN (${ents})`).run();
+      db.prepare(`DELETE FROM mail_threads WHERE ${cond}`).run();
+    }
     if (want('entries')) {
       collect(`SELECT stored FROM mail_attachments WHERE stored IS NOT NULL
         AND entry_id IN (SELECT id FROM entries WHERE ${cond} OR parent_id IN (SELECT id FROM entries WHERE ${cond}))`);

@@ -145,6 +145,13 @@ const MIGRATIONS = [
     created_at TEXT NOT NULL
   );
   `,
+  // Giro di Organizer (server/tour.js): onboarded_at = l'invito è già stato visto (chi c'era già non lo
+  // riceve); tour_of = il workspace di prova di quella persona.
+  `
+  ALTER TABLE users ADD COLUMN onboarded_at TEXT;
+  UPDATE users SET onboarded_at = created_at;
+  ALTER TABLE workspaces ADD COLUMN tour_of INTEGER REFERENCES users ON DELETE CASCADE;
+  `,
 ];
 
 {
@@ -234,7 +241,7 @@ export function setPerms(wsId, userId, perms) {
 export const roleIn = (wsId, userId) => acc.prepare('SELECT role FROM memberships WHERE workspace_id = ? AND user_id = ?').get(wsId, userId)?.role ?? null;
 
 export function workspacesOf(userId) {
-  return acc.prepare(`SELECT w.id, w.name, m.role FROM memberships m JOIN workspaces w ON w.id = m.workspace_id
+  return acc.prepare(`SELECT w.id, w.name, m.role, w.tour_of IS NOT NULL AS tour FROM memberships m JOIN workspaces w ON w.id = m.workspace_id
     WHERE m.user_id = ? AND w.deleted_at IS NULL ORDER BY w.name COLLATE NOCASE`).all(userId);
 }
 
@@ -369,15 +376,6 @@ export function resolveApiToken(token, wsHeader) {
 // Indirizzi delle identità di Thunderbird dell'utente (li manda l'estensione): sono i "miei" indirizzi.
 export const mailAddressesOf = userId => JSON.parse(acc.prepare('SELECT mail_addresses FROM users WHERE id = ?').get(userId)?.mail_addresses || '[]');
 
-// Posta in arrivo personale per /api/sync (senza il testo intero). Oltre INBOX_DAYS si cancella da Organizer:
-// resta comunque in Thunderbird.
-const INBOX_DAYS = 180;
-export function inboxOf(userId) {
-  acc.prepare('DELETE FROM mail_inbox WHERE user_id = ? AND date < ?').run(userId, new Date(Date.now() - INBOX_DAYS * 864e5).toISOString());
-  return acc.prepare(`SELECT id, from_addr, to_addr, cc, subject, substr(body, 1, 300) AS snippet, attachments != '[]' AS has_att, date,
-    thread_ws, thread_entry, read_at FROM mail_inbox WHERE user_id = ? AND archived_at IS NULL ORDER BY date DESC LIMIT 300`).all(userId);
-}
-
 // Chi gestisce l'istanza (per i feedback): gli admin del primo workspace, quello creato all'installazione.
 export function isOwner(userId) {
   const first = acc.prepare('SELECT id FROM workspaces ORDER BY id LIMIT 1').get();
@@ -386,3 +384,10 @@ export function isOwner(userId) {
 
 // Per /api/sync: chi gestisce l'istanza vede la pagina Feedback con il numero di quelli aperti (gli altri null).
 export const openFeedback = userId => (isOwner(userId) ? acc.prepare("SELECT COUNT(*) AS n FROM feedback WHERE status = 'open'").get().n : null);
+
+// Giro di Organizer (server/tour.js): il workspace di prova della persona e se l'invito l'ha già visto.
+export const tourOf = userId => acc.prepare('SELECT * FROM workspaces WHERE tour_of = ? AND deleted_at IS NULL').get(userId);
+export const tourInfo = userId => ({
+  onboarded: !!acc.prepare('SELECT onboarded_at FROM users WHERE id = ?').get(userId)?.onboarded_at,
+  tourWs: tourOf(userId)?.id ?? null,
+});

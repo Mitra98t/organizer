@@ -3,6 +3,23 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.15 — 2026-10-29
+- **Mail a thread**: la pagina Mail mostra le conversazioni come schede su più colonne, divise in **Attivi** e **Archiviati**, con i filtri per stato (da leggere, da mandare, in attesa di risposta), allegati e progetto. Ogni scheda dice chi scrive, l'inizio dell'ultimo messaggio, i progetti e gli articoli collegati.
+  - Aprire un thread lo **legge** e basta: resta dov'è. Il tasto a sinistra della scheda (o "Archivia" nel thread) lo **archivia**; torna attivo da solo se arriva o parte un nuovo messaggio.
+  - Nella pagina del thread: i messaggi in ordine (i più vecchi raccolti in "messaggi precedenti"), **Rispondi** e **Rispondi a tutti** che preparano la bozza lì sotto, "Nuova mail nel thread", gli allegati ricevuti con "→ magazzino".
+  - **Collegamenti**: nella colonna a destra colleghi il thread ad articoli (`#codice`), progetti (`@progetto`), documenti, contatti e voci (`[[`). Un codice di magazzino scritto in una mail ricevuta si collega da solo, e così quello che citi nelle mail che scrivi. L'articolo, il progetto, il documento o il contatto mostrano i suoi thread in "Thread di mail".
+  - Quando arriva o parte una risposta a mail vecchie che Organizer non ha, l'estensione di Thunderbird gli passa anche quelle: il thread è completo.
+  - **Rinomina** ed **Elimina**: dal menu ⋯ della scheda o accanto al titolo del thread. Eliminato, il thread va nel **cestino** con le mail scritte in Organizer che ne fanno parte, e si ripristina tutto insieme; in Thunderbird le mail restano, e se le ripassa non riaprono il thread.
+  - Le mail ricevute e quelle già in Organizer diventano thread da sole (le ricevute già lette tra gli archiviati).
+- **Porta il thread in Organizer**: in Thunderbird, tasto destro su una mail (anche vecchia, in Archivio o in qualunque cartella) → "Porta il thread in Organizer". Arriva tutta la conversazione: i messaggi prima di quella mail e tutte le risposte dopo (cercate per oggetto), in un thread solo, già letti ma tra gli **attivi**. Un thread che c'era già torna attivo e si completa.
+- **Estensione per Thunderbird 1.4**: serve per i thread e per "Porta il thread in Organizer". Scaricala di nuovo da Impostazioni → Mail e Thunderbird e reinstallala (Thunderbird chiede il nuovo permesso per il menu): token e impostazioni restano.
+- **Disegni DXF**: si vedono nel visualizzatore dei documenti, con zoom fino a 12× e le note nei punti, come i PDF. Su carta bianca: linee, polilinee con raccordi, cerchi, archi, ellissi, spline, testi, blocchi e quote; i layer spenti non si vedono. Nella pagina Documenti c'è anche l'anteprima piccola.
+- **Giro di Organizer**: alla prima entrata l'app chiede "Vuoi fare il giro?"; si rifà da Impostazioni → App e aiuto. Il giro mostra le parti dell'app una alla volta, sull'app vera, in un workspace di prova solo tuo con contenuti finti (Anna e Luca non esistono). Alla fine lo elimini con un clic (e torni al tuo) o lo tieni per provare ancora; nel menu dei workspace è segnato "di prova".
+- **Barra laterale a gruppi**: Agenda con Diario, Progetti, Mail con Contatti, Magazzino con Documenti, Chat; le voci sotto sono rientrate e i gruppi separati da una linea leggera.
+- **Suggerimenti più tolleranti**: basta un pezzo di quello che cerchi, anche saltando lettere: `#almar` trova ALDO-MARCO-LUIGI, `#sch42` trova SCH-042. Vale per articoli, progetti, persone, contatti, categorie e collegamenti `[[`.
+- Correzione: togliere una persona da un workspace (o eliminare il workspace di prova) mentre aveva l'app aperta poteva fermare il server.
+- Schema dati v20, account v7.
+
 ## 0.14 — 2026-10-29
 - **Notifiche**: la campanella in alto raccoglie le ultime, con il numero di quelle da leggere; aprendone una si va dove serve, anche in un altro workspace. Arrivano:
   - a chi viene **citato** con +persona in una voce, in un aggiornamento, in una nota su un documento o in chat, e a chi riceve una voce **assegnata** (++persona o menu Assegnata) o **condivisa**;

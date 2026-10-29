@@ -13,7 +13,8 @@ const clip = (s, n) => (String(s || '').length > n ? `${String(s).slice(0, n - 1
 // userIds: a chi (chi ha fatto l'azione non riceve niente). tag: le notifiche con lo stesso tag si sostituiscono
 // sul dispositivo (es. i messaggi di un canale).
 export function notify(userIds, { ws = null, kind, title, body = '', url = '', actor = null, tag = null }) {
-  const to = [...new Set(userIds)].filter(id => id && id !== actor);
+  // Solo account veri (nel workspace di prova del giro ci sono anche persone finte).
+  const to = [...new Set(userIds)].filter(id => id && id !== actor && acc.prepare('SELECT 1 FROM users WHERE id = ?').get(id));
   for (const uid of to) {
     const id = Number(acc.prepare(`INSERT INTO notifications (user_id, workspace_id, kind, title, body, url, actor_id, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(uid, ws, kind, clip(title, 200), clip(body, 400), url, actor, now()).lastInsertRowid);

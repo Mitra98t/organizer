@@ -6,7 +6,7 @@ import { routes, backfillLinks } from './api.js';
 import { assertCan } from './perms.js';
 import './contacts.js';
 import './mail.js';
-import './thunderbird.js';
+import { migrateInbox } from './thunderbird.js';
 import './backup.js';
 import './workspaces.js';
 import './remote.js';
@@ -14,6 +14,7 @@ import './tokens.js';
 import './chat.js';
 import './feedback.js';
 import './notifications.js';
+import './tour.js';
 import { purgeExpired } from './trash.js';
 import { resolveAuth, resolveApiToken, workspaceById, acc } from './accounts.js';
 import { bump } from './events.js';
@@ -162,6 +163,13 @@ const cleanTrash = () => {
 };
 cleanTrash();
 setInterval(cleanTrash, 6 * 3600e3).unref();
+
+// Posta in arrivo delle versioni fino alla 0.14: diventa thread (una volta sola).
+try {
+  migrateInbox();
+} catch (e) {
+  console.error('Spostamento della posta in arrivo nei thread non riuscito', e);
+}
 
 // Collegamenti delle voci (backlink): calcolati una volta per i dati scritti prima che esistessero.
 for (const w of acc.prepare('SELECT id, file FROM workspaces WHERE deleted_at IS NULL').all()) {

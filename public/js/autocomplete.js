@@ -120,7 +120,8 @@ const PILL = { todo: 'todo', mail: 'mail', note: 'nota', doc: 'documento', item:
 function refSuggestions(ql, { bare, self }) {
   const D = S.data;
   const words = ql.split(/\s+/).filter(Boolean);
-  const hit = (...v) => words.every(w => v.some(x => lc(x).includes(w)));
+  // Ogni parola scritta deve trovarsi (anche sparsa) in uno dei campi.
+  const hit = (...v) => words.every(w => v.some(x => fuzzy(x, w) != null));
   const plain = t => t.replace(/(^|\s)#/g, '$1').replace(/\[\[\w+:\d+\]\]/g, '…');
   const entryState = e => (e.done_at ? (e.kind === 'mail' ? 'mandata' : e.kind === 'todo' ? 'fatta' : '') : e.kind === 'mail' ? 'da mandare' : '');
   const groups = [
@@ -150,7 +151,7 @@ function contactFieldSuggestions(field, ql) {
     cur.n++;
     counts.set(key, cur);
   }
-  return [...counts.values()].filter(c => lc(c.name).includes(ql))
+  return [...counts.values()].filter(c => fuzzy(c.name, ql) != null)
     .sort((a, b) => rank(a.name, ql) - rank(b.name, ql) || b.n - a.n || a.name.localeCompare(b.name))
     .slice(0, 8)
     .map(c => ({ insert: c.name, label: c.name, extra: c.n === 1 ? '1 contatto' : `${c.n} contatti` }));
@@ -163,24 +164,28 @@ const bare = s => lc(s).replace(/[-_./\s]+/g, '');
 // e nel suggerimento si vede quale alternativo ha trovato.
 function itemSuggestions(ql, filter = () => true) {
   const qb = bare(ql);
-  const codeHit = c => lc(c).includes(ql) || (qb && bare(c).includes(qb));
-  const altOf = i => (ql ? (S.data.aliasesOf.get(i.id) || []).map(a => a.code).find(codeHit) : null);
-  return S.data.items
-    .filter(i => filter(i) && (!ql || [i.name, i.firmware, i.category].some(v => lc(v).includes(ql)) || codeHit(i.code) || altOf(i)))
-    .sort((a, b) => rank(a.code, ql) - rank(b.code, ql) || a.code.localeCompare(b.code))
+  // Codice (anche senza trattini: "sch051"), codici alternativi, poi nome, firmware e categoria.
+  const codeScore = c => best(ql, [c]) ?? (qb ? best(qb, [bare(c)]) : null);
+  const scored = S.data.items.filter(filter).map(i => {
+    const alts = (S.data.aliasesOf.get(i.id) || []).map(a => a.code);
+    const main = codeScore(i.code);
+    const altScores = alts.map(a => [a, codeScore(a)]).filter(([, r]) => r != null).sort((a, b) => a[1] - b[1]);
+    const alt = main == null && altScores[0];
+    const r = !ql ? 0 : [main, alt ? alt[1] + 0.1 : null, best(ql, [i.name, 0.5], [i.firmware, 1], [i.category, 1])].filter(x => x != null).sort((a, b) => a - b)[0];
+    return { i, r, alt: alt ? alt[0] : null };
+  }).filter(x => x.r != null);
+  return scored.sort((a, b) => a.r - b.r || a.i.code.localeCompare(b.i.code))
     .slice(0, 8)
-    .map(i => {
-      const alt = !codeHit(i.code) && altOf(i);
-      return { label: i.code, hint: alt ? `alt. ${alt} · ${i.name}` : i.name, extra: i.firmware ? `fw ${i.firmware}` : i.category, code: true, cat: i.category };
-    });
+    .map(({ i, alt }) => ({ label: i.code, hint: alt ? `alt. ${alt} · ${i.name}` : i.name, extra: i.firmware ? `fw ${i.firmware}` : i.category, code: true, cat: i.category }));
 }
 
 function projectSuggestions(ql) {
   const order = { open: 0, paused: 1, closed: 2 };
+  const score = p => best(ql, [p.tag], [p.name, 0.2]);
   return S.data.projects
-    .filter(p => !ql || lc(p.tag).includes(ql) || lc(p.name).includes(ql))
+    .filter(p => score(p) != null)
     .filter(p => p.status !== 'closed' || ql)
-    .sort((a, b) => rank(a.tag, ql) - rank(b.tag, ql) || order[a.status] - order[b.status] || a.tag.localeCompare(b.tag))
+    .sort((a, b) => score(a) - score(b) || order[a.status] - order[b.status] || a.tag.localeCompare(b.tag))
     .slice(0, 8)
     .map(p => ({ label: `@${p.tag}`, hint: lc(p.name) !== lc(p.tag) ? p.name : '', extra: STATUS[p.status] || '', hue: projHue(p) }));
 }
@@ -202,13 +207,14 @@ function contactItems(ql) {
   const out = [];
   const seen = new Set();
   for (const c of D.contacts) {
-    if (!c.email || (ql && ![c.name, c.email, c.company].some(v => lc(v).includes(ql)))) continue;
-    out.push({ email: c.email, label: c.name || c.email, hint: c.name ? c.email : '', extra: c.company, r: Math.min(rank(c.name, ql), rank(c.email, ql)) });
+    const r = best(ql, [c.name], [c.email, 0.1], [c.company, 0.5]);
+    if (!c.email || r == null) continue;
+    out.push({ email: c.email, label: c.name || c.email, hint: c.name ? c.email : '', extra: c.company, r });
     seen.add(lc(c.email));
   }
   for (const e of [...D.entries].sort((a, b) => b.updated_at.localeCompare(a.updated_at))) {
     for (const a of String(e.contact || '').split(',').map(s => s.trim())) {
-      if (!a || seen.has(lc(a)) || (ql && !lc(a).includes(ql))) continue;
+      if (!a || seen.has(lc(a)) || fuzzy(a, ql) == null) continue;
       seen.add(lc(a));
       out.push({ email: a, label: a, hint: '', extra: 'usato', r: rank(a, ql) + 1 });
     }
@@ -216,10 +222,41 @@ function contactItems(ql) {
   return out.sort((a, b) => a.r - b.r).slice(0, 8);
 }
 
-function rank(s, q) {
+// Ricerca "fuzzy": le lettere scritte nell'ordine, anche non attaccate ("almar" trova ALDO-MARCO-LUIGI,
+// "sch51" trova SCH-051). Punteggio, più basso = meglio: uguale, inizia così, contiene, poi lettere sparse
+// (meglio se a inizio parola e vicine). null = non c'entra.
+export function fuzzy(s, q) {
   const v = lc(s);
-  return v === q ? 0 : v.startsWith(q) ? 1 : 2;
+  if (!q) return 0;
+  if (!v) return null;
+  if (v === q) return 0;
+  if (v.startsWith(q)) return 1;
+  const at = v.indexOf(q);
+  if (at >= 0) return 2 + at / 1000;
+  let pos = -1;
+  let gaps = 0;
+  let starts = 0;
+  for (const ch of q) {
+    const j = v.indexOf(ch, pos + 1);
+    if (j < 0) return null;
+    if (j === 0 || /[\s\-_./@#:]/.test(v[j - 1])) starts++;
+    gaps += j - pos - 1;
+    pos = j;
+  }
+  return 3 + Math.min(gaps, 90) / 100 - starts / 100;
 }
+
+// Il punteggio migliore tra più campi; un campo secondario (nome, descrizione) pesa un po' meno.
+function best(q, ...fields) {
+  let out = null;
+  for (const [value, weight = 0] of fields) {
+    const r = fuzzy(value, q);
+    if (r != null && (out == null || r + weight < out)) out = r + weight;
+  }
+  return out;
+}
+
+const rank = (s, q) => fuzzy(s, q) ?? 9;
 
 function suggest(sig, q, kind) {
   const D = S.data;
@@ -233,7 +270,7 @@ function suggest(sig, q, kind) {
   if (sig === '/') {
     const counts = new Map();
     for (const i of D.items) if (i.category) counts.set(i.category, (counts.get(i.category) || 0) + 1);
-    return [...counts].filter(([c]) => !ql || lc(c).includes(ql))
+    return [...counts].filter(([c]) => fuzzy(c, ql) != null)
       .sort((a, b) => rank(a[0], ql) - rank(b[0], ql) || b[1] - a[1])
       .slice(0, 8)
       .map(([c, n]) => ({ insert: `/${c.replace(/ /g, '_')}`, label: `/${c}`, extra: `${n} articoli`, cat: c }));
@@ -243,7 +280,8 @@ function suggest(sig, q, kind) {
   if (sig === '+' || sig === '++') {
     const me = D.me.id;
     const people = D.members
-      .filter(u => u.id !== me && (!ql || lc(u.username).includes(ql) || lc(u.name).includes(ql)))
+      .filter(u => u.id !== me && best(ql, [u.username], [u.name]) != null)
+      .sort((a, b) => best(ql, [a.username], [a.name]) - best(ql, [b.username], [b.name]))
       .map(u => ({ insert: `${sig}${u.username}`, label: `${sig}${u.username}`, hint: lc(u.name) !== lc(u.username) ? u.name : '', extra: sig === '++' ? 'condividi e assegna' : 'condividi' }));
     const all = sig === '+' && (!ql || 'all'.startsWith(ql) || 'tutti'.startsWith(ql)) ? [{ insert: '+all', label: '+all', hint: 'tutti', extra: 'condividi con tutti' }] : [];
     return [...people, ...all];

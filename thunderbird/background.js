@@ -4,7 +4,9 @@
 //  - quando la mail parte, lo dice a Organizer (diventa "mandata", in attesa di risposta);
 //  - quando arriva una mail che risponde a una conversazione seguita da Organizer, gliela passa;
 //  - con "tutta la posta in arrivo" (opzioni, attivo di base) passa anche le altre mail delle cartelle Posta in
-//    arrivo, che in Organizer vede solo chi le riceve. Spento, le altre mail non escono da Thunderbird.
+//    arrivo, che in Organizer vede solo chi le riceve. Spento, le altre mail non escono da Thunderbird;
+//  - dal tasto destro su una mail (anche vecchia, in qualunque cartella), "Porta il thread in Organizer" passa
+//    tutta la conversazione: i messaggi prima e tutte le risposte dopo, tra i thread attivi.
 /* global browser */
 
 let cfg = { server: '', token: '', inbox: true };
@@ -89,10 +91,12 @@ async function refreshWatch() {
 }
 
 // I nostri indirizzi: servono a Organizer per "rispondi a tutti" senza rispondere a sé stessi.
+let myAddresses = new Set(); // per capire se una mail vecchia l'abbiamo mandata noi
 async function sendIdentities() {
   try {
     const accounts = await browser.accounts.list(false);
     const addresses = accounts.flatMap(a => (a.identities || []).map(i => i.email)).filter(Boolean);
+    myAddresses = new Set(addresses.map(a => a.toLowerCase()));
     await call('POST', '/mail/identities', { addresses });
   } catch (e) {
     console.warn('Organizer: indirizzi non mandati', e);
@@ -163,21 +167,26 @@ async function openCompose(req) {
 
 browser.tabs.onRemoved.addListener(id => composing.delete(id));
 
+// Una mail partita: se l'aveva preparata Organizer diventa "mandata"; in ogni caso (con "tutta la posta")
+// entra nel suo thread, e se risponde a mail che Organizer non ha si recuperano anche quelle.
 browser.compose.onAfterSend.addListener(async (tab, info) => {
+  if (info.error) return;
   const req = composing.get(tab.id);
-  if (!req || info.error) return;
   composing.delete(tab.id);
   const m = info.messages?.[0];
-  try {
-    await call('POST', '/mail/sent', {
-      ws: req.ws, outbox_id: req.id,
-      message_id: m?.headerMessageId || info.headerMessageId || null,
-      date: (m?.date ? new Date(m.date) : new Date()).toISOString(),
-      from: m?.author || '', to: (m?.recipients || []).join(', '), cc: (m?.ccList || []).join(', '), subject: m?.subject || req.subject,
-    });
-  } catch (e) {
-    notify(`Mail inviata, ma Organizer non l'ha saputo: ${e.message}`);
+  if (req) {
+    try {
+      await call('POST', '/mail/sent', {
+        ws: req.ws, outbox_id: req.id,
+        message_id: m?.headerMessageId || info.headerMessageId || null,
+        date: (m?.date ? new Date(m.date) : new Date()).toISOString(),
+        from: m?.author || '', to: (m?.recipients || []).join(', '), cc: (m?.ccList || []).join(', '), subject: m?.subject || req.subject,
+      });
+    } catch (e) {
+      notify(`Mail inviata, ma Organizer non l'ha saputo: ${e.message}`);
+    }
   }
+  if (m && (req || cfg.inbox)) await pass(m, { direction: 'out' }).catch(e => console.warn('Organizer: mail mandata non passata', e));
 });
 
 // ---------- allegati → documenti del magazzino ----------
@@ -240,22 +249,124 @@ function htmlToText(html) {
   return doc.body.textContent.replace(/\n{3,}/g, '\n\n').trim();
 }
 
-async function check(header) {
-  if (!cfg.token || header.junk) return;
-  if (!cfg.inbox && !watch.size) return;
-  const full = await browser.messages.getFull(header.id);
+// Passa una mail di Thunderbird a Organizer. extra: direction ('in' arrivata, 'out' mandata), history (vecchia,
+// chiesta per completare un thread), thread (quello che l'ha chiesta), import (scelta a mano: tra gli attivi).
+async function pass(header, extra = {}, full = null) {
+  full ||= await browser.messages.getFull(header.id);
   const h = name => (full.headers?.[name] || []).join(' ');
-  const refs = [...ids(h('in-reply-to')), ...ids(h('references'))];
-  if (!cfg.inbox && !refs.some(r => watch.has(r))) return;
+  const refs = [...ids(h('references')), ...ids(h('in-reply-to'))];
+  if (!cfg.inbox && !extra.history && !extra.import && extra.direction !== 'out' && !refs.some(r => watch.has(r))) return null;
   const attachments = await browser.messages.listAttachments(header.id).catch(() => []);
   const r = await call('POST', '/mail/incoming', {
     message_id: header.headerMessageId, in_reply_to: ids(h('in-reply-to'))[0] || null, references: refs,
     from: header.author, to: (header.recipients || []).join(', '), cc: (header.ccList || []).join(', '),
     subject: header.subject, date: new Date(header.date).toISOString(),
-    body: (await textOf(header.id, full)).slice(0, 100000), inbox: cfg.inbox,
+    body: (await textOf(header.id, full)).slice(0, 100000), inbox: cfg.inbox, direction: 'in', ...extra,
     attachments: attachments.map(a => ({ name: a.name, part: a.partName, size: a.size, type: a.contentType })),
   });
   if (r?.matched) watch.add(header.headerMessageId);
+  if (r?.missing?.length) await history(r.missing, r.thread);
+  return r;
+}
+
+// Le mail vecchie di un thread che Organizer non ha: si cercano in Thunderbird (in tutte le cartelle) e si
+// mandano come storia. Al massimo 30 per volta, per non fermare tutto con conversazioni lunghissime.
+async function history(missing, thread, budget = { n: 30 }) {
+  for (const mid of missing) {
+    if (budget.n-- <= 0) return;
+    const found = await browser.messages.query({ headerMessageId: mid }).catch(() => null);
+    const old = found?.messages?.[0];
+    if (!old) continue;
+    const mine = myAddresses.has(String(old.author || '').replace(/.*<([^>]+)>.*/, '$1').trim().toLowerCase());
+    await pass(old, { history: true, thread, direction: mine ? 'out' : 'in' }).catch(e => console.warn('Organizer: mail vecchia non passata', e));
+  }
+}
+
+// ---------- un thread scelto a mano ----------
+// Dalla mail scelta si risale ai messaggi citati (References) e si scende alle risposte: quelle con lo stesso
+// oggetto (senza Re:, R:, Fwd:…) in tutte le cartelle che citano un messaggio già raccolto, finché se ne trovano
+// di nuove. Poi tutto a Organizer, dal più vecchio, nello stesso thread.
+const cleanSubject = s => String(s || '').replace(/^\s*((re|r|fw|fwd|i|aw|sv)\s*(\[\d+\])?\s*:\s*)+/i, '').trim();
+const isMine = m => myAddresses.has(String(m.author || '').replace(/.*<([^>]+)>.*/, '$1').trim().toLowerCase());
+const IMPORT_MAX = 200;
+
+async function allPages(page) {
+  const out = [];
+  for (let p = page; p; p = p.id ? await browser.messages.continueList(p.id) : null) out.push(...p.messages);
+  return out;
+}
+
+async function conversation(start) {
+  const got = new Map(); // Message-ID → { header, full, refs }
+  const add = async m => {
+    if (!m?.headerMessageId || got.has(m.headerMessageId) || got.size >= IMPORT_MAX) return null;
+    const full = await browser.messages.getFull(m.id);
+    const h = name => (full.headers?.[name] || []).join(' ');
+    const x = { header: m, full, refs: [...ids(h('references')), ...ids(h('in-reply-to'))] };
+    got.set(m.headerMessageId, x);
+    return x;
+  };
+  const first = await add(start);
+  // Prima: i messaggi citati che ci sono in Thunderbird.
+  for (const mid of first.refs) {
+    const found = await browser.messages.query({ headerMessageId: mid }).catch(() => null);
+    if (found?.messages?.[0]) await add(found.messages[0]);
+  }
+  // Dopo: le risposte, cercate per oggetto.
+  const subject = cleanSubject(start.subject);
+  if (subject) {
+    const candidates = (await allPages(await browser.messages.query({ subject })).catch(() => []))
+      .filter(m => cleanSubject(m.subject) === subject && !m.junk);
+    const pending = new Map(candidates.map(m => [m.headerMessageId, m]));
+    for (let more = true; more && got.size < IMPORT_MAX;) {
+      more = false;
+      for (const [mid, m] of pending) {
+        if (got.has(mid)) { pending.delete(mid); continue; }
+        const full = await browser.messages.getFull(m.id);
+        const h = name => (full.headers?.[name] || []).join(' ');
+        const refs = [...ids(h('references')), ...ids(h('in-reply-to'))];
+        if (refs.some(r => got.has(r))) {
+          got.set(mid, { header: m, full, refs });
+          pending.delete(mid);
+          more = true;
+        }
+      }
+    }
+  }
+  return [...got.values()].sort((a, b) => new Date(a.header.date) - new Date(b.header.date));
+}
+
+async function importThread(start, done) {
+  if (!cfg.token) return notify('Collega prima Organizer (opzioni dell\'estensione)');
+  try {
+    const list = await conversation(start);
+    for (const x of list) done.add(x.header.headerMessageId);
+    let thread = null;
+    for (const x of list) {
+      const r = await pass(x.header, { import: true, thread, direction: isMine(x.header) ? 'out' : 'in' }, x.full);
+      thread ||= r?.thread || null;
+    }
+    notify(`In Organizer: "${cleanSubject(start.subject) || 'senza oggetto'}", ${list.length} ${list.length === 1 ? 'messaggio' : 'messaggi'}${list.length >= IMPORT_MAX ? ' (i primi)' : ''}`);
+  } catch (e) {
+    console.error(e);
+    notify(`Thread non portato in Organizer: ${e.message}`);
+  }
+}
+
+browser.menus.create({ id: 'organizer-import', title: 'Porta il thread in Organizer', contexts: ['message_list'] });
+browser.menus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId !== 'organizer-import') return;
+  const picked = info.selectedMessages ? await allPages(info.selectedMessages)
+    : [await browser.messageDisplay.getDisplayedMessage(tab.id).catch(() => null)].filter(Boolean);
+  // Più mail scelte: un thread per ciascuna conversazione (quelle già raccolte non si ripetono).
+  const done = new Set();
+  for (const m of picked) if (!done.has(m.headerMessageId)) await importThread(m, done);
+});
+
+async function check(header) {
+  if (!cfg.token || header.junk) return;
+  if (!cfg.inbox && !watch.size) return;
+  await pass(header);
 }
 
 async function checkAll(page) {

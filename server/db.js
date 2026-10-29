@@ -18,6 +18,9 @@ export function openSqlite(file) {
 }
 
 // Ogni elemento è una migrazione; non modificare quelle già rilasciate, aggiungerne di nuove in coda.
+// Una migrazione è SQL, oppure (steps) SQL e poi passi in JS sulla stessa connessione, nella stessa transazione.
+const steps = (sql, ...fns) => conn => { conn.exec(sql); for (const f of fns) f(conn); };
+
 const MIGRATIONS = [
   `
   CREATE TABLE users (
@@ -366,6 +369,85 @@ const MIGRATIONS = [
   `
   ALTER TABLE chat_reads ADD COLUMN muted INTEGER NOT NULL DEFAULT 0;
   `,
+  // v19: mail a thread. Un thread (personale, di owner_id) raccoglie i messaggi ricevuti e mandati e le mail
+  // scritte in Organizer (entries.thread_id); attivo finché non lo si archivia. mail_thread_links: i
+  // collegamenti scelti a mano o trovati nei messaggi (codici di magazzino); quelli citati nelle mail scritte in
+  // Organizer arrivano da entry_links. I messaggi ora appartengono al thread (entry_id solo per quelli mandati
+  // da una mail di Organizer); read_at per quelli ricevuti. Le conversazioni di prima diventano thread: una
+  // mail mandata che non aspetta risposta finisce tra gli archiviati.
+  steps(`
+  CREATE TABLE mail_threads (
+    id INTEGER PRIMARY KEY,
+    owner_id INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
+    subject TEXT NOT NULL DEFAULT '',
+    archived_at TEXT,
+    last_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX mail_threads_owner ON mail_threads(owner_id, last_at);
+  CREATE TABLE mail_thread_links (
+    thread_id INTEGER NOT NULL REFERENCES mail_threads ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    target_id INTEGER NOT NULL,
+    auto INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (thread_id, kind, target_id)
+  );
+  ALTER TABLE entries ADD COLUMN thread_id INTEGER REFERENCES mail_threads ON DELETE SET NULL;
+
+  INSERT INTO mail_threads (id, owner_id, subject, archived_at, last_at, created_at)
+    SELECT e.id, e.created_by, COALESCE(NULLIF(e.mail_subject, ''), e.title),
+      CASE WHEN e.done_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM entries x WHERE (x.id = e.id OR x.mail_thread = e.id)
+        AND x.kind = 'mail' AND x.deleted_at IS NULL AND (x.done_at IS NULL OR x.awaiting_reply = 1)) THEN e.done_at END,
+      COALESCE((SELECT MAX(m.date) FROM mail_messages m JOIN entries x ON x.id = m.entry_id WHERE x.id = e.id OR x.mail_thread = e.id), e.updated_at),
+      e.created_at
+    FROM entries e WHERE e.kind = 'mail' AND e.mail_thread IS NULL AND e.created_by IS NOT NULL;
+  UPDATE entries SET thread_id = COALESCE(mail_thread, id) WHERE kind = 'mail' AND COALESCE(mail_thread, id) IN (SELECT id FROM mail_threads);
+
+  CREATE TABLE mail_messages_v19 (
+    id INTEGER PRIMARY KEY,
+    thread_id INTEGER NOT NULL REFERENCES mail_threads ON DELETE CASCADE,
+    entry_id INTEGER REFERENCES entries ON DELETE SET NULL,
+    direction TEXT NOT NULL CHECK (direction IN ('out', 'in')),
+    message_id TEXT NOT NULL,
+    from_addr TEXT NOT NULL DEFAULT '',
+    to_addr TEXT NOT NULL DEFAULT '',
+    cc TEXT NOT NULL DEFAULT '',
+    subject TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL DEFAULT '',
+    attachments TEXT NOT NULL DEFAULT '[]',
+    date TEXT NOT NULL,
+    read_at TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE (thread_id, message_id)
+  );
+  INSERT INTO mail_messages_v19 (id, thread_id, entry_id, direction, message_id, from_addr, to_addr, cc, subject, body, attachments, date, read_at, created_at)
+    SELECT m.id, e.thread_id, CASE WHEN m.direction = 'out' THEN m.entry_id END, m.direction, m.message_id, m.from_addr, m.to_addr, m.cc, m.subject,
+      m.body, m.attachments, m.date, m.created_at, m.created_at
+    FROM mail_messages m JOIN entries e ON e.id = m.entry_id WHERE e.thread_id IS NOT NULL;
+  -- Cancellando la tabella vecchia SQLite azzera entries.reply_to (ON DELETE SET NULL): si salva e si rimette.
+  CREATE TEMP TABLE keep_reply AS SELECT id, reply_to FROM entries WHERE reply_to IS NOT NULL;
+  DROP TABLE mail_messages;
+  ALTER TABLE mail_messages_v19 RENAME TO mail_messages;
+  UPDATE entries SET reply_to = (SELECT k.reply_to FROM keep_reply k WHERE k.id = entries.id)
+    WHERE id IN (SELECT id FROM keep_reply) AND (SELECT k.reply_to FROM keep_reply k WHERE k.id = entries.id) IN (SELECT id FROM mail_messages);
+  DROP TABLE keep_reply;
+  CREATE INDEX mail_messages_thread ON mail_messages(thread_id, date);
+  CREATE INDEX mail_messages_mid ON mail_messages(message_id);
+  `, conn => {
+    // I thread nati dalle mail di prima prendono l'oggetto senza "Re:", "R:", "Fwd:"… (come cleanSubject).
+    const re = /^\s*((re|r|fw|fwd|i|aw|sv)\s*(\[\d+\])?\s*:\s*)+/i;
+    const set = conn.prepare('UPDATE mail_threads SET subject = ? WHERE id = ?');
+    for (const t of conn.prepare('SELECT id, subject FROM mail_threads').all()) {
+      const s = t.subject.replace(re, '').trim();
+      if (s && s !== t.subject) set.run(s, t.id);
+    }
+  }),
+  // v20: thread nel cestino. Eliminato, porta con sé le mail scritte in Organizer che ne fanno parte (stesso
+  // deleted_at): si ripristinano insieme.
+  `
+  ALTER TABLE mail_threads ADD COLUMN deleted_at TEXT;
+  ALTER TABLE mail_threads ADD COLUMN deleted_by INTEGER;
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
@@ -376,7 +458,9 @@ export function migrate(conn) {
   for (let i = version; i < MIGRATIONS.length; i++) {
     conn.exec('BEGIN');
     try {
-      conn.exec(MIGRATIONS[i]);
+      const m = MIGRATIONS[i];
+      if (typeof m === 'function') m(conn);
+      else conn.exec(m);
       conn.exec(`PRAGMA user_version = ${i + 1}`);
       conn.exec('COMMIT');
     } catch (e) {

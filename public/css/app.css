@@ -178,6 +178,12 @@ code, .mono { font-family: var(--mono); font-size: 0.92em; }
   .nav.on .ic { color: var(--accent); }
   .nav .nl { flex: 1; }
   .sep { height: 1px; background: var(--line); margin: 8px 6px; }
+  /* Gruppi della barra: un divisore più leggero (corto e tenue) tra un gruppo e l'altro; i gruppi senza voci visibili spariscono. */
+  .nav-group { display: flex; flex-direction: column; gap: 2px; }
+  .nav-group + .nav-group::before { content: ''; height: 1px; margin: 4px 14px; background: color-mix(in srgb, var(--line) 55%, transparent); }
+  .nav-group:not(:has(.nav:not([hidden]))) { display: none; }
+  .nav.sub { padding: 6px 10px 6px 30px; font-size: 13.5px; }
+  .nav.sub .ic { width: 16px; height: 16px; }
   .tabs, .only-mobile { display: none !important; }
   .main { padding-bottom: 40px; }
   .top { padding-top: 16px; }
@@ -460,9 +466,7 @@ select.sm { padding: 4px 8px; font-size: 13px; }
 .mail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .atts-n { color: var(--muted); }
 .replies { color: var(--mail); font-weight: 600; }
-/* Conversazione di una mail (messaggi mandati e risposte arrivate da Thunderbird). */
-.thread { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 10px; }
-.thread-h { display: flex; align-items: center; gap: 6px; }
+/* Messaggi di un thread (ricevuti e mandati, da Thunderbird). */
 .tmsg { border: 1px solid var(--line); border-left: 3px solid var(--line); border-radius: var(--radius); padding: 8px 10px; background: var(--panel-2); }
 .tmsg.in { border-left-color: var(--mail); }
 .tmsg-h { display: flex; align-items: center; gap: 8px; font-size: 13px; }
@@ -491,14 +495,56 @@ a.ms-person:hover .ccol, a.ms-link:hover, .ms-att a:hover { text-decoration: und
 @media (max-width: 1100px) {
   .mail-cols { grid-template-columns: minmax(0, 1fr); }
 }
-/* Mail ricevute (da Thunderbird): stessa riga delle mail; da leggere in grassetto con il pallino. */
-.entry.inmail.unread .title { font-weight: 700; }
-.entry.inmail .check.mail { color: var(--mail); }
-.in-snip { flex-basis: 100%; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.in-h { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
-.in-body { font-size: 14px; }
-.inbox-a { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.inbox-a .tmsg-a { margin: 0; }
+/* Thread di mail: schede su più colonne (pagina Mail) e pagina del thread. */
+.tcard { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.tcard.unread { border-left: 3px solid var(--mail); }
+.tcard.archived { opacity: 0.85; }
+.tcard .check { margin-top: 1px; flex: none; }
+.tc-body { display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 1; color: inherit; }
+.tc-body:hover .tc-subj { text-decoration: underline; }
+.tc-h { display: flex; align-items: baseline; gap: 8px; }
+.pop-b.tc-menu { flex: none; min-height: 0; padding: 0 6px; border-color: transparent; background: none; color: var(--muted); font-size: 15px; }
+.pop-b.tc-menu .kpick-caret { display: none; }
+.tcard:hover .pop-b.tc-menu, .pop-b.tc-menu[aria-expanded="true"] { border-color: var(--line); color: var(--text); }
+.th-subj { cursor: text; }
+.tc-subj { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.tcard.unread .tc-subj { font-weight: 750; }
+.tc-date { flex: none; font-size: 12px; }
+.tc-who { display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--muted); min-width: 0; }
+.tc-who .ic { width: 13px; height: 13px; flex: none; }
+.tc-snip { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.tc-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12.5px; }
+.tc-meta:empty { display: none; }
+.tc-meta .ic { width: 13px; height: 13px; vertical-align: -2px; }
+.tc-meta > .muted { display: inline-flex; align-items: center; gap: 3px; }
+.tb { display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px; border-radius: 999px; font-weight: 600; }
+.tb.unread { background: color-mix(in srgb, var(--mail) 16%, transparent); color: var(--mail); }
+.tb.draft { background: var(--accent-soft); color: var(--accent); }
+.tb.wait { background: color-mix(in srgb, var(--today) 14%, transparent); color: var(--today); }
+.thread-cols { margin-top: 4px; }
+.th-head { display: flex; align-items: center; gap: 10px; margin-bottom: 2px; }
+.th-subj { margin: 0; font-size: 20px; overflow-wrap: anywhere; min-width: 0; }
+.th-sub { margin: 0 0 14px 44px; font-size: 13px; }
+.tmsg-more { align-self: flex-start; padding: 4px 10px; border: 1px dashed var(--line); border-radius: 999px; background: none; color: var(--muted); font-size: 13px; cursor: pointer; }
+.tmsg-more:hover { color: var(--text); border-color: var(--accent); }
+.tmsg .att-in { margin-top: 8px; font-size: 13px; }
+.tdraft { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px dashed var(--accent); border-radius: var(--radius); background: var(--accent-soft); }
+.tdraft-h { display: flex; align-items: center; gap: 8px; font-size: 13px; min-width: 0; }
+.tdraft-h a { color: inherit; font-weight: 600; overflow-wrap: anywhere; }
+.tdraft-att { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.th-new { display: flex; flex-wrap: wrap; gap: 8px; }
+.tl-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.tl-row .ic { width: 14px; height: 14px; color: var(--muted); flex: none; }
+.tl-row > a { color: inherit; overflow-wrap: anywhere; min-width: 0; }
+.tl-row > a:hover { text-decoration: underline; }
+.tl-row > .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; font-size: 12px; }
+.tl-auto { font-size: 11px; flex: none; }
+.ms-b .sub-in { width: 100%; }
+.thread-link { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--line); border-left: 3px solid var(--mail); border-radius: var(--radius); background: var(--panel-2); color: inherit; font-size: 13px; min-width: 0; }
+.thread-link span:not(.muted):not(.grow) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.thread-link:hover { border-color: var(--mail); }
+.thread-link .ic { width: 14px; height: 14px; color: var(--mail); flex: none; }
+.bl-row.unread .bl-t { font-weight: 700; }
 .fhint { margin: -2px 0 10px; font-size: 13px; }
 .seg button .n { margin-left: 6px; opacity: 0.7; }
 .btn.ghost.on { background: var(--accent-soft); color: var(--text); }
@@ -1248,3 +1294,21 @@ body.no-quick .quick { display: none; }
 .ro .rich-view { cursor: default; }
 .ro .rich-view:hover { border-color: var(--line); }
 .ro .dv-page { cursor: default; }
+
+/* ---------- giro di Organizer ---------- */
+.tour-spot { position: fixed; z-index: 80; border-radius: 10px; outline: 2px solid var(--accent); box-shadow: 0 0 0 9999px rgb(0 0 0 / 50%); pointer-events: none; transition: top 0.25s ease, left 0.25s ease, width 0.25s ease, height 0.25s ease; }
+.tour-spot.dim { outline: none; }
+.tour-card { position: fixed; z-index: 81; width: min(380px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); box-shadow: 0 16px 48px rgb(0 0 0 / 40%); }
+.tour-card.center { top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(440px, calc(100vw - 32px)); }
+.tour-card.corner { right: 20px; bottom: 20px; }
+.tour-card.bottom { left: 16px; right: 16px; bottom: calc(72px + env(safe-area-inset-bottom)); width: auto; }
+.tour-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tour-h h3 { margin: 0; font-size: 16px; }
+.tour-card p { margin: 0; font-size: 14px; line-height: 1.5; }
+.tour-foot { display: flex; align-items: center; gap: 8px; }
+.tour-foot.end { flex-wrap: wrap; }
+.tour-n { margin-right: auto; color: var(--muted); font-size: 12.5px; }
+.ti-body { display: flex; flex-direction: column; gap: 12px; padding: 18px; }
+.ti-body h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 18px; }
+.ti-body h2 .ic { color: var(--accent); }
+.ti-body p { margin: 0; }
