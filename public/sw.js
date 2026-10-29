@@ -4,9 +4,9 @@
 // I file si ricontrollano sempre con il server (cache: 'no-cache'), qualunque cosa dica la cache HTTP: dietro
 // Cloudflare JS e CSS arrivano con "tienili 4 ore" e dopo un aggiornamento l'app userebbe il codice vecchio.
 // Con l'ETag un file non cambiato non si riscarica (risposta 304).
-const CACHE = 'organizer-v44';
+const CACHE = 'organizer-v45';
 const SHELL = [
-  './', 'index.html', 'css/app.css', 'js/app.js', 'js/core.js', 'js/views.js', 'js/parse.js', 'js/autocomplete.js', 'js/mail.js', 'js/contacts.js', 'js/trash.js', 'js/docview.js', 'js/documents.js', 'js/dnd.js', 'js/chat.js', 'js/changelog.js', 'js/themes.js', 'js/perms.js', 'js/model3d.js', 'js/step-worker.js', 'js/feedback.js',
+  './', 'index.html', 'css/app.css', 'js/app.js', 'js/core.js', 'js/views.js', 'js/parse.js', 'js/autocomplete.js', 'js/mail.js', 'js/contacts.js', 'js/trash.js', 'js/docview.js', 'js/documents.js', 'js/dnd.js', 'js/chat.js', 'js/changelog.js', 'js/themes.js', 'js/perms.js', 'js/model3d.js', 'js/step-worker.js', 'js/feedback.js', 'js/notifiche.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/apple-touch-icon.png',
 ];
 
@@ -38,4 +38,31 @@ self.addEventListener('fetch', ev => {
       })
       .catch(() => caches.match(ev.request, { ignoreSearch: true }).then(r => r || caches.match('index.html'))),
   );
+});
+
+// Notifiche push (server/push.js): { title, body, url, tag }. url è #/n/ID: l'app apre ciò a cui porta.
+self.addEventListener('push', ev => {
+  let d = {};
+  try {
+    d = ev.data ? ev.data.json() : {};
+  } catch { /* messaggio non leggibile: si mostra comunque qualcosa */ }
+  ev.waitUntil(self.registration.showNotification(d.title || 'Organizer', {
+    body: d.body || '', tag: d.tag, renotify: !!d.tag, data: { url: d.url || '#/agenda' },
+    icon: 'icons/icon-192.png', badge: 'icons/icon-192.png',
+  }));
+});
+
+// Clic sulla notifica: si usa una finestra dell'app già aperta (portandola davanti), altrimenti se ne apre una.
+self.addEventListener('notificationclick', ev => {
+  ev.notification.close();
+  const url = new URL(`./${ev.notification.data?.url || '#/agenda'}`, self.registration.scope).href;
+  ev.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const win = wins.find(w => w.url.startsWith(self.registration.scope));
+    if (win) {
+      await win.focus();
+      return win.navigate ? win.navigate(url) : win.postMessage({ open: url });
+    }
+    return self.clients.openWindow(url);
+  })());
 });

@@ -13,6 +13,7 @@ import './remote.js';
 import './tokens.js';
 import './chat.js';
 import './feedback.js';
+import './notifications.js';
 import { purgeExpired } from './trash.js';
 import { resolveAuth, resolveApiToken, workspaceById, acc } from './accounts.js';
 import { bump } from './events.js';

@@ -299,6 +299,50 @@ test('collegamenti citati: archiviati, non condivisi, eliminati', async () => {
   assert.equal(r['voce:999999'].status, 'gone');
 });
 
+test('notifiche: assegnate, condivise, citate, chat (anche silenziata)', async () => {
+  const { token } = config();
+  const json = r => (r.status === 204 ? null : r.json());
+  const me = (method, p, body) => call(method, p, { token, body }).then(json);
+  const cookie = (await call('POST', '/login', { body: { username: 'luca', password: 'password-di-luca' } })).headers.get('set-cookie').split(';')[0];
+  const luca = (method, p, body) => call(method, p, { cookie, body }).then(json);
+  await luca('POST', '/notifications/read', { all: true });
+  const fresh = async () => (await luca('GET', '/sync')).notifications.filter(n => !n.read_at).map(n => [n.kind, n.title, n.body]);
+
+  const { id: a } = await me('POST', '/entries', { text: 'saldare connettore ++luca' });
+  await me('POST', '/entries', { text: 'leggi il manuale +luca' });
+  await me('POST', '/entries', { text: 'solo mia' });
+  let n = await fresh();
+  assert.deepEqual(n.map(x => x[1]).sort(), ['fede ti ha assegnato una todo', 'fede ti ha condiviso una todo']);
+  assert.ok(n.some(x => x[2] === 'saldare connettore'));
+  await me('POST', `/entries/${a}/log`, { text: 'fatto metà, guarda tu +luca' });
+  assert.ok((await fresh()).some(x => x[1] === 'fede ti ha citato in un aggiornamento'));
+
+  // Chat: ogni messaggio a chi non ha silenziato; silenziato, solo le citazioni. Leggere il canale le spegne.
+  await luca('POST', '/notifications/read', { all: true });
+  await me('POST', '/chat', { text: 'pausa caffè', channel: 'generale' });
+  assert.deepEqual((await fresh()).map(x => x[1]), ['#generale · fede']);
+  const gen = (await luca('GET', '/sync')).chatChannels.find(c => c.name === 'generale');
+  await luca('POST', `/chat/channels/${gen.id}/mute`, { muted: true });
+  await luca('POST', '/notifications/read', { all: true });
+  await me('POST', '/chat', { text: 'altro messaggio', channel: 'generale' });
+  assert.deepEqual(await fresh(), []);
+  const { id: mid } = await me('POST', '/chat', { text: 'serve una mano +luca', channel: 'generale' });
+  assert.deepEqual((await fresh()).map(x => x[1]), ['fede ti ha citato in #generale']);
+  assert.equal((await luca('GET', '/sync')).chatChannels.find(c => c.name === 'generale').muted, 1);
+  await luca('POST', '/chat/read', { id: mid, channel: gen.id });
+  assert.deepEqual(await fresh(), []);
+  await luca('POST', `/chat/channels/${gen.id}/mute`, { muted: false });
+
+  // Nota su un documento con +luca; da una notifica di sistema si arriva all'indirizzo giusto.
+  const doc = (await me('GET', '/sync')).docs[0];
+  await me('POST', `/docs/${doc.id}/notes`, { text: 'controlla la quota +luca' });
+  const [note] = (await luca('GET', '/sync')).notifications;
+  assert.match(note.title, /ti ha citato in una nota su/);
+  assert.deepEqual(await luca('GET', `/notifications/${note.id}`).then(x => [x.url.split('?')[0], !!x.workspace_id]), [`#/d/${doc.id}`, true]);
+  assert.equal((await luca('GET', '/sync')).notifications[0].read_at !== null, true);
+  assert.equal((await call('POST', '/push/subscribe', { cookie, body: { endpoint: 'http://non-https', keys: {} } })).status, 400);
+});
+
 test('voci create offline: niente doppioni se l\'invio si ripete, todo già fatta', async () => {
   const { token } = config();
   const post = body => call('POST', '/entries', { token, body }).then(r => r.json());
@@ -402,7 +446,7 @@ test('chat: scrivere, leggere, non letti, solo i propri messaggi', async () => {
   await call('POST', '/chat/read', { cookie: marco, body: { id } });
   const s = await sync(marco);
   assert.equal(s.chatUnread, 0);
-  assert.deepEqual(s.chat.map(m => m.text), ['guarda [[doc:1]] di #SCH-042']);
+  assert.equal(s.chat.at(-1).text, 'guarda [[doc:1]] di #SCH-042');
   assert.deepEqual((await (await call('GET', `/chat?after=${id - 1}`, { cookie: marco })).json()).map(m => m.id), [id]);
 });
 

@@ -15,6 +15,7 @@ import { mailParts, sendFile } from './mail.js';
 import { allows } from './perms.js';
 import { bump, mailExtOn, openMailExtStream, notifyMailExt } from './events.js';
 import { zip } from './zip.js';
+import { notify } from './notify.js';
 import { fail, now, str, isHttps } from './util.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -279,11 +280,20 @@ route('POST', '/api/mail/incoming', async ({ user, body }) => {
     });
   }
   const thread = matched[0] || null;
+  // Notifica per le mail appena arrivate (non per quelle recuperate dei giorni passati al primo collegamento).
+  const fresh = Date.now() - Date.parse(str(b.date, 40) || now()) < 15 * 60e3;
+  const fromName = (String(b.from || '').replace(/<[^>]*>/, '').replace(/"/g, '').trim() || emailOf(b.from) || 'qualcuno');
   if (b.inbox) {
     const r = acc.prepare(`INSERT OR IGNORE INTO mail_inbox (user_id, message_id, from_addr, to_addr, cc, subject, body, attachments, date, thread_ws, thread_entry, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(user.id, mid, str(b.from, 300), str(b.to, 1000), str(b.cc, 1000), str(b.subject, 300),
       str(b.body, 100000), attachments, str(b.date, 40) || now(), thread?.ws ?? null, thread?.entry ?? null, now());
     if (r.changes) bump(user.id);
+    if (r.changes && fresh) {
+      notify([user.id], { ws: thread?.ws ?? null, kind: 'mail', title: `${thread ? 'Risposta' : 'Mail'} da ${fromName}`, body: str(b.subject, 300) || '(senza oggetto)',
+        url: thread ? `#/v/${thread.entry}` : '#/mail', tag: `mail-${mid}` });
+    }
+  } else if (thread && fresh) {
+    notify([user.id], { ws: thread.ws, kind: 'mail', title: `Risposta da ${fromName}`, body: str(b.subject, 300) || '(senza oggetto)', url: `#/v/${thread.entry}`, tag: `mail-${mid}` });
   }
   for (const { ws } of matched) bump(user.id, ws);
   if (matched.length) notifyMailExt(user.id, 'watch');

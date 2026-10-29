@@ -14,6 +14,7 @@ import {
 import { HttpError, fail, now, bool, str, sendJson, clientIp } from './util.js';
 import { rev, openStream, dropUser, mailExtOn } from './events.js';
 import { chatSync, readKey } from './chatdata.js';
+import { notify, notificationsOf } from './notify.js';
 import { allows, assertCan, entryArea, readableKinds } from './perms.js';
 import { currentWorkspace } from './db.js';
 
@@ -71,6 +72,19 @@ const getUser = id => db.prepare('SELECT id, username, name, is_admin FROM users
 // +utente: solo i membri attuali del workspace.
 const findUser = name => db.prepare('SELECT id FROM users WHERE member = 1 AND (username = $n COLLATE NOCASE OR name = $n COLLATE NOCASE)').get({ n: name });
 
+// ---------- notifiche ----------
+const ARTICLE = { todo: 'una todo', note: 'una nota', mail: 'una mail' };
+const actorName = user => user.name || user.username;
+const plain = t => String(t || '').replace(/\[\[(\w+):\d+\]\]/g, '…').replace(/(^|\s)#/g, '$1');
+
+// A chi riceve una voce (condivisa con +persona o dal pannello, assegnata con ++persona o dal menu).
+function notifyEntry(user, e, ids, assigned = null) {
+  const shared = ids.filter(id => id !== assigned);
+  const base = { ws: currentWorkspace(), kind: 'mention', body: plain(e.title), url: `#/v/${e.id}`, actor: user.id };
+  if (assigned) notify([assigned], { ...base, title: `${actorName(user)} ti ha assegnato ${ARTICLE[e.kind] || 'una voce'}` });
+  if (shared.length) notify(shared, { ...base, title: `${actorName(user)} ti ha condiviso ${ARTICLE[e.kind] || 'una voce'}` });
+}
+
 // ---------- condivisioni ----------
 export const SHARE_TABLES = { entry: 'entries', project: 'projects', contact: 'contacts', docnote: 'doc_notes' };
 
@@ -98,6 +112,7 @@ route('PUT', '/api/shares/:kind/:id', async ({ params, user, body }) => {
   const b = await body();
   const o = db.prepare(`SELECT id, created_by FROM ${table} WHERE id = ?`).get(+params.id) || fail(404, 'Non trovato');
   if (o.created_by !== user.id) fail(403, 'Solo chi l\'ha creato decide con chi condividerlo');
+  const prev = db.prepare('SELECT user_id FROM shares WHERE kind = ? AND obj_id = ?').all(params.kind, o.id).map(r => r.user_id);
   const ids = (Array.isArray(b.users) ? b.users : []).map(Number)
     .filter(id => id !== user.id && db.prepare('SELECT 1 FROM users WHERE id = ? AND member = 1').get(id));
   tx(() => {
@@ -105,6 +120,15 @@ route('PUT', '/api/shares/:kind/:id', async ({ params, user, body }) => {
     db.prepare(`UPDATE ${table} SET shared_all = ? WHERE id = ?`).run(bool(b.all), o.id);
     addShares(params.kind, o.id, ids);
   });
+  // Solo a chi è stato aggiunto ora (non a "tutti": sarebbe una notifica a ognuno per ogni cosa).
+  const before = new Set(prev);
+  const added = ids.filter(id => !before.has(id));
+  if (!added.length) return;
+  if (params.kind === 'entry') return notifyEntry(user, db.prepare('SELECT * FROM entries WHERE id = ?').get(o.id), added);
+  const what = { project: ['un progetto', 'name', `#/p/${o.id}`], contact: ['un contatto', 'name', `#/contatti/${o.id}`], docnote: ['una nota su un documento', 'text', null] }[params.kind];
+  const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(o.id);
+  notify(added, { ws: currentWorkspace(), kind: 'mention', title: `${actorName(user)} ti ha condiviso ${what[0]}`, body: plain(row[what[1]] || row.email || ''),
+    url: what[2] || `#/d/${row.doc_id}?n=${row.id}`, actor: user.id });
 });
 
 const fmtDate = d => (d ? `${d.slice(8)}/${d.slice(5, 7)}` : 'nessuna');
@@ -407,6 +431,7 @@ route('GET', '/api/sync', ({ req, res, user }) => {
     inbox: can('mail') ? inboxOf(uid) : [], // posta in arrivo personale (solo di chi è collegato)
     myAddresses: mailAddressesOf(uid),
     feedbackOpen: openFeedback(uid), // null = non gestisce i feedback
+    ...notificationsOf(uid), // notifiche (di tutti i workspace), da leggere, dispositivi con le push
     mailMsgs: db.prepare(`SELECT m.id, m.entry_id, m.direction, m.from_addr, m.date FROM mail_messages m
       JOIN entries e ON e.id = m.entry_id WHERE ${where} ORDER BY m.date`).all(p),
     // Chat: i canali che si leggono (tutti, per chi li gestisce), gli ultimi messaggi di ognuno e i non letti.
@@ -488,6 +513,7 @@ export function createEntry(b, user) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(kind, title, contact, p.due ?? null, projectId, parent?.id ?? null, assigneeId, user.id, t, t, clientId, kind === 'note' ? null : doneAt));
   addShares('entry', id, sh.ids.filter(x => x !== user.id), p.shareAll || bool(b.shared_all));
+  notifyEntry(user, { id, kind, title }, sh.ids, assigneeId);
   for (const pid of projectIds.slice(1)) addEntryProject(id, pid);
   syncEntryItems(id, user);
   return id;
@@ -523,7 +549,9 @@ export function updateEntry(e, b, user) {
     if (sh.unknown.length) f.title += sh.unknown.map(n => ` +${n}`).join('');
     if (sh.ids.length || p.shareAll) {
       if (e.created_by !== user.id) fail(403, 'Solo chi ha creato la voce decide con chi condividerla');
+      const had = new Set(db.prepare("SELECT user_id FROM shares WHERE kind = 'entry' AND obj_id = ?").all(e.id).map(r => r.user_id));
       addShares('entry', e.id, sh.ids.filter(x => x !== user.id), p.shareAll);
+      notifyEntry(user, { ...e, title: f.title ?? e.title }, sh.ids.filter(x => !had.has(x)));
     }
   }
   if (b.notes !== undefined) f.notes = str(b.notes, 20000);
@@ -560,6 +588,8 @@ export function updateEntry(e, b, user) {
   setFields('entries', e.id, f);
 
   if (f.project_id !== undefined) db.prepare('UPDATE entries SET project_id = ? WHERE parent_id = ?').run(f.project_id, e.id);
+  // Assegnata a qualcun altro (con ++persona o dal menu Assegnata): glielo si dice.
+  if (f.assignee_id && f.assignee_id !== e.assignee_id) notifyEntry(user, { ...e, ...f }, [], f.assignee_id);
   if (e.due && f.due !== undefined && f.due !== e.due) addLog(e.id, user.id, `scadenza ${fmtDate(e.due)} → ${fmtDate(f.due)}`, true);
   if (f.title !== undefined || f.notes !== undefined) syncEntryItems(e.id, user);
   else if (f.mail_subject !== undefined || f.kind !== undefined) syncEntryLinks(e.id);
@@ -689,11 +719,17 @@ route('POST', '/api/entries/:id/log', async ({ params, user, body }) => {
     if (p.assignee) {
       const u = findUser(p.assignee);
       if (u) patch.assignee_id = u.id;
-      else p.title += ` +${p.assignee}`;
     }
-    if (!p.title && Object.keys(patch).length === 1) fail(400, 'Scrivi qualcosa');
+    // +persona in un aggiornamento la cita: resta nel testo, riceve una notifica e, se la voce è tua, la vede.
+    const sh = shareTargets(p.shares);
+    const text = [p.title, ...p.shares.filter(n => n !== p.assignee).map(n => `+${n}`)].filter(Boolean).join(' ');
+    if (!text && Object.keys(patch).length === 1) fail(400, 'Scrivi qualcosa');
+    if (sh.ids.length && e.created_by === user.id) addShares('entry', e.id, sh.ids.filter(x => x !== user.id));
     updateEntry(e, patch, user);
-    if (p.title) addLog(e.id, user.id, p.title);
+    if (text) addLog(e.id, user.id, text);
+    const canSee = uid => db.prepare(`SELECT 1 FROM entries e WHERE e.id = $id AND ${VIS}`).get({ id: e.id, uid });
+    const cited = sh.ids.filter(uid => uid !== patch.assignee_id && canSee(uid));
+    if (cited.length) notify(cited, { ws: currentWorkspace(), kind: 'mention', title: `${actorName(user)} ti ha citato in un aggiornamento`, body: `${plain(e.title)}: ${plain(text)}`, url: `#/v/${e.id}`, actor: user.id });
     db.prepare('UPDATE entries SET updated_at = ? WHERE id = ?').run(now(), e.id);
     syncEntryItems(e.id, user);
   });
@@ -1055,6 +1091,13 @@ function noteText(raw) {
   return { text: [ps.text, ...sh.unknown.map(n => `+${n}`)].filter(Boolean).join(' '), ids: sh.ids, all: ps.all };
 }
 
+// Chi è citato in una nota su un documento (+persona: gliela condivide).
+function notifyNote(user, n, ids) {
+  const d = db.prepare('SELECT label, filename, url FROM documents WHERE id = ?').get(n.doc_id);
+  notify(ids, { ws: currentWorkspace(), kind: 'mention', title: `${actorName(user)} ti ha citato in una nota su ${d?.label || d?.filename || 'un documento'}`,
+    body: plain(n.text), url: `#/d/${n.doc_id}?n=${n.id}`, actor: user.id });
+}
+
 route('POST', '/api/docs/:id/notes', async ({ params, user, body }) => {
   const b = await body();
   const d = db.prepare('SELECT id FROM documents WHERE id = ? AND deleted_at IS NULL').get(+params.id) || fail(404, 'Documento non trovato');
@@ -1065,6 +1108,7 @@ route('POST', '/api/docs/:id/notes', async ({ params, user, body }) => {
   const id = insertId(db.prepare(`INSERT INTO doc_notes (doc_id, page, x, y, z, text, created_by, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(d.id, page, x, y, z, nt.text, user.id, t, t));
   addShares('docnote', id, nt.ids.filter(x => x !== user.id), nt.all);
+  notifyNote(user, { id, doc_id: d.id, text: nt.text }, nt.ids);
   return { id };
 }, { area: 'documenti' });
 
@@ -1077,7 +1121,9 @@ route('PATCH', '/api/doc-notes/:id', async ({ params, user, body }) => {
     f.text = nt.text || fail(400, 'La nota non può essere vuota');
     if (nt.ids.length || nt.all) {
       if (n.created_by !== user.id) fail(403, 'Solo chi ha scritto la nota decide con chi condividerla');
+      const had = new Set(db.prepare("SELECT user_id FROM shares WHERE kind = 'docnote' AND obj_id = ?").all(n.id).map(r => r.user_id));
       addShares('docnote', n.id, nt.ids.filter(x => x !== user.id), nt.all);
+      notifyNote(user, { ...n, text: nt.text }, nt.ids.filter(x => !had.has(x)));
     }
   }
   if (b.resolved !== undefined) f.resolved_at = b.resolved ? n.resolved_at || now() : null;

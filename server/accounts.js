@@ -118,6 +118,33 @@ const MIGRATIONS = [
     created_at TEXT NOT NULL
   );
   `,
+  // Notifiche (server/notify.js): citazioni, mail arrivate, messaggi nei canali. Sono della persona, in ogni
+  // workspace (workspace_id dice dove porta l'url). push_subs: i dispositivi a cui mandarle anche ad app chiusa.
+  `
+  CREATE TABLE notifications (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
+    workspace_id INTEGER,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL DEFAULT '',
+    url TEXT NOT NULL DEFAULT '',
+    actor_id INTEGER,
+    created_at TEXT NOT NULL,
+    read_at TEXT
+  );
+  CREATE INDEX notifications_user ON notifications(user_id, id);
+  CREATE TABLE push_subs (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    client TEXT NOT NULL DEFAULT '',
+    origin TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+  );
+  `,
 ];
 
 {
@@ -226,6 +253,11 @@ export function syncMirror(ws, userId) {
     VALUES ($id, $username, $name, '', $admin, $member, $t, (SELECT IFNULL(MAX(id), 0) FROM chat_messages))
     ON CONFLICT(id) DO UPDATE SET username = $username, name = $name, is_admin = $admin, member = $member`)
     .run({ id: u.id, username: u.username, name: u.name, admin: role === 'admin' ? 1 : 0, member: role ? 1 : 0, t: now() });
+  // Anche per canale: chi entra trova letti i canali di tutti (gli altri quando ci viene aggiunto, vedi chat.js).
+  if (role) {
+    data.prepare(`INSERT OR IGNORE INTO chat_reads (channel_id, user_id, read_id)
+      SELECT c.id, ?, IFNULL((SELECT MAX(m.id) FROM chat_messages m WHERE m.channel_id = c.id), 0) FROM chat_channels c WHERE c.everyone = 1`).run(u.id);
+  }
 }
 
 export function addMember(ws, userId, role) {

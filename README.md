@@ -180,6 +180,10 @@ Sul server: `accounts.db` contiene account, sessioni, workspace e inviti; ogni w
 
 Ogni workspace ha una chat a **canali** (Chat nella barra laterale; su telefono l'icona in alto). #generale è di tutti; gli altri canali hanno le loro persone, ognuna che legge o anche scrive. Li creano e li gestiscono gli admin e chi ha il permesso "Gestire i canali". Nei messaggi si collegano le cose dell'app: `@progetto`, `#CODICE`, `+persona` e, scrivendo `[[`, un documento, una voce (todo, mail, nota) o un contatto, scelti dai suggerimenti. Nel messaggio diventano link con il nome sempre aggiornato. Il numero sul badge sono i messaggi non letti di tutti i canali; dal terminale `org chat -f` la segue dal vivo (`-c canale` per un canale, `org chat canali` per l'elenco).
 
+## Notifiche
+
+La campanella in alto raccoglie le notifiche: citazioni (+persona in voci, aggiornamenti, note sui documenti e chat), voci assegnate o condivise, mail arrivate (con l'estensione di Thunderbird) e i messaggi dei canali (nei canali silenziati solo le citazioni). In Impostazioni → Notifiche si attivano anche come **notifiche di sistema** su ogni dispositivo: arrivano ad app chiusa. Su iPhone/iPad servono l'app installata sulla schermata Home e iOS 16.4 o successivo; su Mac funzionano da Safari, dall'app nel Dock e da Chrome. Le chiavi per le notifiche (VAPID) si creano da sole in `/data/vapid.json` e finiscono nei backup; `PUSH_SUBJECT` (es. `mailto:tu@esempio.it`) è facoltativo.
+
 ## Offline
 
 Senza rete l'app mostra gli ultimi dati sincronizzati in sola lettura. Si possono creare todo (Agenda) e note (Diario): restano in coda ("in coda offline") e finché non partono si cambiano, si segnano fatte o si eliminano. Quando la rete torna partono da sole; ognuna ha un identificativo, quindi un invio interrotto e ripetuto non crea doppioni. Il resto (mail, progetti, magazzino, modifiche alle voci esistenti) aspetta la rete: così non ci sono conflitti con le modifiche degli altri.

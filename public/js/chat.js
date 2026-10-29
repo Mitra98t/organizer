@@ -2,7 +2,7 @@
 // contatti (autocompletamento con @ # + e "[["). Ogni canale ha le sue persone (o è di tutti); chi gestisce i
 // canali (admin o permesso "canali") li crea, li rinomina, ne sceglie chi legge e chi scrive.
 // Gli ultimi 100 messaggi di ogni canale arrivano con /api/sync, i precedenti a richiesta.
-import { h, icon, S, ui, api, act, render, userName, chatText, fmtTime, fmtLongDay, localDay, toast, plainRefs, can, save, load } from './core.js';
+import { h, icon, S, ui, api, act, render, userName, chatText, fmtTime, fmtLongDay, localDay, can, save, load } from './core.js';
 
 const GROUP_MS = 5 * 60e3; // messaggi ravvicinati della stessa persona: un'intestazione sola
 const older = new Map();   // canale → messaggi caricati con "Messaggi precedenti" (non stanno nei dati sincronizzati)
@@ -157,7 +157,8 @@ function channelList(D, cur) {
   const item = c => h('button.chan', {
     class: c.id === cur?.id && 'on', 'aria-current': c.id === cur?.id ? 'true' : null,
     onclick: () => openChannel(c.id), title: whoText(c, D),
-  }, icon('hash'), h('span.chan-n', c.name), !c.can_write && h('span.muted', { title: 'Solo lettura' }, icon('lock')), c.unread > 0 && h('span.badge', c.unread));
+  }, icon('hash'), h('span.chan-n', c.name), !c.can_write && h('span.muted', { title: 'Solo lettura' }, icon('lock')),
+  c.muted ? h('span.muted', { title: 'Silenziato: notifiche solo quando ti citano' }, icon('bell-off')) : null, c.unread > 0 && h('span.badge', c.unread));
   return h('nav.chans', { 'aria-label': 'Canali' },
     h('div.chans-h', h('span', 'Canali'),
       D.canManageChannels && h('button.icon-btn.sm', { title: 'Nuovo canale', 'aria-label': 'Nuovo canale', onclick: () => { ui.chanEdit = 'new'; ui.chanDraft = null; render(); } }, icon('plus'))),
@@ -167,8 +168,14 @@ function channelList(D, cur) {
     }, icon('hash'), h('span.chan-n', c.name)))]);
 }
 
-export function viewChat() {
+export function viewChat(_id, query = {}) {
   const D = S.data;
+  // #/chat?c=ID (dalle notifiche): apre quel canale.
+  if (query.c && +query.c !== ui.chatChannel && D.chatChannels.some(c => c.id === +query.c && c.member)) {
+    ui.chatChannel = +query.c;
+    save('org.chatChannel', ui.chatChannel);
+    stick = true;
+  }
   const cur = currentChannel(D);
   const editing = ui.chanEdit === 'new' ? channelEditor(D, null)
     : ui.chanEdit ? channelEditor(D, D.chatChannels.find(c => c.id === ui.chanEdit)) : null;
@@ -234,6 +241,12 @@ export function viewChat() {
       channelList(D, cur),
       h('div.chat-main',
         h('div.chat-h', h('b', `#${cur.name}`), h('span.muted', whoText(cur, D)), h('span.grow'),
+          // Silenziato: niente notifiche per ogni messaggio, solo quando ti citano (+persona).
+          h('button.btn.sm.ghost', {
+            class: cur.muted ? 'on' : null, 'aria-pressed': String(!!cur.muted),
+            title: cur.muted ? 'Riattiva le notifiche per ogni messaggio' : 'Notifiche solo quando ti citano',
+            onclick: () => act(() => api('POST', `/chat/channels/${cur.id}/mute`, { muted: !cur.muted }), cur.muted ? `#${cur.name}: notifiche per ogni messaggio` : `#${cur.name} silenziato: notifiche solo quando ti citano`),
+          }, icon(cur.muted ? 'bell-off' : 'bell'), cur.muted ? 'Silenziato' : 'Silenzia'),
           D.canManageChannels && h('button.btn.sm.ghost', { onclick: () => { ui.chanEdit = cur.id; ui.chanDraft = null; render(); } }, icon('settings'), 'Gestisci')),
         editing,
         list,
@@ -242,17 +255,4 @@ export function viewChat() {
           ? h('div.chat-bar', input,
             h('button.btn.primary', { title: 'Invia (Invio; Maiusc+Invio per andare a capo)', 'aria-label': 'Invia', onclick: () => send(input, cur) }, icon('send')))
           : h('p.muted.chat-ro', icon('lock'), ` In #${cur.name} puoi solo leggere.`))));
-}
-
-// Notifica dei messaggi arrivati mentre si è altrove nell'app (o in un altro canale).
-export function notifyNew(prevData, data, onChatPage) {
-  if (!prevData?.chat) return;
-  const lastSeen = prevData.chat.at(-1)?.id ?? 0;
-  const cur = onChatPage ? currentChannel(data) : null;
-  const fresh = data.chat.filter(m => m.id > lastSeen && m.user_id !== data.me.id && m.channel_id !== cur?.id);
-  if (!fresh.length) return;
-  const m = fresh.at(-1);
-  const c = data.chatChannels.find(x => x.id === m.channel_id);
-  const text = plainRefs(m.text).slice(0, 80);
-  toast(`#${c?.name || 'chat'} · ${userName(m.user_id)}: ${text}`, { action: { label: 'Apri', fn: () => { ui.chatChannel = m.channel_id; location.hash = '#/chat'; render(); } } });
 }

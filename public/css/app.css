@@ -553,6 +553,23 @@ a.ms-person:hover .ccol, a.ms-link:hover, .ms-att a:hover { text-decoration: und
 .pop-date input { width: auto; }
 .pop-note { margin: 4px 8px 2px; font-size: 12px; }
 .share-b.ro-info { cursor: default; }
+/* Campanella delle notifiche (in alto) e il suo elenco. */
+.pop-b.bell { position: relative; min-height: 34px; padding: 0 8px; border-color: transparent; background: transparent; }
+.pop-b.bell .kpick-caret { display: none; }
+.pop-b.bell > .ic { width: 19px; height: 19px; color: var(--text); }
+.pop-b.bell .nbadge { position: absolute; top: -2px; right: -2px; }
+.pop-b.bell .nbadge:empty { display: none; }
+.popmenu:has(.nt) { width: min(380px, calc(100vw - 16px)); max-width: none; }
+.pop-head { display: flex; align-items: center; gap: 8px; padding: 4px 8px 6px; }
+.nt { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.nt > .ic { width: 16px; height: 16px; margin-top: 2px; flex: none; color: var(--muted); }
+.nt.unread > .ic { color: var(--accent); }
+.nt-t { display: flex; flex-direction: column; min-width: 0; }
+.nt-t b { font-weight: 500; }
+.nt.unread .nt-t b { font-weight: 700; }
+.nt-t .muted { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.nt-w { font-size: 11.5px; }
+.chat-h .btn.on { color: var(--muted); }
 .unknown-panel { display: flex; flex-direction: column; gap: 4px; margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
 .up-h { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .up-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 0; border-top: 1px solid var(--line); }

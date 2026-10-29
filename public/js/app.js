@@ -8,7 +8,8 @@ import { viewContacts } from './contacts.js';
 import { viewTrash } from './trash.js';
 import { viewDoc, viewReview, docCancelDraft, setDocFocus, docSearchKey } from './docview.js';
 import { viewDocuments } from './documents.js';
-import { viewChat, notifyNew } from './chat.js';
+import { viewChat } from './chat.js';
+import { bell, updateBell, notifyNew, viewNotification } from './notifiche.js';
 import { openFeedback, viewFeedback } from './feedback.js';
 import { viewChangelog, hasNews, appVersion } from './changelog.js';
 import { applyTheme, currentTheme } from './themes.js';
@@ -37,6 +38,7 @@ const VIEWS = {
   v: { fn: viewEntryPage, title: 'Voce', nav: null },
   novita: { fn: viewChangelog, title: 'Novità', nav: 'novita' },
   feedback: { fn: viewFeedback, title: 'Feedback', nav: 'impostazioni' },
+  n: { fn: viewNotification, title: 'Notifica', nav: null },
   impostazioni: { fn: viewSettings, title: 'Impostazioni', nav: 'impostazioni' },
 };
 
@@ -320,6 +322,7 @@ function buildShell() {
           titleEl,
           h('label.search', icon('search'), searchInput),
           statusDot,
+          bell,
           // Su telefono le tab in basso sono già 6: la chat sta in alto, con il numero dei non letti.
           topChat = h('a.icon-btn.only-mobile.top-chat', { href: '#/chat', title: 'Chat' }, icon('chat'), chatBadge),
           h('a.icon-btn.only-mobile', { href: '#/impostazioni', title: 'Impostazioni' }, icon('settings'))),
@@ -347,6 +350,7 @@ function updateStatus() {
 function updateBadges() {
   const D = S.data;
   if (!D) return;
+  updateBell();
   const open = D.entries.filter(e => !e.done_at && e.kind !== 'note');
   const urgent = open.filter(e => e.due && dayDiff(e.due) <= 0 && isMine(e)).length;
   // Mail: da mandare più quelle arrivate da leggere.
@@ -589,7 +593,7 @@ initAutocomplete(() => { const c = quickContext(); return c.mode || c.kind; });
 applyTheme(currentTheme());
 window.addEventListener('hashchange', () => { window.scrollTo(0, 0); render(); });
 window.addEventListener('org:logout', logout);
-window.addEventListener('org:data', ev => notifyNew(ev.detail.prev, ev.detail.data, route().name === 'chat'));
+window.addEventListener('org:data', ev => notifyNew(ev.detail.prev, ev.detail.data));
 // Altre viste chiedono di precompilare la barra rapida (es. "Nuova mail" da un contatto).
 window.addEventListener('org:quick', ev => {
   quickInput.value = ev.detail;
@@ -642,7 +646,11 @@ function goUp(field) {
   if (up) location.hash = up;
 }
 
-if ('serviceWorker' in navigator && isSecureContext) navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator && isSecureContext) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+  // Clic su una notifica con l'app già aperta (dove il service worker non può navigare da sé).
+  navigator.serviceWorker.addEventListener('message', ev => { if (ev.data?.open) location.href = ev.data.open; });
+}
 
 (async function boot() {
   loadCache();

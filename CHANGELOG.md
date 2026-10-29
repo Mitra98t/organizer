@@ -3,6 +3,17 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.14 — 2026-10-29
+- **Notifiche**: la campanella in alto raccoglie le ultime, con il numero di quelle da leggere; aprendone una si va dove serve, anche in un altro workspace. Arrivano:
+  - a chi viene **citato** con +persona in una voce, in un aggiornamento, in una nota su un documento o in chat, e a chi riceve una voce **assegnata** (++persona o menu Assegnata) o **condivisa**;
+  - quando **arriva una mail** nella posta in arrivo (estensione di Thunderbird) o una risposta a una tua conversazione;
+  - per **ogni messaggio** dei canali in cui sei; nei canali **silenziati** (pulsante "Silenzia" nel canale o Impostazioni → Notifiche) solo quando ti citano.
+- **Notifiche di sistema**: Impostazioni → Notifiche → "Attiva le notifiche" su ogni dispositivo (Mac, iPhone con l'app installata sulla schermata Home, Android, browser): arrivano anche ad app chiusa, con "Manda una prova". I messaggi dello stesso canale si sostituiscono invece di accumularsi.
+- Aprendo una voce o leggendo un canale le sue notifiche si segnano lette; mentre l'app è aperta le nuove compaiono anche in basso.
+- `+persona` in un aggiornamento resta scritto, cita la persona e (se la voce è tua) gliela condivide.
+- Chi entra nel workspace o in un canale trova letti i messaggi di prima.
+- Schema dati v18, account v6.
+
 ## 0.13.1 — 2026-10-29
 - **Menu a comparsa**: Tipo, Scadenza (o Data per le note), Assegnata e Visibile a si aprono come un menu accanto al pulsante, con la stessa grafica del menu dei tipi di documento. Scadenza: oggi, domani, lunedì prossimo, tra una settimana, tra un mese, un'altra data o nessuna. Visibile a: solo io, tutti, persona per persona (resta aperto mentre si scelgono). Si chiudono cliccando fuori o con Esc; ↑↓ per spostarsi.
 - **Citazioni non accessibili**: in chat e negli altri testi, un collegamento a qualcosa che non è condiviso con te (o a un'area che non puoi vedere) mostra "Nota: non hai permessi sufficienti" invece di "voce 12". Le voci archiviate mostrano il loro titolo, quelle eliminate "voce eliminata".

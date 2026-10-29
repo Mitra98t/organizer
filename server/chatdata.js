@@ -28,13 +28,14 @@ export function chatSync(user) {
   const manage = canManageChannels(user);
   const all = manage ? db.prepare('SELECT id, name, everyone FROM chat_channels WHERE deleted_at IS NULL ORDER BY id').all() : mine;
   const members = db.prepare('SELECT user_id, can_write FROM chat_members WHERE channel_id = ?');
-  const read = db.prepare('SELECT read_id FROM chat_reads WHERE channel_id = ? AND user_id = ?');
+  const read = db.prepare('SELECT read_id, muted FROM chat_reads WHERE channel_id = ? AND user_id = ?');
   const unread = db.prepare('SELECT COUNT(*) AS n FROM chat_messages WHERE channel_id = ? AND deleted_at IS NULL AND user_id != ? AND id > ?');
   const channels = all.map(c => {
     const m = mine.find(x => x.id === c.id);
-    const readId = m ? read.get(c.id, uid)?.read_id ?? 0 : 0;
+    const r = m ? read.get(c.id, uid) : null;
+    const readId = r?.read_id ?? 0;
     return {
-      id: c.id, name: c.name, everyone: c.everyone, member: !!m, can_write: m ? m.can_write : 0,
+      id: c.id, name: c.name, everyone: c.everyone, member: !!m, can_write: m ? m.can_write : 0, muted: r?.muted ?? 0,
       members: c.everyone ? [] : members.all(c.id), read_id: readId, unread: m ? unread.get(c.id, uid, readId).n : 0,
     };
   });
@@ -42,4 +43,14 @@ export function chatSync(user) {
       SELECT *, ROW_NUMBER() OVER (PARTITION BY channel_id ORDER BY id DESC) AS rn FROM chat_messages
       WHERE deleted_at IS NULL AND channel_id IN (SELECT value FROM json_each(?))) WHERE rn <= ${CHAT_IN_SYNC} ORDER BY id`).all(JSON.stringify(ids)) : [];
   return { chatChannels: channels, chat, chatUnread: channels.reduce((n, c) => n + c.unread, 0), canManageChannels: manage };
+}
+
+// Chi legge il canale (per le notifiche): tutti i membri del workspace o le persone del canale; muted = silenziato.
+export function channelReaders(channelId) {
+  const c = db.prepare('SELECT everyone FROM chat_channels WHERE id = ?').get(channelId);
+  const ids = c?.everyone
+    ? db.prepare('SELECT id FROM users WHERE member = 1').all().map(r => r.id)
+    : db.prepare('SELECT m.user_id AS id FROM chat_members m JOIN users u ON u.id = m.user_id AND u.member = 1 WHERE m.channel_id = ?').all(channelId).map(r => r.id);
+  const muted = new Set(db.prepare('SELECT user_id FROM chat_reads WHERE channel_id = ? AND muted = 1').all(channelId).map(r => r.user_id));
+  return ids.map(id => ({ id, muted: muted.has(id) }));
 }

@@ -362,6 +362,10 @@ const MIGRATIONS = [
   ALTER TABLE entries ADD COLUMN client_id TEXT;
   CREATE UNIQUE INDEX entries_client ON entries(created_by, client_id) WHERE client_id IS NOT NULL;
   `,
+  // v18: canali silenziati (per persona): niente notifiche per ogni messaggio, solo per le citazioni.
+  `
+  ALTER TABLE chat_reads ADD COLUMN muted INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

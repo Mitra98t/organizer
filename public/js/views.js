@@ -8,6 +8,7 @@ import {
 } from './core.js';
 import { docMeta, docPeek } from './docview.js';
 import { openFeedback } from './feedback.js';
+import { pushState, enablePush, disablePush } from './notifiche.js';
 import { today, addDays, parseQuick } from './parse.js';
 import { mailComposer, mailThread, mailSide, inboxRow } from './mail.js';
 import { THEMES, BASE_THEMES, currentTheme, setTheme } from './themes.js';
@@ -1339,6 +1340,7 @@ function settingsCategories(D) {
     ['account', 'Account', 'user', 'Nome, password, uscita'],
     ['aspetto', 'Aspetto', 'palette', 'Tema e colori dei contatti'],
     ['privacy', 'Privacy e condivisione', 'shield', 'Chi vede cosa, +persona e +all'],
+    ['notifiche', 'Notifiche', 'bell', D.pushDevices ? `attive su ${D.pushDevices} ${D.pushDevices === 1 ? 'dispositivo' : 'dispositivi'}` : 'citazioni, mail, canali'],
     ['mail', 'Mail e Thunderbird', 'mail', D.mailExt ? 'Thunderbird collegato' : 'Estensione per Thunderbird'],
     ['workspace', 'Workspace e persone', 'users', `${D.workspace.name} · ${D.members.length} ${D.members.length === 1 ? 'persona' : 'persone'}`],
     me.is_admin && ['permessi', 'Permessi', 'lock', 'Cosa può fare ognuno, canali della chat'],
@@ -1396,6 +1398,7 @@ function settingsPane(sec, D) {
       ]),
       myPermsSection(D) || card('set-myperms', 'I tuoi permessi', [h('p.muted', me.is_admin ? 'Sei admin di questo workspace: puoi fare tutto nelle aree (ma non vedi ciò che gli altri non condividono).' : 'Nessuna limitazione: puoi fare tutto nelle aree.')]),
     ];
+    case 'notifiche': return notificationsPane(D);
     case 'mail': return [card('set-mail', 'Collegare Thunderbird', [
       h('p', 'Con l\'estensione Organizer per Thunderbird, "Manda" apre la mail in Thunderbird con gli allegati (anche se premi dal telefono: si apre sul computer). Quando la invii diventa "mandata" da sola, e le risposte compaiono nella conversazione della mail, da cui puoi rispondere.'),
       h('p', D.mailExt ? h('span.chip.on', icon('check'), 'Thunderbird collegato') : h('span.chip', 'Thunderbird non collegato')),
@@ -1461,6 +1464,47 @@ function settingsPane(sec, D) {
     ])] : null;
     default: return null;
   }
+}
+
+// Notifiche: quelle di sistema su questo dispositivo (push), cosa le fa arrivare, i canali silenziati.
+const PUSH_STATE = {
+  unsupported: 'Questo browser non riceve notifiche. Su iPhone e iPad arrivano solo dall\'app installata (Condividi → "Aggiungi alla schermata Home"), poi le attivi da qui.',
+  denied: 'Le notifiche sono bloccate per questo sito: riattivale dalle impostazioni del browser (o di Sistema → Notifiche) e torna qui.',
+  on: 'Attive su questo dispositivo: arrivano anche ad app chiusa.',
+  off: 'Non attive su questo dispositivo: le vedi solo nella campanella mentre l\'app è aperta.',
+};
+
+function notificationsPane(D) {
+  if (ui.pushState === undefined) {
+    ui.pushState = null;
+    pushState().then(st => { ui.pushState = st; render(); }).catch(() => { ui.pushState = 'unsupported'; render(); });
+  }
+  const st = ui.pushState;
+  const refresh = () => pushState().then(x => { ui.pushState = x; render(); });
+  const channels = D.chatChannels.filter(c => c.member);
+  return [
+    card('set-push', 'Su questo dispositivo', [
+      h('p', st ? PUSH_STATE[st] : 'Controllo…'),
+      h('div.toolbar',
+        st === 'off' && h('button.btn.primary', { onclick: () => act(async () => { await enablePush(); await refresh(); }, 'Notifiche attivate') }, icon('bell'), 'Attiva le notifiche'),
+        st === 'on' && h('button.btn', { onclick: () => act(() => api('POST', '/push/test'), 'Notifica di prova mandata') }, icon('send'), 'Manda una prova'),
+        st === 'on' && h('button.btn.ghost', { onclick: () => act(async () => { await disablePush(); await refresh(); }, 'Notifiche disattivate su questo dispositivo') }, icon('bell-off'), 'Disattiva')),
+      h('p.muted', D.pushDevices ? `Dispositivi con le notifiche attive: ${D.pushDevices}.` : 'Nessun dispositivo ha ancora le notifiche attive.'),
+    ]),
+    card('set-notif-what', 'Cosa arriva', [
+      h('ul.install',
+        h('li', h('b', 'Citazioni: '), 'quando qualcuno ti cita con +persona in una voce, in un aggiornamento, in una nota su un documento o in chat, e quando ti assegna (++persona) o ti condivide qualcosa.'),
+        h('li', h('b', 'Mail: '), 'quando arriva una mail nella tua posta in arrivo (con l\'estensione di Thunderbird) o una risposta a una tua conversazione.'),
+        h('li', h('b', 'Canali: '), 'ogni messaggio dei canali in cui sei; in quelli silenziati solo i messaggi che ti citano.')),
+      h('p.muted', 'Tutte restano anche nella campanella in alto. Aprendo una voce o leggendo un canale, le sue notifiche si segnano lette.'),
+    ]),
+    channels.length > 0 && card('set-mute', 'Canali silenziati', [
+      h('p.muted', 'Un canale silenziato manda notifiche solo quando qualcuno ti cita (+persona).'),
+      channels.map(c => h('label.check-row',
+        h('input', { type: 'checkbox', checked: !!c.muted, onchange: ev => act(() => api('POST', `/chat/channels/${c.id}/mute`, { muted: ev.target.checked })) }),
+        h('span', `#${c.name}`), h('span.muted', c.muted ? ' · solo citazioni' : ' · ogni messaggio'))),
+    ]),
+  ];
 }
 
 function peopleCard(D) {

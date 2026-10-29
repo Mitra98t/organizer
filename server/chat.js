@@ -2,9 +2,12 @@
 // (#CODICE, @progetto, [[doc:ID]], [[voce:ID]], [[contatto:ID]]) scritti nel testo e mostrati come link.
 // Ogni canale ha le sue persone (o è di tutti), vedi chatdata.js. Gli ultimi messaggi di ogni canale arrivano
 // con /api/sync; i precedenti si leggono qui. Senza ?channel= vale il primo canale (per la CLI di prima).
-import { db, tx } from './db.js';
+import { db, tx, currentWorkspace } from './db.js';
 import { route, insertId } from './api.js';
-import { myChannels, canManageChannels } from './chatdata.js';
+import { myChannels, canManageChannels, channelReaders } from './chatdata.js';
+import { acc, permsIn } from './accounts.js';
+import { allows } from './perms.js';
+import { notify, mentionedIn } from './notify.js';
 import { fail, now, str, bool } from './util.js';
 
 const MAX_TEXT = 4000;
@@ -44,6 +47,7 @@ route('POST', '/api/chat', async ({ user, body }) => {
   const text = str(b.text, MAX_TEXT) || fail(400, 'Scrivi qualcosa');
   const id = insertId(db.prepare('INSERT INTO chat_messages (channel_id, user_id, text, created_at) VALUES (?, ?, ?, ?)').run(c.id, user.id, text, now()));
   markRead(c.id, user.id, id); // chi scrive ha letto tutto fino al proprio messaggio
+  notifyMessage(user, c, text);
   return { id, channel_id: c.id };
 }, { area: 'chat' });
 
@@ -63,6 +67,29 @@ route('DELETE', '/api/chat/:id', ({ params, user }) => {
 const markRead = (channelId, userId, id) => db.prepare(`INSERT INTO chat_reads (channel_id, user_id, read_id) VALUES (?, ?, ?)
   ON CONFLICT (channel_id, user_id) DO UPDATE SET read_id = MAX(read_id, excluded.read_id)`).run(channelId, userId, id);
 
+// Notifiche di un messaggio: chi è citato (+persona) sempre; gli altri del canale se non l'hanno silenziato.
+// Le notifiche dello stesso canale si sostituiscono sul dispositivo (tag), per non riempire lo schermo.
+const chatUrl = c => `#/chat?c=${c.id}`;
+function notifyMessage(user, c, text) {
+  const ws = currentWorkspace();
+  const readers = channelReaders(c.id).filter(r => r.id !== user.id && allows(permsIn(ws, r.id), 'chat'));
+  const members = db.prepare('SELECT id, username, name FROM users WHERE member = 1').all().filter(u => readers.some(r => r.id === u.id));
+  const cited = new Set(mentionedIn(text, members));
+  const plain = String(text).replace(/\[\[(\w+):\d+\]\]/g, '…');
+  const who = user.name || user.username;
+  const base = { ws: currentWorkspace(), body: plain, url: chatUrl(c), actor: user.id, tag: `chat-${currentWorkspace()}-${c.id}` };
+  if (cited.size) notify([...cited], { ...base, kind: 'mention', title: `${who} ti ha citato in #${c.name}` });
+  notify(readers.filter(r => !r.muted && !cited.has(r.id)).map(r => r.id), { ...base, kind: 'chat', title: `#${c.name} · ${who}` });
+}
+
+// Silenziare un canale: niente notifiche per ogni messaggio, restano quelle in cui si è citati.
+route('POST', '/api/chat/channels/:id/mute', async ({ params, user, body }) => {
+  const c = channelFor(user, params.id);
+  const muted = (await body()).muted ? 1 : 0;
+  db.prepare(`INSERT INTO chat_reads (channel_id, user_id, read_id, muted) VALUES (?, ?, 0, ?)
+    ON CONFLICT (channel_id, user_id) DO UPDATE SET muted = excluded.muted`).run(c.id, user.id, muted);
+}, { area: 'chat', level: 'read' });
+
 // Letto fino a ID nel canale (non si torna mai indietro). Riguarda solo chi legge: niente notifica agli altri.
 route('POST', '/api/chat/read', async ({ user, body }) => {
   const b = await body();
@@ -72,6 +99,9 @@ route('POST', '/api/chat/read', async ({ user, body }) => {
     ? channelFor(user, db.prepare('SELECT channel_id FROM chat_messages WHERE id = ?').get(id)?.channel_id)
     : channelFor(user, b.channel);
   markRead(c.id, user.id, id);
+  // Letto il canale: anche le sue notifiche.
+  acc.prepare('UPDATE notifications SET read_at = ? WHERE user_id = ? AND workspace_id = ? AND url = ? AND read_at IS NULL')
+    .run(now(), user.id, currentWorkspace(), chatUrl(c));
 }, { area: 'chat', level: 'read', quiet: true });
 
 // ---------- gestione dei canali ----------
@@ -90,6 +120,9 @@ function setMembers(channelId, members) {
   for (const m of Array.isArray(members) ? members : []) {
     if (!db.prepare('SELECT 1 FROM users WHERE id = ? AND member = 1').get(+m.user_id)) continue;
     db.prepare('INSERT OR REPLACE INTO chat_members (channel_id, user_id, can_write) VALUES (?, ?, ?)').run(channelId, +m.user_id, bool(m.can_write ?? true));
+    // Chi viene aggiunto trova letti i messaggi di prima.
+    db.prepare(`INSERT OR IGNORE INTO chat_reads (channel_id, user_id, read_id)
+      VALUES (?, ?, (SELECT IFNULL(MAX(id), 0) FROM chat_messages WHERE channel_id = ?))`).run(channelId, +m.user_id, channelId);
   }
 }
 

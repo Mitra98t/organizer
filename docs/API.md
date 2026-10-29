@@ -243,6 +243,20 @@ I collegamenti stanno nel testo e l'app li mostra come link con il nome attuale:
 | `PATCH /api/chat/channels/:id` | nome, `everyone`, `members` |
 | `DELETE /api/chat/channels/:id` | elimina il canale |
 
+## Notifiche
+
+In `/api/sync`: `notifications` (le ultime 40, di tutti i workspace: `id`, `workspace_id`, `kind` `mention`/`mail`/`chat`, `title`, `body`, `url`, `created_at`, `read_at`), `notifUnread`, `pushDevices`; nei canali `muted`.
+
+| | |
+|---|---|
+| `POST /api/notifications/read` | `{ids}`, `{url}` (quelle che portano lì) o `{all: true}` |
+| `GET /api/notifications/:id` | dove porta (`url`, `workspace_id`) e la segna letta |
+| `POST /api/chat/channels/:id/mute` | `{muted}`: nel canale solo le notifiche delle citazioni |
+| `GET /api/push/key` | chiave pubblica VAPID per `pushManager.subscribe` |
+| `POST /api/push/subscribe` | l'iscrizione (`endpoint`, `keys.p256dh`, `keys.auth`) di un dispositivo |
+| `POST /api/push/unsubscribe` | `{endpoint}` |
+| `POST /api/push/test` | una notifica di prova ai propri dispositivi |
+
 ## Feedback
 
 | | |
