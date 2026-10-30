@@ -918,7 +918,7 @@ route('PATCH', '/api/items/:id', async ({ params, body }) => {
     }
     f.updated_at = now();
     setFields('items', it.id, f);
-    if (f.code) relinkItem(it.id); // codice nuovo: si ricontrollano le mail attive
+    if (f.code) relinkItem(it.id); // codice nuovo: si ricontrollano le mail attive (collegate o scollegate)
   });
 }, { area: 'magazzino' });
 
@@ -963,6 +963,7 @@ route('POST', '/api/items/:id/aliases', async ({ params, user, body }) => {
 route('DELETE', '/api/items/:id/aliases/:code', ({ params }) => {
   const it = getItem(params.id);
   if (!db.prepare('DELETE FROM item_aliases WHERE code = ? AND item_id = ?').run(params.code, it.id).changes) fail(404, 'Codice alternativo non trovato');
+  relinkItem(it.id); // le mail che lo citavano solo con quel codice non sono più collegate (se era automatico)
 }, { area: 'magazzino' });
 
 route('POST', '/api/items/:id/children', async ({ params, user, body }) => {

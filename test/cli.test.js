@@ -317,6 +317,13 @@ test('thunderbird: thread, mandata, risposta, storia, collegamenti, archivio', a
   assert.ok((await linksOf(ra.thread)).includes(third));
   await tb('PATCH', `/mail/threads/${rb.thread}`, { archived: false });
   assert.deepEqual(await linksOf(rb.thread), [rly]);
+  // Il codice cambia (o un alternativo si toglie): i collegamenti automatici che non valgono più spariscono,
+  // quelli messi a mano restano.
+  await tb('POST', `/mail/threads/${rb.thread}/links`, { kind: 'articolo', id: rly });
+  await tb('PATCH', `/items/${rly}`, { code: 'RLY-99' });
+  assert.deepEqual([await linksOf(ra.thread), await linksOf(rb.thread)].map(l => l.includes(rly)), [false, true]);
+  await tb('DELETE', `/items/${abc}/aliases/G5V-1`);
+  assert.ok(!(await linksOf(ra.thread)).includes(abc));
 
   // Contatti da non proporre: regole dell'account (minuscole, senza doppioni).
   await tb('PATCH', '/me', { mailIgnore: ['NoReply', 'noreply', '@amazon.it'] });

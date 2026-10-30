@@ -93,24 +93,37 @@ function threadText(threadId) {
   ].join('\n');
 }
 
-// Una conversazione da ricontrollare per intero (es. torna attiva dopo l'archivio).
+// Collegamento automatico a un articolo che il testo non cita più (codice cambiato o tolto): via. Quelli scelti a
+// mano (auto = 0) e quelli tolti a mano (hidden, devono restare nascosti) non si toccano.
+const unlinkAuto = (threadId, itemId) => db.prepare(`DELETE FROM mail_thread_links
+  WHERE thread_id = ? AND kind = 'articolo' AND target_id = ? AND auto = 1 AND hidden = 0`).run(threadId, itemId);
+const codesOf = itemId => db.prepare(`SELECT code FROM items WHERE id = $id AND deleted_at IS NULL
+  UNION SELECT code FROM item_aliases WHERE item_id = $id`).all({ id: itemId }).map(r => r.code);
+
+// Una conversazione da ricontrollare per intero (es. torna attiva dopo l'archivio): i collegamenti nuovi si
+// aggiungono, quelli automatici a codici che non cita più si tolgono.
 export function relinkThread(threadId) {
   const t = db.prepare('SELECT owner_id FROM mail_threads WHERE id = ? AND deleted_at IS NULL').get(threadId);
-  if (t) autoLink(threadId, t.owner_id, threadText(threadId));
+  if (!t) return;
+  const text = threadText(threadId);
+  autoLink(threadId, t.owner_id, text);
+  const has = matcher(text);
+  for (const { target_id: id } of db.prepare(`SELECT target_id FROM mail_thread_links
+    WHERE thread_id = ? AND kind = 'articolo' AND auto = 1 AND hidden = 0`).all(threadId)) {
+    if (!codesOf(id).some(c => has(c))) unlinkAuto(threadId, id);
+  }
 }
 
-// Un articolo con un codice nuovo (cambiato, alternativo aggiunto, articolo appena creato): le conversazioni
-// attive che lo citano si collegano. Quelle archiviate no: si ricontrollano se tornano attive.
+// Un articolo con i codici cambiati (nuovo, codice cambiato, alternativo aggiunto o tolto): nelle conversazioni
+// attive si collega dove è citato e si scollega (se il collegamento era automatico) dove non lo è più. Quelle
+// archiviate si ricontrollano quando tornano attive.
 export function relinkItem(itemId) {
-  const codes = db.prepare(`SELECT code FROM items WHERE id = $id AND deleted_at IS NULL
-    UNION SELECT code FROM item_aliases WHERE item_id = $id`).all({ id: itemId }).map(r => r.code);
-  if (!codes.length) return 0;
-  let n = 0;
+  const codes = codesOf(itemId);
   for (const { id } of db.prepare('SELECT id FROM mail_threads WHERE archived_at IS NULL AND deleted_at IS NULL').all()) {
     const has = matcher(threadText(id));
-    if (codes.some(c => has(c)) && linkAuto(id, 'articolo', itemId).changes) n++;
+    if (codes.some(c => has(c))) linkAuto(id, 'articolo', itemId);
+    else unlinkAuto(id, itemId);
   }
-  return n;
 }
 
 // La conversazione di un messaggio che Organizer non ha ancora:
