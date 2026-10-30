@@ -11,6 +11,9 @@ import { h, icon, S, ui, api, act, render, richText, fmtTime, fmtSize, userName,
 import { today } from './parse.js';
 
 const PDFJS = new URL('../vendor/pdfjs/', import.meta.url).href;
+// Risorse di PDF.js: font standard, tabelle dei caratteri (cMaps: senza, il testo con font asiatici, frequenti
+// nei datasheet, non si legge), profili colore e decodificatori di immagini.
+const PDF_RES = { standardFontDataUrl: `${PDFJS}standard_fonts/`, cMapUrl: `${PDFJS}cmaps/`, cMapPacked: true, iccUrl: `${PDFJS}iccs/`, wasmUrl: `${PDFJS}wasm/` };
 const TEXT_MAX = 512 * 1024;
 let pdfjsLib = null;
 const viewers = new Map(); // id documento → visualizzatore aperto
@@ -56,7 +59,7 @@ export function docThumb(d, width = 300) {
   if (kind === 'pdf' && !d.url && !thumbs.has(key)) {
     thumbs.set(key, (async () => {
       const pdfjs = await loadPdfjs();
-      const task = pdfjs.getDocument({ url: docFileUrl(d, { inline: true }), withCredentials: true, disableRange: true, disableStream: true, standardFontDataUrl: `${PDFJS}standard_fonts/`, wasmUrl: `${PDFJS}wasm/` });
+      const task = pdfjs.getDocument({ url: docFileUrl(d, { inline: true }), withCredentials: true, disableRange: true, disableStream: true, ...PDF_RES });
       try {
         const page = await (await task.promise).getPage(1);
         const vp = page.getViewport({ scale: (width / page.getViewport({ scale: 1 }).width) * (window.devicePixelRatio || 1) });
@@ -173,8 +176,7 @@ async function openPdf(v, d) {
     v.task = pdfjs.getDocument({
       ...(data ? { data } : { url: docFileUrl(d, { inline: true }) }),
       withCredentials: true,
-      standardFontDataUrl: `${PDFJS}standard_fonts/`,
-      wasmUrl: `${PDFJS}wasm/`,
+      ...PDF_RES,
       disableRange: true,
       disableStream: true,
     });
@@ -519,8 +521,24 @@ async function pageText(p) {
     }
     if (it.hasEOL) str += ' ';
   }
-  p.text = { lower: str.toLowerCase(), spans };
+  const { norm, at } = normalize(str);
+  p.text = { lower: norm, at, spans, empty: !str.trim() };
   return p.text;
+}
+
+// Testo da confrontare: minuscolo, senza accenti, trattini tipografici come "-", spazi di ogni tipo (anche
+// quelli non separabili, frequenti nei PDF) come uno spazio solo. at[i] = posizione nel testo originale.
+function normalize(str) {
+  let norm = '';
+  const at = [];
+  for (let i = 0; i < str.length; i++) {
+    let c = str[i].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (/[\u2010-\u2015\u2212\u00ad]/.test(c)) c = '-';
+    else if (/[\s\u00a0\u2000-\u200b\u202f\u205f\u3000]/.test(c)) c = norm.endsWith(' ') ? '' : ' ';
+    for (const ch of c) { norm += ch; at.push(i); }
+  }
+  at.push(str.length);
+  return { norm, at };
 }
 
 // Riquadri di un'occorrenza [from, to): uno per ogni pezzo di testo che tocca (anche su più righe).
@@ -534,7 +552,7 @@ function rectsOf(text, from, to) {
 }
 
 async function runSearch(v) {
-  const q = v.searchInput.value.trim().toLowerCase();
+  const q = normalize(v.searchInput.value.trim()).norm;
   const seq = (v.searchSeq = (v.searchSeq || 0) + 1);
   v.matches = [];
   if (!q) {
@@ -543,21 +561,38 @@ async function runSearch(v) {
     return;
   }
   if (v.kind === 'text') {
-    const lower = (v.rawText || '').toLowerCase();
-    for (let i = lower.indexOf(q); i >= 0; i = lower.indexOf(q, i + q.length)) v.matches.push({ from: i, to: i + q.length });
+    const { norm, at } = normalize(v.rawText || '');
+    for (let i = norm.indexOf(q); i >= 0; i = norm.indexOf(q, i + q.length)) v.matches.push({ from: at[i], to: at[i + q.length] });
   } else {
     v.searchCount.textContent = 'cerco…';
+    let empty = true;
+    let failed = 0;
+    let why = '';
     for (const p of v.pages) {
-      const text = await pageText(p);
+      let text;
+      try {
+        text = await pageText(p);
+      } catch (e) {
+        console.warn(`Testo della pagina ${p.num} illeggibile`, e);
+        failed++;
+        why ||= String(e?.message || e).slice(0, 160);
+        continue;
+      }
       if (seq !== v.searchSeq) return; // nel frattempo si è scritto altro
+      empty &&= text.empty;
       for (let i = text.lower.indexOf(q); i >= 0; i = text.lower.indexOf(q, i + q.length)) {
-        v.matches.push({ page: p.num, rects: rectsOf(text, i, i + q.length) });
+        v.matches.push({ page: p.num, rects: rectsOf(text, text.at[i], text.at[i + q.length]) });
       }
     }
+    // Senza risultati si dice perché, se il motivo è il PDF: senza testo (una scansione) o illeggibile.
+    v.noText = failed === v.pages.length ? `non riesco a leggere il testo di questo PDF (${why})`
+      : empty && !failed ? 'questo PDF non ha testo da cercare (è una scansione?)'
+        : failed ? `nessun risultato; ${failed} ${failed === 1 ? 'pagina illeggibile' : 'pagine illeggibili'} (${why})` : '';
   }
   if (!v.matches.length) {
     drawMatches(v);
-    v.searchCount.textContent = 'nessun risultato';
+    v.searchCount.textContent = v.noText || 'nessun risultato';
+    v.searchCount.title = v.searchCount.textContent; // il motivo può essere lungo
     return;
   }
   // Si parte dal primo risultato dalla pagina che si sta guardando in poi.

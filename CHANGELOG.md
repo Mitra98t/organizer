@@ -3,6 +3,12 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.20.2 — 2026-10-30
+- **Ricerca nei PDF (⌘F) sistemata** per i PDF con font asiatici, frequenti nei datasheet: mancavano le tabelle dei caratteri di PDF.js (cMaps), e quel testo non si leggeva né per la ricerca né per la selezione. Aggiunte anche le tabelle dei colori (ICC). Se la lettura fallisce lo stesso, la barra dice il motivo.
+- **Suggerimenti più informativi** (`[[`, `#`, `@`, `>` e la barra comandi): sotto il nome una seconda riga con il contesto. Una nota su un file dice articolo, documento, chi l'ha scritta e il testo evidenziato; un documento l'articolo, la versione e le note aperte; una todo progetti, scadenza, assegnatario e articoli; una conversazione topic, messaggi e ultimo messaggio; un articolo categoria, posizione, firmware, codici alternativi e documenti; un progetto il progetto padre e le voci aperte. I collegamenti nei titoli si leggono con il loro nome.
+- **Menu dei suggerimenti largo quanto serve** (fino a 960 px su desktop), anche quando il campo è stretto o a destra, come le note di un documento: si allarga verso sinistra. Sul telefono prende tutta la larghezza.
+- Ricerca nei documenti (⌘F) più tollerante: maiuscole, accenti, spazi (anche quelli non separabili dei PDF) e trattini tipografici non contano. Se un PDF non ha testo (una scansione) o il testo non si legge, la barra lo dice invece di "nessun risultato".
+
 ## 0.20.1 — 2026-10-30
 - Il menu dei suggerimenti (`[[`, `#`, `@`, `+`…) scorre insieme alla selezione con le frecce, ed è più largo (fino a 720 px): titoli e dettagli si leggono per intero.
 

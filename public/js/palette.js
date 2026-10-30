@@ -91,8 +91,9 @@ function draw() {
     onclick: () => choose(it),
   },
   it.icon ? h('span.pal-ic', icon(it.icon)) : it.pill && h('span.ac-k', { class: `t-${it.pill}` }, PILL[it.pill]),
-  h('span.pal-l', it.code ? h('span.code', it.label) : it.label),
-  it.hint && h('span.pal-hint', it.hint),
+  h('span.pal-m',
+    h('span.pal-r', h('span.pal-l', it.code ? h('span.code', it.label) : it.label), it.hint && h('span.pal-hint', it.hint)),
+    it.sub && h('span.pal-sub', it.sub)),
   it.extra && h('span.pal-x', it.extra))));
   if (!st.items.length) list.append(h('p.muted.pal-empty', 'Scrivi qualche parola: un pezzo del titolo, una persona, un codice…'));
   list.querySelector('.on')?.scrollIntoView({ block: 'nearest' });

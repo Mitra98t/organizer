@@ -14,7 +14,7 @@
 // data-ac-bare: si inserisce il valore senza simbolo (testo delle mail: "#SCH" → "SCH-042").
 // Nella barra in alto: modalità 'item' (/categoria, @progetto) e 'project' (@progetto padre).
 // Un solo menu flottante per tutta l'app, agganciato al campo che ha il focus: sopravvive ai re-render.
-import { h, S, api, fmtDay, hue, catStyle, projHue, docName } from './core.js';
+import { h, S, api, fmtDay, hue, catStyle, projHue, docName, userName, plainRefs } from './core.js';
 import { parseDate, parseQuick, today, fromYmd } from './parse.js';
 
 const box = h('div.ac', { hidden: true, role: 'listbox' });
@@ -160,7 +160,7 @@ const refSuggestions = (ql, opts) => findAll(ql, opts);
 export function findAll(ql, { bare = false, self = null, limit = 12 } = {}) {
   const D = S.data;
   const words = ql.split(/\s+/).filter(Boolean);
-  const plain = t => t.replace(/(^|\s)#/g, '$1').replace(/\[\[\w+:\d+\]\]/g, '…');
+  const plain = t => plainRefs(t).replace(/(^|\s)#/g, '$1').replace(/\[\[\w+:\d+\]\]/g, '…'); // i collegamenti con il loro nome
   const entryState = e => (e.done_at ? (e.kind === 'mail' ? 'mandata' : e.kind === 'todo' ? 'fatta' : '') : e.kind === 'mail' ? 'da mandare' : '');
   const names = list => String(list || '').split(',').map(a => (a.match(/<([^>]+)>/)?.[1] || a).trim().toLowerCase()).filter(Boolean)
     .map(a => D.contactByEmail.get(a)?.name || '').join(' ');
@@ -177,18 +177,31 @@ export function findAll(ql, { bare = false, self = null, limit = 12 } = {}) {
     scored(D.entries.filter(e => e.id !== self && (ql || !e.done_at)), e => [
       [e.title], [e.mail_subject, 0.2], [e.contact, 0.5], [names(`${e.contact},${e.mail_cc}`), 0.5], [e.mail_cc, 0.8],
       [KIND_WORD[e.kind], 1], ...projectsOfEntry(e).map(p => [p.tag, 1]), [e.notes, 0, true],
-    ], e => ({ insert: `[[voce:${e.id}]]`, href: `#/v/${e.id}`, label: plain(e.title), hint: e.kind === 'mail' ? e.contact || '' : '', extra: entryState(e), pill: e.kind, sort: e.updated_at })),
+    ], e => ({ insert: `[[voce:${e.id}]]`, href: `#/v/${e.id}`, label: plain(e.title), hint: e.kind === 'mail' ? e.contact || '' : '', extra: entryState(e), pill: e.kind, sort: e.updated_at,
+      sub: line(projectsOfEntry(e).map(p => `@${p.tag}`).join(' '), e.due && `scade ${fmtDay(e.due)}`, e.assignee_id && `a ${userName(e.assignee_id)}`,
+        (D.itemsOfEntry.get(e.id) || []).map(x => D.itemById.get(x.item_id)?.code).filter(Boolean).slice(0, 4).join(' '), snippet(e.notes)) })),
     scored(D.mailThreads, t => {
       const msgs = D.msgsOfThread.get(t.id) || [];
       const addrs = msgs.map(m => `${m.from_addr},${m.to_addr},${m.cc}`).join(',');
       return [[t.subject], [D.topicById.get(t.topic_id)?.title, 0.3], [addrs, 0.5, true], [names(addrs), 0.3, true], ['mail', 1], ['conversazione', 1],
         ...msgs.map(m => [m.snippet, 0.5, true]), ...(mailIds.includes(t.id) ? [[ql, 0, true]] : [])];
-    }, t => ({ insert: `[[mail:${t.id}]]`, href: `#/t/${t.topic_id}?th=${t.id}`, label: plain(t.subject), hint: people((D.msgsOfThread.get(t.id) || []).map(m => m.direction === 'in' ? m.from_addr : m.to_addr).join(',')),
-      extra: t.archived_at ? 'archiviata' : '', pill: 'conv', sort: t.last_at })),
+    }, t => {
+      const msgs = D.msgsOfThread.get(t.id) || [];
+      const topic = D.topicById.get(t.topic_id)?.title;
+      return { insert: `[[mail:${t.id}]]`, href: `#/t/${t.topic_id}?th=${t.id}`, label: plain(t.subject), hint: people(msgs.map(m => m.direction === 'in' ? m.from_addr : m.to_addr).join(',')),
+        extra: t.archived_at ? 'archiviata' : '', pill: 'conv', sort: t.last_at,
+        sub: line(topic && lc(topic) !== lc(t.subject) && `topic: ${topic}`, `${msgs.length} ${msgs.length === 1 ? 'messaggio' : 'messaggi'}`, t.last_at && `ultimo ${fmtDay(t.last_at.slice(0, 10))}`, snippet(msgs.at(-1)?.snippet)) };
+    }),
     scored(D.docs.filter(d => D.itemById.has(d.item_id)), d => {
       const it = D.itemById.get(d.item_id);
       return [[docName(d)], [d.filename, 0.3], [d.kind, 0.5], [it.code, 0.3], ...(D.aliasesOf.get(it.id) || []).map(a => [a.code, 0.4]), [it.name, 0.8], [d.version, 1], ['documento', 1]];
-    }, d => ({ insert: `[[doc:${d.id}]]`, href: `#/d/${d.id}`, label: docName(d), hint: D.itemById.get(d.item_id).code, extra: d.kind, pill: 'doc', sort: d.created_at })),
+    }, d => {
+      const it = D.itemById.get(d.item_id);
+      const open = (D.docNotesOf.get(d.id) || []).filter(n => !n.resolved_at).length;
+      return { insert: `[[doc:${d.id}]]`, href: `#/d/${d.id}`, label: docName(d), hint: '', extra: d.kind, pill: 'doc', sort: d.created_at,
+        sub: line(`${it.code} · ${it.name || ''}`, d.version && `versione ${d.version}`, d.label && d.filename, d.url && d.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60),
+          open && `${open} ${open === 1 ? 'nota aperta' : 'note aperte'}`) };
+    }),
     // Note sui documenti (anche quelle su un pezzo di testo di un PDF): si cercano per testo, testo citato e documento.
     scored(D.docNotes.filter(n => D.docById.has(n.doc_id) && (ql || !n.resolved_at)), n => {
       const d = D.docById.get(n.doc_id);
@@ -197,15 +210,20 @@ export function findAll(ql, { bare = false, self = null, limit = 12 } = {}) {
     }, n => {
       const d = D.docById.get(n.doc_id);
       const first = plain(n.text.split('\n')[0]);
-      return { insert: `[[nota:${n.id}]]`, href: `#/d/${n.doc_id}?n=${n.id}`, label: first.length > 80 ? `${first.slice(0, 80)}…` : first,
-        hint: docName(d), extra: n.resolved_at ? 'risolta' : n.page != null && n.z == null && /pdf/i.test(d.mime || d.filename || d.url || '') ? `pag. ${n.page}` : '', pill: 'docnote', sort: n.updated_at };
+      const it = D.itemById.get(d.item_id);
+      const page = n.page != null && n.z == null && /pdf/i.test(d.mime || d.filename || d.url || '') ? `pag. ${n.page}` : '';
+      return { insert: `[[nota:${n.id}]]`, href: `#/d/${n.doc_id}?n=${n.id}`, label: first.length > 120 ? `${first.slice(0, 120)}…` : first,
+        hint: '', extra: n.resolved_at ? 'risolta' : page, pill: 'docnote', sort: n.updated_at,
+        // Dove sta: articolo › documento (tipo), chi l'ha scritta e il testo evidenziato.
+        sub: line(it && `${it.code}${it.name ? ` ${it.name}` : ''}`, `${docName(d)} (${d.kind})`, n.created_by !== S.data.me.id && userName(n.created_by), n.quote && `«${snippet(n.quote, 90)}»`) };
     }),
     scored(D.items, i => [[i.code], ...(D.aliasesOf.get(i.id) || []).map(a => [a.code, 0.2]), [i.name, 0.5], [i.category, 1], [i.firmware, 1], ['articolo', 1]],
-      i => ({ insert: bare ? i.code : `#${i.code}`, href: `#/i/${i.id}`, label: i.code, hint: i.name, extra: i.category, code: true, cat: i.category, pill: 'item', sort: i.updated_at || '' })),
+      i => ({ insert: bare ? i.code : `#${i.code}`, href: `#/i/${i.id}`, label: i.code, hint: i.name, extra: i.category, code: true, cat: i.category, pill: 'item', sort: i.updated_at || '', sub: itemSub(i) })),
     scored(D.projects.filter(p => ql || p.status !== 'closed'), p => [[p.name], [p.tag], ['progetto', 1], [p.notes, 0.5, true]],
-      p => ({ insert: `[[progetto:${p.id}]]`, href: `#/p/${p.id}`, label: p.name, hint: `@${p.tag}`, extra: STATUS[p.status] || '', pill: 'project', sort: p.updated_at || '' })),
+      p => ({ insert: `[[progetto:${p.id}]]`, href: `#/p/${p.id}`, label: p.name, hint: `@${p.tag}`, extra: STATUS[p.status] || '', pill: 'project', sort: p.updated_at || '', sub: projectSub(p) })),
     scored(D.contacts, c => [[c.name], [c.email, 0.2], [c.company, 0.5], [c.role, 0.8], ['contatto', 1]],
-      c => ({ insert: `[[contatto:${c.id}]]`, href: `#/contatti/${c.id}`, label: c.name || c.email, hint: c.company || (c.name ? c.email : ''), pill: 'contact', sort: c.updated_at || '' })),
+      c => ({ insert: `[[contatto:${c.id}]]`, href: `#/contatti/${c.id}`, label: c.name || c.email, hint: c.company || (c.name ? c.email : ''), pill: 'contact', sort: c.updated_at || '',
+        sub: line(c.name && c.email, c.role, c.phone, c.timeslot) })),
   ];
   const recent = (a, b) => String(b.sort).localeCompare(String(a.sort));
   if (!ql) return groups.flatMap((g, i) => g.sort(recent).slice(0, [4, 2, 2, 1, 2, 1, 1][i]));
@@ -213,6 +231,28 @@ export function findAll(ql, { bare = false, self = null, limit = 12 } = {}) {
 }
 
 export { scoreWords, PILL };
+
+// Seconda riga dei suggerimenti: il contesto (a quale articolo appartiene, dove sta, di chi è…), pezzi separati da ·.
+const line = (...parts) => parts.filter(x => x && String(x).trim()).join(' · ');
+const snippet = (t, n = 70) => {
+  const s = String(t || '').replace(/\[\[\w+:\d+\]\]/g, '…').replace(/\s+/g, ' ').trim();
+  return s.length > n ? `${s.slice(0, n)}…` : s;
+};
+
+function itemSub(i) {
+  const D = S.data;
+  const docs = (D.docsOf.get(i.id) || []).length;
+  const alts = (D.aliasesOf.get(i.id) || []).map(a => a.code);
+  return line(i.category, i.location && `in ${i.location}`, i.firmware && `fw ${i.firmware}`, alts.length && `alt. ${alts.slice(0, 3).join(', ')}`,
+    docs && `${docs} ${docs === 1 ? 'documento' : 'documenti'}`, i.qty != null && `${i.qty} pz`);
+}
+
+function projectSub(p) {
+  const D = S.data;
+  const open = D.entries.filter(e => !e.done_at && projectsOfEntry(e).some(x => x.id === p.id)).length;
+  const parent = p.parent_id && D.projectById.get(p.parent_id);
+  return line(parent && `in @${parent.tag}`, `${open} ${open === 1 ? 'voce aperta' : 'voci aperte'}`, snippet(p.notes));
+}
 
 const projectsOfEntry = e => [e.project_id, ...(S.data.extraProjectsOf.get(e.id) || []).map(x => x.project_id)]
   .map(id => id && S.data.projectById.get(id)).filter(Boolean);
@@ -252,7 +292,7 @@ function itemSuggestions(ql, filter = () => true) {
   }).filter(x => x.r != null);
   return scored.sort((a, b) => a.r - b.r || a.i.code.localeCompare(b.i.code))
     .slice(0, 8)
-    .map(({ i, alt }) => ({ label: i.code, hint: alt ? `alt. ${alt} · ${i.name}` : i.name, extra: i.firmware ? `fw ${i.firmware}` : i.category, code: true, cat: i.category }));
+    .map(({ i, alt }) => ({ label: i.code, hint: alt ? `alt. ${alt} · ${i.name}` : i.name, extra: i.firmware ? `fw ${i.firmware}` : i.category, code: true, cat: i.category, sub: itemSub(i) }));
 }
 
 function projectSuggestions(ql) {
@@ -263,7 +303,7 @@ function projectSuggestions(ql) {
     .filter(p => p.status !== 'closed' || ql)
     .sort((a, b) => score(a) - score(b) || order[a.status] - order[b.status] || a.tag.localeCompare(b.tag))
     .slice(0, 8)
-    .map(p => ({ label: `@${p.tag}`, hint: lc(p.name) !== lc(p.tag) ? p.name : '', extra: STATUS[p.status] || '', hue: projHue(p) }));
+    .map(p => ({ label: `@${p.tag}`, hint: lc(p.name) !== lc(p.tag) ? p.name : '', extra: STATUS[p.status] || '', hue: projHue(p), sub: projectSub(p) }));
 }
 
 function updateEmail(el, pos) {
@@ -398,12 +438,16 @@ function draw() {
     onclick: () => accept(i),
   },
   it.pill && h('span.ac-k', { class: `t-${it.pill}` }, PILL[it.pill]),
-  h('span.ac-l', {
-    class: [it.code && 'code', it.cat && 'cat', it.hue != null && 'proj'].filter(Boolean).join(' ') || null,
-    style: it.hue != null ? `--h:${it.hue}` : catStyle(it.cat),
-  }, it.label),
-  it.hint && h('span.ac-h', it.hint),
+  h('div.ac-m',
+    h('div.ac-r',
+      h('span.ac-l', {
+        class: [it.code && 'code', it.cat && 'cat', it.hue != null && 'proj'].filter(Boolean).join(' ') || null,
+        style: it.hue != null ? `--h:${it.hue}` : catStyle(it.cat),
+      }, it.label),
+      it.hint && h('span.ac-h', it.hint)),
+    it.sub && h('div.ac-sub', { title: it.sub }, it.sub)),
   it.extra && h('span.ac-x', it.extra))));
+  box.classList.toggle('wide', st.items.some(it => it.sub));
   box.hidden = false;
   place();
   // Il menu scorre con la selezione (frecce su e giù), anche quando dall'ultima si torna alla prima.
@@ -414,10 +458,13 @@ function place() {
   if (!st.el.isConnected) return close();
   const r = st.el.getBoundingClientRect();
   const vh = window.visualViewport?.height ?? window.innerHeight;
-  // Largo almeno quanto il campo, e abbastanza da leggere titolo, dettaglio e tipo per intero.
-  const width = Math.min(Math.max(r.width, 420), 720, window.innerWidth - 16);
+  // Con il contesto (seconda riga) il menu prende tutto lo spazio che serve per leggerlo, ovunque sia il campo
+  // (anche nelle note a destra del documento: si allarga verso sinistra); gli altri, largo almeno quanto il campo.
+  const vw = window.innerWidth;
+  const margin = vw < 700 ? 8 : 16;
+  const width = box.classList.contains('wide') ? Math.min(960, vw - 2 * margin) : Math.min(Math.max(r.width, 420), 720, vw - 2 * margin);
   box.style.width = `${width}px`;
-  box.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - width - 8))}px`;
+  box.style.left = `${Math.max(margin, Math.min(r.left, vw - width - margin))}px`;
   const below = r.bottom + 4;
   const height = box.offsetHeight;
   // Con la tastiera del telefono aperta lo spazio sotto può mancare: allora il menu va sopra.
