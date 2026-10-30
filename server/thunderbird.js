@@ -273,6 +273,24 @@ route('POST', '/api/mail/threads/:id/draft', ({ params, user }) => {
   return { id: tx(() => insertReply(user, t, { subject: re(t.subject), ...(last ? replyAddresses(last, true, user.id) : { contact: null, mail_cc: null }) })) };
 }, { area: 'mail' });
 
+// ---------- all'avvio ----------
+// Le regole dei collegamenti automatici possono cambiare con le versioni (es. i codici di 2 caratteri): le
+// conversazioni attive si ricontrollano a ogni avvio. Quelle archiviate quando tornano attive.
+export function relinkAllActive() {
+  let n = 0;
+  for (const { id } of acc.prepare('SELECT id FROM workspaces WHERE deleted_at IS NULL').all()) {
+    const ws = workspaceById(id);
+    if (!ws) continue;
+    withWorkspace(ws, () => tx(() => {
+      for (const t of db.prepare('SELECT id FROM mail_threads WHERE archived_at IS NULL AND deleted_at IS NULL').all()) {
+        relinkThread(t.id);
+        n++;
+      }
+    }));
+  }
+  return n;
+}
+
 // ---------- posta in arrivo di prima (fino alla v0.14) ----------
 // Stava in accounts.db (mail_inbox); ora ogni mail è in un thread del workspace della posta. Si sposta una volta.
 export function migrateInbox() {

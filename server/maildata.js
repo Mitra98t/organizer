@@ -58,17 +58,21 @@ export function dropEmptyTopics(ownerId) {
 const bare = s => String(s || '').toUpperCase().replace(/[-_./]+/g, '').replace(/(^|\D)0+(?=\d)/g, '$1');
 
 // Dato un testo, dice se un codice (o un tag) ci compare: intero, o alla buona per i codici con numeri.
+// Codici di 2 caratteri: solo una lettera e una cifra (Q5, R1); le sigle di sole lettere o cifre (OK, 12) no.
+const shortCode = w => w.length === 2 && /[A-Z]/.test(w) && /\d/.test(w);
+
 function matcher(text) {
   const t = ` ${String(text || '')} `.toUpperCase();
   // Le "parole" del testo (lettere e cifre, anche unite da - _ . /), nella forma alla buona.
   const words = new Set((String(text || '').match(/[A-Za-z0-9]+(?:[-_./][A-Za-z0-9]+)*/g) || []).map(bare));
   return (code, loose = true) => {
     const word = String(code || '').toUpperCase();
-    if (word.length < 3) return false;
+    if (word.length < 3 && !shortCode(word)) return false;
     for (let at = t.indexOf(word); at >= 0; at = t.indexOf(word, at + 1)) {
       if (!/[A-Z0-9]/.test(t[at - 1]) && !/[A-Z0-9]/.test(t[at + word.length])) return true; // non dentro una parola più lunga
     }
-    return loose && /\d/.test(word) && bare(word).length >= 3 && words.has(bare(word));
+    const b = bare(word);
+    return loose && /\d/.test(word) && (b.length >= 3 || shortCode(b)) && words.has(b);
   };
 }
 

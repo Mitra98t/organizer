@@ -300,6 +300,15 @@ test('thunderbird: thread, mandata, risposta, storia, collegamenti, archivio', a
   const looseLinks = (await tb('GET', '/sync').then(json)).threadLinks.filter(l => l.thread_id === loose.thread && l.kind === 'articolo').map(l => l.target_id);
   assert.deepEqual(looseLinks.sort(), [s44, sch.id].sort());
 
+  // Codici di 2 caratteri (una lettera e una cifra): si collegano come parola a sé, non dentro "Q55".
+  const { id: q5 } = await tb('POST', '/items', { code: 'Q5' }).then(json);
+  const short = await tb('POST', '/mail/incoming', { message_id: '<g1@fornitore.it>', from: 'g@fornitore.it', subject: 'Prova termica',
+    body: 'Il Q5 scalda un po\' sotto carico.', inbox: true }).then(json);
+  const notShort = await tb('POST', '/mail/incoming', { message_id: '<g2@fornitore.it>', from: 'h@fornitore.it', subject: 'Altro',
+    body: 'Il modello Q55 invece no.', inbox: true }).then(json);
+  const linked = async th => (await tb('GET', '/sync').then(json)).threadLinks.some(l => l.thread_id === th && l.kind === 'articolo' && l.target_id === q5);
+  assert.deepEqual([await linked(short.thread), await linked(notShort.thread)], [true, false]);
+
   // Codici nuovi in magazzino (articolo creato, codice cambiato, alternativo aggiunto): le conversazioni attive
   // che li citano si collegano; quelle archiviate no, finché non tornano attive.
   const mk = (n, body) => tb('POST', '/mail/incoming', { message_id: `<rl${n}@fornitore.it>`, from: `p${n}@fornitore.it`, subject: `Relè ${n}`, body, inbox: true }).then(json);

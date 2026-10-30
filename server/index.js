@@ -6,7 +6,7 @@ import { routes, backfillLinks } from './api.js';
 import { assertCan } from './perms.js';
 import './contacts.js';
 import './mail.js';
-import { migrateInbox } from './thunderbird.js';
+import { migrateInbox, relinkAllActive } from './thunderbird.js';
 import './backup.js';
 import './workspaces.js';
 import './remote.js';
@@ -170,6 +170,15 @@ try {
 } catch (e) {
   console.error('Spostamento della posta in arrivo nei thread non riuscito', e);
 }
+
+// Collegamenti automatici delle conversazioni attive, con le regole di questa versione (poco dopo l'avvio).
+setTimeout(() => {
+  try {
+    relinkAllActive();
+  } catch (e) {
+    console.error('Ricontrollo dei collegamenti delle mail non riuscito', e);
+  }
+}, 1500).unref();
 
 // Collegamenti delle voci (backlink): calcolati una volta per i dati scritti prima che esistessero.
 for (const w of acc.prepare('SELECT id, file FROM workspaces WHERE deleted_at IS NULL').all()) {
