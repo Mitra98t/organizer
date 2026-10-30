@@ -10,6 +10,8 @@ import { viewDoc, viewReview, docCancelDraft, setDocFocus, docSearchKey } from '
 import { viewDocuments } from './documents.js';
 import { viewChat } from './chat.js';
 import { viewMail, viewTopic } from './topics.js';
+import { tabbar, updateTabbar } from './tabbar.js';
+import { openPalette, initPalette } from './palette.js';
 import { tourTick } from './tour.js';
 import { bell, updateBell, notifyNew, viewNotification } from './notifiche.js';
 import { openFeedback, viewFeedback } from './feedback.js';
@@ -45,21 +47,12 @@ const VIEWS = {
   impostazioni: { fn: viewSettings, title: 'Impostazioni', nav: 'impostazioni' },
 };
 
-const NAV = [
-  ['agenda', 'Agenda', 'agenda'],
-  ['progetti', 'Progetti', 'folder'],
-  ['mail', 'Mail', 'mail'],
-  ['diario', 'Diario', 'diary'],
-  ['magazzino', 'Magazzino', 'box'],
-  ['contatti', 'Contatti', 'contacts'],
-];
-
 // Barra laterale: gruppi di voci; la quarta colonna dice che la voce sta sotto quella prima (rientrata).
 const SIDE = [
-  [['agenda', 'Agenda', 'agenda'], ['diario', 'Diario', 'diary', 'sub']],
   [['progetti', 'Progetti', 'folder']],
-  [['mail', 'Mail', 'mail'], ['contatti', 'Contatti', 'contacts', 'sub']],
+  [['agenda', 'Agenda', 'agenda'], ['diario', 'Diario', 'diary', 'sub']],
   [['magazzino', 'Magazzino', 'box'], ['documenti', 'Documenti', 'file', 'sub']],
+  [['mail', 'Mail', 'mail'], ['contatti', 'Contatti', 'contacts', 'sub']],
   [['chat', 'Chat', 'chat']],
 ];
 
@@ -292,16 +285,28 @@ const searchInput = h('input#search', {
     else render();
   },
   onkeydown: ev => { if (ev.key === 'Escape') { searchInput.value = ''; ui.q = ''; searchInput.blur(); history.back(); } },
+  // Su telefono "Cerca" apre la barra comandi (da lì "Cerca ovunque" porta qui); nella pagina Cerca si scrive qui.
+  onfocus: () => {
+    if (matchMedia('(max-width: 899px)').matches && route().name !== 'cerca') {
+      searchInput.blur();
+      openPalette();
+    }
+  },
+});
+
+// "Cerca ovunque" dalla barra comandi: la pagina Cerca con quelle parole.
+initPalette(q => {
+  searchInput.value = q;
+  ui.q = q;
+  ui.archive = null;
+  if (route().name !== 'cerca') location.hash = '#/cerca';
+  else render();
 });
 
 const statusDot = h('span.status');
-const chatBadge = h('span.nbadge');
-let tabsNav = null; // tab in basso (telefono): si stringono se qualche area non si vede
-let topChat = null; // icona della chat in alto (telefono)
 const titleEl = h('h1.vtitle');
 const viewEl = h('div#view');
 const navLinks = new Map();
-const tabLinks = new Map();
 let shellBuilt = false;
 
 function navLink(key, label, ic, map, cls) {
@@ -313,21 +318,19 @@ function navLink(key, label, ic, map, cls) {
 
 function buildShell() {
   navLinks.clear();
-  tabLinks.clear();
   root.replaceChildren(
     h('div.app',
       h('aside.side',
         h('div.brand', h('img', { src: 'icons/icon.svg', alt: '' }), h('span', 'Organizer')),
         wsSwitch,
-        // Documenti solo nella barra laterale (su telefono si raggiunge dal Magazzino): le tab in basso sono già 6.
-        // Gruppi separati da un divisore leggero; Diario, Contatti e Documenti stanno sotto la voce a cui si legano.
+        // Gruppi separati da un divisore leggero; Diario, Documenti e Contatti stanno sotto la voce a cui si legano.
         h('nav.side-nav', SIDE.map(group => h('div.nav-group',
-          group.map(([k, l, i, sub]) => navLink(k, l, i, navLinks, sub ? 'nav.sub' : 'nav')))),
-          h('span.sep'), navLink('cestino', 'Cestino', 'trash', navLinks, 'nav'),
-          navLink('impostazioni', 'Impostazioni', 'settings', navLinks, 'nav')),
-        // In fondo alla barra: le novità della versione (il changelog), con "nuovo" finché non si leggono.
-        // Accanto: Feedback per segnalare un errore o un'idea a chi sviluppa l'app.
-        h('div.side-foot', navLink('novita', 'Novità', 'news', navLinks, 'nav'),
+          group.map(([k, l, i, sub]) => navLink(k, l, i, navLinks, sub ? 'nav.sub' : 'nav'))))),
+        // In fondo alla barra: Cestino, Impostazioni, le novità della versione (il changelog, con "nuovo" finché
+        // non si leggono) e Feedback per segnalare un errore o un'idea a chi sviluppa l'app.
+        h('div.side-foot', navLink('cestino', 'Cestino', 'trash', navLinks, 'nav'),
+          navLink('impostazioni', 'Impostazioni', 'settings', navLinks, 'nav'),
+          navLink('novita', 'Novità', 'news', navLinks, 'nav'),
           h('button.nav.fb-btn', { type: 'button', onclick: openFeedback, title: 'Segnala un errore o un\'idea, anche con screenshot' }, icon('bug'), h('span.nl', 'Feedback')))),
       h('main.main',
         updateBar,
@@ -336,16 +339,14 @@ function buildShell() {
           titleEl,
           h('label.search', icon('search'), searchInput),
           statusDot,
-          bell,
-          // Su telefono le tab in basso sono già 6: la chat sta in alto, con il numero dei non letti.
-          topChat = h('a.icon-btn.only-mobile.top-chat', { href: '#/chat', title: 'Chat' }, icon('chat'), chatBadge),
-          h('a.icon-btn.only-mobile', { href: '#/impostazioni', title: 'Impostazioni' }, icon('settings'))),
+          bell),
         h('div.quick',
           h('div.qrow', icon('plus', 'qplus'), quickInput, quickCtx,
             h('button.icon-btn', { title: 'Sintassi', type: 'button', onclick: () => { quickHelp.hidden = !quickHelp.hidden; } }, icon('help'))),
           quickPreview, quickHelp),
         viewEl),
-      tabsNav = h('nav.tabs', NAV.map(([k, l, i]) => navLink(k, l, i, tabLinks, 'tab')))),
+      // Telefono: un tasto per gruppo, le altre pagine dal menu radiale (pressione lunga), vedi tabbar.js.
+      tabbar({ allowed: k => !S.data || pageAllowed(k), action: k => { if (k === 'feedback') openFeedback(); } })),
     h('div#toasts'));
   shellBuilt = true;
 }
@@ -361,6 +362,8 @@ function updateStatus() {
   statusDot.textContent = pending ? String(pending) : '';
 }
 
+let tabBadges = {}; // segnalini per pagina, per la barra in basso
+
 function updateBadges() {
   const D = S.data;
   if (!D) return;
@@ -370,18 +373,16 @@ function updateBadges() {
   // Mail: da mandare più i thread con messaggi da leggere.
   const mails = open.filter(e => e.kind === 'mail').length
     + D.mailThreads.filter(t => (D.msgsOfThread.get(t.id) || []).some(m => m.direction === 'in' && !m.read_at)).length;
-  for (const map of [navLinks, tabLinks]) {
-    map.get('agenda').badge.textContent = urgent || '';
-    map.get('mail').badge.textContent = mails || '';
-  }
+  navLinks.get('agenda').badge.textContent = urgent || '';
+  navLinks.get('mail').badge.textContent = mails || '';
   navLinks.get('cestino').badge.textContent = D.trashCount || '';
   const news = navLinks.get('novita');
   news.badge.textContent = hasNews() ? 'nuovo' : '';
   news.a.title = appVersion() ? `Novità · versione ${appVersion()}` : 'Novità';
   const unread = D.chatUnread > 99 ? '99+' : D.chatUnread || '';
   navLinks.get('chat').badge.textContent = unread;
-  chatBadge.textContent = unread;
   navLinks.get('cestino').badge.classList.add('muted-badge');
+  tabBadges = { agenda: urgent || '', mail: mails || '', chat: unread, novita: hasNews() ? 'nuovo' : '' };
 }
 
 // ---------- workspace ----------
@@ -440,15 +441,9 @@ function renderApp() {
   if (!shellBuilt) buildShell();
   const r = route();
   const v = VIEWS[r.name] || VIEWS.agenda;
-  // Le aree che non si possono leggere spariscono dal menu (e dalle tab in basso, che si stringono).
-  if (S.data) {
-    for (const map of [navLinks, tabLinks]) for (const [k, { a }] of map) a.hidden = !pageAllowed(k);
-    tabsNav.style.gridTemplateColumns = `repeat(${[...tabLinks.values()].filter(t => !t.a.hidden).length}, 1fr)`;
-    topChat.hidden = !can('chat');
-  }
+  // Le aree che non si possono leggere spariscono dal menu (e dalla barra in basso, che si stringe).
+  if (S.data) for (const [k, { a }] of navLinks) a.hidden = !pageAllowed(k);
   for (const [k, { a }] of navLinks) a.classList.toggle('on', k === v.nav);
-  // Su telefono Documenti non ha una tab: si evidenzia Magazzino, da cui ci si arriva.
-  for (const [k, { a }] of tabLinks) a.classList.toggle('on', k === v.nav || (v.nav === 'documenti' && k === 'magazzino'));
   titleEl.textContent = v.title;
   wsLabel.textContent = S.data?.workspace?.name || (S.noWorkspace ? 'Nessun workspace' : '…');
   if (!wsMenu.hidden) renderWsMenu();
@@ -457,6 +452,7 @@ function renderApp() {
   renderPreview();
   updateStatus();
   updateBadges();
+  updateTabbar(v.nav, tabBadges);
 
   // Ricostruisce la vista mantenendo focus, testo e cursore del campo in modifica.
   const a = document.activeElement;
@@ -632,10 +628,10 @@ document.addEventListener('keydown', ev => {
   // ⌘F (Ctrl+F) in un documento cerca nel documento; altrove resta la ricerca del browser.
   if ((/Mac|iPhone|iPad/.test(navigator.userAgent) ? ev.metaKey : ev.ctrlKey) && ev.key.toLowerCase() === 'f' && !ev.altKey && docSearchKey()) {
     ev.preventDefault();
-  } else if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'k') {
+  } else if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && ['k', 'p'].includes(ev.key.toLowerCase())) {
+    // Barra comandi (⌘P al posto di "Stampa").
     ev.preventDefault();
-    searchInput.focus();
-    searchInput.select();
+    openPalette();
   } else if (!inField && !ev.metaKey && !ev.ctrlKey && (ev.key === 'n' || ev.key === '/')) {
     ev.preventDefault();
     quickInput.focus();

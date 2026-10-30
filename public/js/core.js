@@ -779,6 +779,49 @@ function bareCodes(text) {
   return out;
 }
 
+// ---------- schede chiudibili (telefono) ----------
+// Magazzino, Documenti e Mail: su telefono le schede (categorie, gruppi, topic) si chiudono e resta l'intestazione,
+// con il suo numero. "Chiudi tutto / Apri tutto" in cima; ogni scheda si apre o chiude da sola toccando la sua
+// intestazione. Si ricorda su questo dispositivo; su schermo largo le schede sono sempre aperte.
+const folds = load('org.folds', {}); // pagina → { all, open: [chiavi aperte con all], closed: [chiavi chiuse senza all] }
+const phone = () => matchMedia('(max-width: 899px)').matches;
+const isFolded = (page, key) => { const f = folds[page] || {}; return f.all ? !(f.open || []).includes(key) : (f.closed || []).includes(key); };
+
+function toggleFold(page, key) {
+  const f = (folds[page] ||= {});
+  const was = isFolded(page, key);
+  if (f.all) f.open = was ? [...(f.open || []), key] : (f.open || []).filter(k => k !== key);
+  else f.closed = was ? (f.closed || []).filter(k => k !== key) : [...(f.closed || []), key];
+  save('org.folds', folds);
+  render();
+}
+
+// el: la scheda; il suo primo figlio è l'intestazione (riceve la freccia per aprire e chiudere).
+export function fold(page, key, el) {
+  const k = String(key);
+  el.dataset.fold = `${page}|${k}`;
+  el.classList.toggle('folded', isFolded(page, k));
+  el.firstElementChild?.append(h('button.fold-t.only-mobile', {
+    type: 'button', title: 'Apri o chiudi', 'aria-expanded': String(!isFolded(page, k)), onclick: ev => { ev.stopPropagation(); toggleFold(page, k); },
+  }, '▾'));
+  return el;
+}
+
+export function foldBar(page) {
+  const all = !!folds[page]?.all;
+  return h('div.fold-bar.only-mobile',
+    h('button.btn.sm.ghost', { type: 'button', onclick: () => { folds[page] = { all: !all }; save('org.folds', folds); render(); } },
+      all ? 'Apri tutto' : 'Chiudi tutto'));
+}
+
+document.addEventListener('click', ev => {
+  if (!phone() || ev.target.closest('a, button, input, select, textarea, .pop-b')) return;
+  const head = ev.target.closest('[data-fold] > :first-child');
+  if (!head) return;
+  const [page, key] = head.parentElement.dataset.fold.split('|');
+  toggleFold(page, key);
+});
+
 // ---------- colonne "a muro" (come la home di Pinterest) ----------
 // I blocchi (categorie del magazzino, gruppi di documenti) vanno in N colonne: ognuno, nell'ordine, nella
 // colonna più corta, così sotto un blocco basso non resta spazio vuoto. N: 3 su schermo grande, 2 medio,

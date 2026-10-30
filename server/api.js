@@ -9,7 +9,7 @@ import { hashPassword, verifyPassword, sessionCookie, validUsername, validPasswo
 import {
   acc, atx, userCount, getAccount, workspaceById, workspacesOf, membersOf, roleIn, adminCount,
   addMember, createWorkspace, removeMember, syncMirror, createSession, destroySession, defaultWorkspace, setSessionWorkspace,
-  revokeApiTokens, permsIn, setPerms, mailAddressesOf, openFeedback, tourInfo,
+  revokeApiTokens, permsIn, setPerms, mailAddressesOf, mailIgnoreOf, openFeedback, tourInfo,
 } from './accounts.js';
 import { HttpError, fail, now, bool, str, sendJson, clientIp } from './util.js';
 import { rev, openStream, dropUser, mailExtOn, mailExtVersion } from './events.js';
@@ -366,6 +366,10 @@ route('PATCH', '/api/me', async ({ user, body }) => {
     acc.prepare('UPDATE users SET name = ? WHERE id = ?').run(str(b.name, 60) || user.username, user.id);
     for (const w of workspacesOf(user.id)) syncMirror(workspaceById(w.id), user.id);
   }
+  if (Array.isArray(b.mailIgnore)) {
+    const list = [...new Set(b.mailIgnore.map(x => str(x, 200).trim().toLowerCase()).filter(Boolean))].slice(0, 1000);
+    acc.prepare('UPDATE users SET mail_ignore = ? WHERE id = ?').run(JSON.stringify(list), user.id);
+  }
   if (b.password !== undefined) {
     const row = acc.prepare('SELECT pass FROM users WHERE id = ?').get(user.id);
     if (!(await verifyPassword(String(b.current || ''), row.pass))) fail(400, 'Password attuale errata');
@@ -437,6 +441,7 @@ route('GET', '/api/sync', ({ req, res, user }) => {
     mailExt: mailExtOn(uid),
     mailExtVersion: mailExtVersion(uid),
     myAddresses: mailAddressesOf(uid),
+    mailIgnore: mailIgnoreOf(uid), // "da salvare" da non proporre (indirizzi o pezzi)
     feedbackOpen: openFeedback(uid), // null = non gestisce i feedback
     ...tourInfo(uid), // onboarded (invito al giro già visto), tourWs (workspace di prova)
     ...notificationsOf(uid), // notifiche (di tutti i workspace), da leggere, dispositivi con le push

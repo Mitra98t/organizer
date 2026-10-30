@@ -6,7 +6,7 @@
 // Topic e conversazioni hanno stella e colore (automatico finché non se ne sceglie uno).
 import {
   h, icon, S, ui, api, act, render, toast, save, fmtTime, fmtDay, plainRefs, contactNames, can, itemAttrs, docName, projectsOf, projHue,
-  trashIt, popButton, popItem, popSep, huePicker, masonry, filterChip,
+  trashIt, popButton, popItem, popSep, huePicker, masonry, filterChip, fold, foldBar,
 } from './core.js';
 import { draggable } from './dnd.js';
 import { extractCodes } from './parse.js';
@@ -173,16 +173,17 @@ const topicProjects = topic => (S.data.linksOfTopic.get(topic.id) || []).filter(
   .map(l => S.data.projectById.get(l.target_id)).filter(Boolean);
 
 function topicCard(topic, rows, total) {
-  return h('section.topic-card', { 'data-topic': topic.id, style: `--h:${topicHue(topic)}` },
+  return fold('mail', topic.id, h('section.topic-card', { 'data-topic': topic.id, style: `--h:${topicHue(topic)}` },
     h('div.tp-h',
       star(!!topic.starred, () => patchTopic(topic, { starred: topic.starred ? 0 : 1 }), 'topic'),
       h('a.tp-title', { href: `#/t/${topic.id}` }, topicTitle(topic)),
-      topicProjects(topic).map(p => h('span.tag', { style: `--h:${projHue(p)}` }, `@${p.tag}`)),
+      topicProjects(topic).length > 0 && h('span.tp-tags', topicProjects(topic).map(p => h('span.tag', { style: `--h:${projHue(p)}` }, `@${p.tag}`))),
       unreadBadge((S.data.threadsOfTopic.get(topic.id) || []).reduce((n, t) => n + (S.data.msgsOfThread.get(t.id) || []).filter(m => m.direction === 'in' && !m.read_at).length, 0)),
-      total > 1 && h('span.muted.tp-n', { title: `${total} conversazioni in questo topic` }, `${total} conv.`),
+      // Il numero di conversazioni; con una sola si vede solo su telefono (serve a scheda chiusa).
+      h(`span.muted.tp-n${total > 1 ? '' : '.only-mobile'}`, { title: `${total} ${total === 1 ? 'conversazione' : 'conversazioni'} in questo topic` }, `${total} conv.`),
       huePop(`thue:${topic.id}`, topic, autoHue(topic.id), v => patchTopic(topic, { hue: v })),
       topicMenu(topic)),
-    rows.map(x => threadRow(x, total === 1 && threadSubject(x.t) === topicTitle(topic))));
+    rows.map(x => threadRow(x, total === 1 && threadSubject(x.t) === topicTitle(topic)))));
 }
 
 export function viewMail() {
@@ -234,6 +235,7 @@ export function viewMail() {
         onchange: ev => { ui.mailProj = +ev.target.value || null; render(); },
       }, h('option', { value: '' }, 'tutti i progetti'), projects.map(p => h('option', { value: p.id }, `@${p.tag}`)))),
     h('div.topic-new', 'Rilascia qui per farne un topic a sé'),
+    topics.length > 0 && foldBar('mail'),
     topics.length > 0 && masonry('topic-cols', topics.map(o => topicCard(o.topic, o.list, (D.threadsOfTopic.get(o.topic.id) || []).length))),
     topics.length > 1 && view === 'active' && h('p.muted.fhint', 'Trascina una conversazione su un altro topic per unirle.'),
     shared.length > 0 && h('section.sec', h('div.sec-h', h('span.sec-t', 'Condivise con te'), h('span.count', shared.length)),
@@ -542,7 +544,8 @@ export function viewTopic(id, q = {}) {
   const allNodes = [...trees.values()].flat();
   const find = s => s && allNodes.find(n => sameSel(n, s));
   if (ui.mailSelNext?.topic === topic.id && find(ui.mailSelNext)) {
-    ui.mailSel = ui.mailSelNext;
+    // La bozza appena chiesta (Rispondi): resta scelta anche con ?th= nell'indirizzo.
+    ui.mailSel = { ...ui.mailSelNext, from: q.th };
     ui.mailSelNext = null;
   }
   if (ui.mailSel?.topic !== topic.id || !find(ui.mailSel) || (q.th && ui.mailSel.from !== q.th)) {

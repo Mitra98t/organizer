@@ -9,14 +9,18 @@ const mailsOf = c => S.data.entries
   .sort((a, b) => !!a.done_at - !!b.done_at || b.updated_at.localeCompare(a.updated_at));
 
 // Indirizzi delle mail (ricevute, mandate, conversazioni) che non sono in rubrica: chi scrive, a chi si scrive,
-// chi è in copia. Esclusi i miei indirizzi e quelli ignorati. Il nome viene da "Nome <email>" quando c'è.
+// chi è in copia. Esclusi i miei indirizzi e quelli ignorati: una regola (salvata nell'account, vale su tutti i
+// dispositivi) è un indirizzo intero o un pezzo di indirizzo o di nome ("noreply", "@amazon.it", "newsletter").
+const ignoreRules = () => S.data.mailIgnore || [];
+const ignored = a => ignoreRules().some(r => lc(a.email).includes(r) || (a.name && lc(a.name).includes(r)));
+
 function unknownAddresses() {
   const D = S.data;
   const seen = new Map();
   const add = (list, date, role) => {
     for (const a of addrList(list)) {
       const k = lc(a.email);
-      if (D.contactByEmail.has(k) || D.mine.has(k) || ui.ignoredAddrs.has(k)) continue;
+      if (D.contactByEmail.has(k) || D.mine.has(k) || ignored(a)) continue;
       const x = seen.get(k) || { email: a.email, name: '', n: 0, last: '', roles: new Set() };
       x.name ||= a.name;
       x.n++;
@@ -31,10 +35,21 @@ function unknownAddresses() {
   return [...seen.values()].sort((a, b) => b.last.localeCompare(a.last));
 }
 
-function ignoreAddr(email) {
-  ui.ignoredAddrs.add(lc(email));
-  save('org.ignoredAddrs', [...ui.ignoredAddrs]);
+function setRules(list) {
+  S.data.mailIgnore = list;
   render();
+  return act(() => api('PATCH', '/me', { mailIgnore: list }));
+}
+const addRule = r => { const x = lc(r).trim(); if (x && !ignoreRules().includes(x)) setRules([...ignoreRules(), x]); };
+const dropRule = r => setRules(ignoreRules().filter(x => x !== r));
+
+// Gli indirizzi ignorati prima, su questo dispositivo: passano nell'account una volta sola.
+function moveLocalIgnores() {
+  if (!ui.ignoredAddrs.size) return;
+  const list = [...new Set([...ignoreRules(), ...ui.ignoredAddrs])];
+  ui.ignoredAddrs.clear();
+  save('org.ignoredAddrs', []);
+  queueMicrotask(() => setRules(list)); // non durante il disegno della pagina
 }
 
 // Pannello "Da salvare": uno per riga, con il nome modificabile prima di salvare.
@@ -42,7 +57,16 @@ function unknownPanel(list) {
   return h('div.unknown-panel',
     h('div.up-h', h('b', 'Indirizzi delle mail non in rubrica'), h('span.muted', `${list.length}`), h('span.grow'),
       h('button.icon-btn.sm', { title: 'Chiudi', onclick: () => { ui.contactsUnknown = false; render(); } }, icon('x'))),
-    !list.length && h('p.muted', 'Nessuno: tutte le persone delle tue mail sono già in rubrica.'),
+    h('form.up-rule', {
+      onsubmit: ev => { ev.preventDefault(); const v = ev.target.elements.rule.value; ev.target.reset(); addRule(v); },
+    },
+    h('input', { name: 'rule', placeholder: 'Ignora tutti quelli che contengono… (es. noreply, @amazon.it, newsletter)', 'data-fk': 'up-rule', autocomplete: 'off' }),
+    h('button.btn.sm', { type: 'submit' }, 'Ignora')),
+    ignoreRules().length > 0 && h('details.up-rules',
+      h('summary.muted', `${ignoreRules().length} ${ignoreRules().length === 1 ? 'regola' : 'regole'} per non proporre indirizzi`),
+      h('div.up-chips', ignoreRules().map(r => h('span.chip', h('span.mono', r),
+        h('button.icon-btn.sm', { type: 'button', title: 'Togli la regola', onclick: () => dropRule(r) }, icon('x')))))),
+    !list.length && h('p.muted', 'Nessuno: tutte le persone delle tue mail sono già in rubrica (o le hai ignorate).'),
     list.map(a => h('form.up-row', {
       onsubmit: ev => {
         ev.preventDefault();
@@ -55,7 +79,7 @@ function unknownPanel(list) {
     h('span.muted.up-info', `${[...a.roles].join(', ')} · ${a.n} ${a.n === 1 ? 'mail' : 'mail'}${a.last ? ` · ${new Date(a.last).toLocaleDateString('it-IT')}` : ''}`),
     h('span.grow'),
     h('button.btn.sm.primary', { type: 'submit' }, icon('plus'), 'Salva'),
-    h('button.btn.sm.ghost', { type: 'button', title: 'Non proporlo più (su questo dispositivo)', onclick: () => ignoreAddr(a.email) }, 'Ignora'))));
+    h('button.btn.sm.ghost', { type: 'button', title: 'Non proporlo più', onclick: () => addRule(a.email) }, 'Ignora'))));
 }
 
 const GROUPS = {
@@ -71,6 +95,7 @@ export function viewContacts(id) {
   const D = S.data;
   const f = lc(ui.contactFilter.trim());
   const filtered = D.contacts.filter(c => !f || [c.name, c.email, c.company, c.role, c.timeslot, c.phone, c.notes].some(v => lc(v).includes(f)));
+  moveLocalIgnores();
   const unknown = can('contatti', 'write') ? unknownAddresses() : [];
 
   // Raggruppamento dinamico: per azienda, fascia oraria o ruolo; ogni valore usato diventa una tab.

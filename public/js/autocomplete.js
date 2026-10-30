@@ -109,23 +109,23 @@ function updateWhole(el) {
 function updateRef(el, pos, q) {
   const ql = lc(q.trim());
   const items = refSuggestions(ql, { bare: el.dataset.acBare != null, self: +el.dataset.acEntry || null });
-  askMailSearch(ql, el);
+  askMailSearch(ql, () => { if (document.activeElement === el) update(el); });
   if (!items.length) return close();
   st = { el, start: pos - q.length - 2, end: pos, items, index: 0, token: `[[${q}`, suffix: ' ' };
   draw();
 }
 
-// Il testo intero delle mail ricevute non è nei dati dell'app: per "[[" si chiede al server in quali
-// conversazioni stanno le parole (poco dopo che si è smesso di scrivere); arrivata la risposta il menu si rifà.
+// Il testo intero delle mail ricevute non è nei dati dell'app: per "[[" (e la barra comandi) si chiede al server
+// in quali conversazioni stanno le parole, poco dopo che si è smesso di scrivere; arrivata la risposta, done().
 const mailSearch = new Map(); // ricerca → id delle conversazioni (null = in arrivo)
 let mailTimer = null;
-function askMailSearch(ql, el) {
+export function askMailSearch(ql, done) {
   if (ql.replace(/\s/g, '').length < 2 || mailSearch.has(ql) || !S.data?.mailThreads?.length) return;
   clearTimeout(mailTimer);
   mailTimer = setTimeout(() => {
     mailSearch.set(ql, null);
     api('GET', `/mail/search?${new URLSearchParams({ q: ql })}`)
-      .then(ids => { mailSearch.set(ql, ids); if (document.activeElement === el) update(el); })
+      .then(ids => { mailSearch.set(ql, ids); done(); })
       .catch(() => mailSearch.delete(ql));
   }, 250);
 }
@@ -153,8 +153,11 @@ function scoreWords(words, fields) {
 }
 
 // Tutto insieme; senza testo: le voci aperte più recenti, poi un po' di ogni altro tipo. Si cerca anche per
-// tipo ("mail", "todo", "nota", "documento"…), persone (nomi in rubrica e indirizzi) e testo.
-function refSuggestions(ql, { bare, self }) {
+// tipo ("mail", "todo", "nota", "documento"…), persone (nomi in rubrica e indirizzi) e testo. Ogni risultato ha
+// insert (il token per "[[") e href (dove porta, per la barra comandi).
+const refSuggestions = (ql, opts) => findAll(ql, opts);
+
+export function findAll(ql, { bare = false, self = null, limit = 12 } = {}) {
   const D = S.data;
   const words = ql.split(/\s+/).filter(Boolean);
   const plain = t => t.replace(/(^|\s)#/g, '$1').replace(/\[\[\w+:\d+\]\]/g, '…');
@@ -169,29 +172,31 @@ function refSuggestions(ql, { bare, self }) {
     scored(D.entries.filter(e => e.id !== self && (ql || !e.done_at)), e => [
       [e.title], [e.mail_subject, 0.2], [e.contact, 0.5], [names(`${e.contact},${e.mail_cc}`), 0.5], [e.mail_cc, 0.8],
       [KIND_WORD[e.kind], 1], ...projectsOfEntry(e).map(p => [p.tag, 1]), [e.notes, 0, true],
-    ], e => ({ insert: `[[voce:${e.id}]]`, label: plain(e.title), hint: e.kind === 'mail' ? e.contact || '' : '', extra: entryState(e), pill: e.kind, sort: e.updated_at })),
+    ], e => ({ insert: `[[voce:${e.id}]]`, href: `#/v/${e.id}`, label: plain(e.title), hint: e.kind === 'mail' ? e.contact || '' : '', extra: entryState(e), pill: e.kind, sort: e.updated_at })),
     scored(D.mailThreads, t => {
       const msgs = D.msgsOfThread.get(t.id) || [];
       const addrs = msgs.map(m => `${m.from_addr},${m.to_addr},${m.cc}`).join(',');
       return [[t.subject], [D.topicById.get(t.topic_id)?.title, 0.3], [addrs, 0.5, true], [names(addrs), 0.3, true], ['mail', 1], ['conversazione', 1],
         ...msgs.map(m => [m.snippet, 0.5, true]), ...(mailIds.includes(t.id) ? [[ql, 0, true]] : [])];
-    }, t => ({ insert: `[[mail:${t.id}]]`, label: plain(t.subject), hint: names((D.msgsOfThread.get(t.id) || []).map(m => m.direction === 'in' ? m.from_addr : m.to_addr).join(',')).trim(),
+    }, t => ({ insert: `[[mail:${t.id}]]`, href: `#/t/${t.topic_id}?th=${t.id}`, label: plain(t.subject), hint: names((D.msgsOfThread.get(t.id) || []).map(m => m.direction === 'in' ? m.from_addr : m.to_addr).join(',')).trim(),
       extra: t.archived_at ? 'archiviata' : '', pill: 'conv', sort: t.last_at })),
     scored(D.docs.filter(d => D.itemById.has(d.item_id)), d => {
       const it = D.itemById.get(d.item_id);
       return [[docName(d)], [d.filename, 0.3], [d.kind, 0.5], [it.code, 0.3], ...(D.aliasesOf.get(it.id) || []).map(a => [a.code, 0.4]), [it.name, 0.8], [d.version, 1], ['documento', 1]];
-    }, d => ({ insert: `[[doc:${d.id}]]`, label: docName(d), hint: D.itemById.get(d.item_id).code, extra: d.kind, pill: 'doc', sort: d.created_at })),
+    }, d => ({ insert: `[[doc:${d.id}]]`, href: `#/d/${d.id}`, label: docName(d), hint: D.itemById.get(d.item_id).code, extra: d.kind, pill: 'doc', sort: d.created_at })),
     scored(D.items, i => [[i.code], ...(D.aliasesOf.get(i.id) || []).map(a => [a.code, 0.2]), [i.name, 0.5], [i.category, 1], [i.firmware, 1], ['articolo', 1]],
-      i => ({ insert: bare ? i.code : `#${i.code}`, label: i.code, hint: i.name, extra: i.category, code: true, cat: i.category, pill: 'item', sort: i.updated_at || '' })),
+      i => ({ insert: bare ? i.code : `#${i.code}`, href: `#/i/${i.id}`, label: i.code, hint: i.name, extra: i.category, code: true, cat: i.category, pill: 'item', sort: i.updated_at || '' })),
     scored(D.projects.filter(p => ql || p.status !== 'closed'), p => [[p.name], [p.tag], ['progetto', 1], [p.notes, 0.5, true]],
-      p => ({ insert: `[[progetto:${p.id}]]`, label: p.name, hint: `@${p.tag}`, extra: STATUS[p.status] || '', pill: 'project', sort: p.updated_at || '' })),
+      p => ({ insert: `[[progetto:${p.id}]]`, href: `#/p/${p.id}`, label: p.name, hint: `@${p.tag}`, extra: STATUS[p.status] || '', pill: 'project', sort: p.updated_at || '' })),
     scored(D.contacts, c => [[c.name], [c.email, 0.2], [c.company, 0.5], [c.role, 0.8], ['contatto', 1]],
-      c => ({ insert: `[[contatto:${c.id}]]`, label: c.name || c.email, hint: c.company || (c.name ? c.email : ''), pill: 'contact', sort: c.updated_at || '' })),
+      c => ({ insert: `[[contatto:${c.id}]]`, href: `#/contatti/${c.id}`, label: c.name || c.email, hint: c.company || (c.name ? c.email : ''), pill: 'contact', sort: c.updated_at || '' })),
   ];
   const recent = (a, b) => String(b.sort).localeCompare(String(a.sort));
   if (!ql) return groups.flatMap((g, i) => g.sort(recent).slice(0, [4, 2, 2, 2, 1, 1][i]));
-  return groups.flat().sort((a, b) => a.r - b.r || recent(a, b)).slice(0, 12);
+  return groups.flat().sort((a, b) => a.r - b.r || recent(a, b)).slice(0, limit);
 }
+
+export { scoreWords, PILL };
 
 const projectsOfEntry = e => [e.project_id, ...(S.data.extraProjectsOf.get(e.id) || []).map(x => x.project_id)]
   .map(id => id && S.data.projectById.get(id)).filter(Boolean);

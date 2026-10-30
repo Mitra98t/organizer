@@ -3,6 +3,7 @@
 // e se ne scelgono fino a 3 da aprire affiancati. Qui si aggiungono anche i tipi di documento.
 import {
   h, icon, S, ui, api, act, render, save, toast, fmtSize, fmtTime, itemAttrs, catStyle, docKinds, dkAttrs, newDocKind, docName, renameDoc, masonry, filterChip, aliasCodes, can, roClass,
+  fold, foldBar,
 } from './core.js';
 import { docMeta, docPeek } from './docview.js';
 import { peekable } from './views.js';
@@ -53,12 +54,12 @@ function byCategory(docs) {
     if (!items.has(it.id)) items.set(it.id, []);
     items.get(it.id).push(d);
   }
-  return [...cats].sort(([a], [b]) => (!a) - (!b) || a.localeCompare(b)).map(([cat, items]) => h('section.dgroup', { class: cat ? 'cat' : null, style: catStyle(cat) },
+  return [...cats].sort(([a], [b]) => (!a) - (!b) || a.localeCompare(b)).map(([cat, items]) => fold('documenti', `c:${cat}`, h('section.dgroup', { class: cat ? 'cat' : null, style: catStyle(cat) },
     h('div.dgroup-h', h('span.dgroup-cat', cat || 'senza categoria'), h('span.count', [...items.values()].flat().length)),
     [...items].map(([id]) => D.itemById.get(id)).sort((a, b) => a.code.localeCompare(b.code)).map(it => [
       h('div.dgroup-item', h('a.code', { href: `#/i/${it.id}`, ...itemAttrs(it) }, it.code), h('span.muted', it.name || '')),
       items.get(it.id).map(d => docRow(d, { showItem: false })),
-    ])));
+    ]))));
 }
 
 // Colonne per tipo di documento. Senza filtri si vedono anche i tipi aggiunti ancora vuoti (e si eliminano).
@@ -70,10 +71,10 @@ function byKind(docs, filtered) {
   const remove = (k, n) => {
     if (confirm(`Eliminare il tipo "${k}"?${n ? ` I suoi ${n} documenti diventano "altro".` : ''}`)) act(() => api('DELETE', `/doc-kinds/${encodeURIComponent(k)}`));
   };
-  return [...groups].filter(([k, list]) => list.length || (custom.has(k) && !filtered)).map(([k, list]) => h('section.dgroup',
+  return [...groups].filter(([k, list]) => list.length || (custom.has(k) && !filtered)).map(([k, list]) => fold('documenti', `k:${k}`, h('section.dgroup',
     h('div.dgroup-h', h('span.dk', dkAttrs(k), k), h('span.count', list.length),
       custom.has(k) && h('button.icon-btn.sm', { title: 'Elimina questo tipo', onclick: () => remove(k, list.length) }, icon('x'))),
-    list.length ? list.map(d => docRow(d, { showItem: true })) : h('p.muted.dgroup-empty', 'Nessun documento di questo tipo.')));
+    list.length ? list.map(d => docRow(d, { showItem: true })) : h('p.muted.dgroup-empty', 'Nessun documento di questo tipo.'))));
 }
 
 export function viewDocuments() {
@@ -120,6 +121,7 @@ export function viewDocuments() {
       h('p', 'I documenti si caricano dalla scheda di un articolo di magazzino (firmware, datasheet, schemi…).')),
     all.length > 0 && !docs.length && h('div.empty', h('p', 'Nessun documento corrisponde ai filtri.')),
     all.length > 0 && h('p.muted.dnd-hint', `Scegli fino a ${MAX_REVIEW} documenti con il pulsante a sinistra per rivederli affiancati, con le loro note.`),
+    docs.length > 0 && foldBar('documenti'),
     masonry('doc-groups', byCat ? byCategory(docs) : byKind(docs, filtered)),
     sel.length > 0 && h('div.rv-bar',
       h('span', `${sel.length} ${sel.length === 1 ? 'documento selezionato' : 'documenti selezionati'}`),

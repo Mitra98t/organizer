@@ -66,6 +66,7 @@ In `/api/sync` ogni oggetto ha `shared_all`, e `shares` elenca `{kind, obj_id, u
 |---|---|
 | `GET /api/info` | `{app, version, api}`, senza autenticazione |
 | `GET /api/me` | account, workspace attivo (`id`, `name`, `role`) ed elenco dei workspace |
+| `PATCH /api/me` | `{name}`, `{password, current}` o `{mailIgnore: [...]}`: le regole per i contatti "da salvare" da non proporre (indirizzi interi o pezzi di indirizzo o nome; in `/api/sync` come `mailIgnore`) |
 | `GET /api/workspaces` | i tuoi workspace: `[{id, name, role}]` |
 | `GET /api/sync` | **tutti i dati del workspace** in una risposta (sotto) |
 | `GET /api/entries/:id` | una voce con `projects`, `items`, `logs`, `subtasks`, `attachments`; anche se archiviata |

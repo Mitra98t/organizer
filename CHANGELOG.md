@@ -3,6 +3,17 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.17 — 2026-10-30
+- **Barra in basso su telefono rifatta**: Progetti, Agenda, Magazzino, Mail, Impostazioni. Tenendo premuto un tasto si apre attorno al dito un menu radiale con le altre pagine del gruppo (Diario; Documenti; Contatti e Chat; Cestino, Novità, Feedback): scorrendo su una la si apre e prende il posto del tasto. Il menu si apre lontano dal dito e verso il centro dello schermo, così il dito non lo copre. Chat e Impostazioni non stanno più in alto.
+- **Barra comandi** (⌘K o ⌘P, su telefono toccando "Cerca"): apre al volo pagine, voci, conversazioni di mail (anche cercando nel testo), articoli, documenti, progetti e contatti, con la ricerca di `[[`; "Cerca ovunque" porta alla pagina Cerca.
+- **Barra laterale riordinata**: Progetti, Agenda (Diario), Magazzino (Documenti), Mail (Contatti), Chat; Cestino e Impostazioni in fondo, con Novità e Feedback.
+- **Contatti da salvare**: regole per ignorare in un colpo tutti gli indirizzi o i nomi che contengono un pezzo (`noreply`, `@amazon.it`…). Le regole e gli indirizzi ignorati sono dell'account e valgono su tutti i dispositivi (quelli ignorati prima su un dispositivo ci passano da soli).
+- **Schede chiudibili su telefono** in Magazzino, Documenti e Mail: "Chiudi tutto" lascia le intestazioni con il loro numero (a destra), toccandone una si apre solo quella.
+- **Chat su telefono**: la barra per scrivere resta ferma in fondo, subito sopra la barra del menu; i messaggi scorrono sopra.
+- Correzione: "Rispondi" e "Rispondi a tutti" aprono subito la bozza da scrivere (prima, arrivando da un link, si tornava alla mail).
+- Correzione: con tante notifiche le righe della campanella si schiacciavano una sull'altra (soprattutto su telefono); ora la lista scorre e le righe sono più ariose. Su telefono anche i tag dei progetti dei topic vanno su una riga loro.
+- Account v9.
+
 ## 0.16.1 — 2026-10-29
 - Correzione: nella pagina di un topic, su schermi non larghissimi, l'albero delle mail (che resta in vista scorrendo) finiva sopra la colonna dei collegamenti. Ora l'albero ha la sua colonna a sinistra e mail e collegamenti stanno uno sotto l'altro a destra.
 

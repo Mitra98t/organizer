@@ -5,6 +5,7 @@ import {
   updatePending, removePending,
   descendants, ancestors, catStyle, itemAttrs, docFileUrl, projectsOf, DOC_KINDS, projHue, catHue, huePicker,
   switchWorkspace, newWorkspace, docName, renameDoc, richField, backlinks, plainRefs, CONTACT_COLOR, masonry, filterChip, aliasCodes, kindPicker, can, canEntry, roClass,
+  fold, foldBar,
 } from './core.js';
 import { docMeta, docPeek } from './docview.js';
 import { openFeedback } from './feedback.js';
@@ -936,8 +937,9 @@ export function viewItems() {
       h('p', 'Aggiungi articoli dalla barra in alto: ', kbd('SCH-042 scheda motori /scheda'), '.'),
       h('p', 'Ogni ', kbd('#CODICE'), ' scritto in una voce crea e collega automaticamente l\'articolo.')),
     D.items.length > 0 && !items.length && empty(h('p', 'Nessun articolo corrisponde al filtro.')),
+    ui.itemView === 'groups' && items.length > 0 && foldBar('magazzino'),
     ui.itemView === 'groups'
-      ? masonry('cat-cols', ordered.map(([c, list]) => h('section.cat-col', { class: c ? 'cat' : null, style: catStyle(c), 'data-cat': c },
+      ? masonry('cat-cols', ordered.map(([c, list]) => fold('magazzino', c || '', h('section.cat-col', { class: c ? 'cat' : null, style: catStyle(c), 'data-cat': c },
         h('div.cat-h',
           c ? h('button.cdot.pick', { class: 'cat', style: catStyle(c), title: 'Cambia colore della categoria', onclick: () => { ui.catPicker = ui.catPicker === c ? null : c; render(); } })
             : h('span.cdot'),
@@ -948,7 +950,7 @@ export function viewItems() {
           h('span.code', itemAttrs(i), i.code),
           h('span.name', i.name || ''),
           i.firmware && h('span.fw', i.firmware),
-          openCountOf(i.id) > 0 && h('span.badge', openCountOf(i.id))), () => peekContent(i))))))
+          openCountOf(i.id) > 0 && h('span.badge', openCountOf(i.id))), () => peekContent(i)))))))
         // Visibile solo durante il trascinamento: rilasciando qui si crea una categoria nuova.
         .concat(h('section.cat-col.cat-new', { 'data-cat': '', 'data-new': '' }, h('div.cat-h', icon('plus'), 'Nuova categoria'))))
       : h('div.items', items.map(itemRow)));

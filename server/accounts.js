@@ -157,6 +157,10 @@ const MIGRATIONS = [
   `
   ALTER TABLE users ADD COLUMN mail_backfill_at TEXT;
   `,
+  // Contatti "da salvare" da non proporre: indirizzi interi o pezzi (noreply, @amazon.it, un nome), per persona.
+  `
+  ALTER TABLE users ADD COLUMN mail_ignore TEXT NOT NULL DEFAULT '[]';
+  `,
 ];
 
 {
@@ -378,6 +382,8 @@ export function resolveApiToken(token, wsHeader) {
   return { account, ws, role: ws ? roleIn(ws.id, account.id) : null, perms: ws ? permsIn(ws.id, account.id) : null, apiToken: t.id };
 }
 
+// Contatti "da salvare" che la persona non vuole vedere: indirizzi interi o pezzi di indirizzo o nome.
+export const mailIgnoreOf = userId => JSON.parse(acc.prepare('SELECT mail_ignore FROM users WHERE id = ?').get(userId)?.mail_ignore || '[]');
 // Indirizzi delle identità di Thunderbird dell'utente (li manda l'estensione): sono i "miei" indirizzi.
 export const mailAddressesOf = userId => JSON.parse(acc.prepare('SELECT mail_addresses FROM users WHERE id = ?').get(userId)?.mail_addresses || '[]');
 

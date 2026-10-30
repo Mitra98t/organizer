@@ -293,6 +293,10 @@ test('thunderbird: thread, mandata, risposta, storia, collegamenti, archivio', a
   assert.deepEqual((await tb('GET', `/backlinks/mail/${found[0]}`).then(json)).map(e => e.id), [cite]);
   assert.equal((await tb('POST', '/refs', { refs: [['mail', found[0]]] }).then(json))[`mail:${found[0]}`].status, 'ok');
 
+  // Contatti da non proporre: regole dell'account (minuscole, senza doppioni).
+  await tb('PATCH', '/me', { mailIgnore: ['NoReply', 'noreply', '@amazon.it'] });
+  assert.deepEqual((await tb('GET', '/sync').then(json)).mailIgnore, ['noreply', '@amazon.it']);
+
   // Primo collegamento: l'estensione carica l'ultimo mese, poi lo segna fatto.
   assert.ok((await tb('GET', '/mail/backfill').then(json)).since);
   await tb('POST', '/mail/backfill/done');
