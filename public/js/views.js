@@ -1341,7 +1341,7 @@ function settingsCategories(D) {
     ['token', 'CLI e token', 'key', 'Terminale, bot e script'],
     ['barra', 'Barra rapida', 'keyboard', 'Sintassi e scorciatoie'],
     ['app', 'App e aiuto', 'phone', `Installazione, novità, feedback${S.version ? ` · v${S.version}` : ''}`],
-    me.is_admin && ['backup', 'Backup', 'download', 'Scarica o ripristina i dati'],
+    ['backup', me.is_admin ? 'Backup e dati' : 'I tuoi dati', 'download', me.is_admin ? 'Backup del workspace, esporta e importa' : 'Esporta e importa i tuoi dati'],
     D.feedbackOpen != null && ['feedback', 'Feedback ricevuti', 'bug', D.feedbackOpen ? `${D.feedbackOpen} da vedere` : 'nessuno da vedere'],
   ].filter(Boolean);
 }
@@ -1453,14 +1453,21 @@ function settingsPane(sec, D) {
         h('p.muted', `Indirizzo attuale: ${location.origin}${isSecureContext ? '' : ' (non HTTPS: niente modalità offline)'}`),
       ]),
     ];
-    case 'backup': return me.is_admin ? [card('set-admin', 'Backup e ripristino', [
+    case 'backup': return [card('set-export', 'Esporta e importa i tuoi dati', [
+      h('p.muted', 'Esporta: un file .zip con tutto il magazzino e i documenti di questo workspace (con i file) e quello che hai creato tu: todo, diario, mail, progetti, contatti, note sui documenti, la tua posta. Le cose private degli altri no.'),
+      h('div.toolbar',
+        h('a.btn', { href: 'api/export', download: '' }, icon('download'), 'Esporta i miei dati'),
+        h('button.btn', { onclick: () => importInput.click() }, icon('upload'), 'Importa dati…')),
+      h('p.muted', 'Importa: aggiunge un\'esportazione a questo workspace (o a quello di un altro server) senza sovrascrivere niente. Un articolo che c\'è già resta com\'è e prende solo i documenti che gli mancano; progetti con lo stesso tag e contatti con la stessa mail si uniscono. Quello che importi diventa tuo; le aree in cui non puoi scrivere si saltano.'),
+      importInput,
+    ]), me.is_admin && card('set-admin', 'Backup e ripristino del workspace', [
       h('p.muted', 'Il backup contiene voci, progetti, magazzino, contatti e utenti. I file caricati (documenti, allegati) restano sul server: per una copia completa usa ', kbd('make backup'), '.'),
       h('div.toolbar',
         h('a.btn', { href: 'api/admin/backup', download: '' }, icon('download'), 'Scarica backup'),
         h('button.btn.danger', { onclick: () => restoreInput.click() }, icon('restore'), 'Ripristina da backup…')),
       h('p.muted', 'Il ripristino sostituisce tutti i dati con quelli del file .db scelto (anche di una versione precedente dell\'app). Vale solo per questo workspace; prima il server salva una copia di sicurezza dei dati attuali. Account e membri non cambiano.'),
       restoreInput,
-    ])] : null;
+    ])];
     case 'feedback': return D.feedbackOpen != null ? [card('set-fb', 'Da rivedere', [
       h('p', D.feedbackOpen ? `${D.feedbackOpen} feedback da vedere.` : 'Nessun feedback da vedere.'),
       h('div.toolbar', h('a.btn.primary', { href: '#/feedback' }, icon('bug'), 'Apri i feedback')),
@@ -1565,6 +1572,30 @@ export function viewSettings(sec) {
         h('h2', shown[1])),
       settingsPane(shown[0], D) || h('p.muted', 'Niente da mostrare.')));
 }
+
+// Importazione di un'esportazione (.zip): si aggiunge al workspace, con il riepilogo di cosa è arrivato.
+const importInput = h('input', {
+  type: 'file', accept: '.zip,application/zip', hidden: true,
+  onchange: async ev => {
+    const f = ev.target.files[0];
+    ev.target.value = '';
+    if (!f || !confirm(`Importare "${f.name}" in questo workspace? I dati si aggiungono a quelli che ci sono, senza sovrascriverli.`)) return;
+    toast('Importazione in corso…');
+    try {
+      const r = await api('POST', '/import', f);
+      const parts = [
+        r.articoli && `${r.articoli} articoli nuovi`, r.articoliUniti && `${r.articoliUniti} articoli già presenti`,
+        r.documenti && `${r.documenti} documenti`, r.voci && `${r.voci} voci`,
+        r.progetti && `${r.progetti} progetti nuovi`, r.progettiUniti && `${r.progettiUniti} progetti uniti`,
+        r.contatti && `${r.contatti} contatti nuovi`, r.contattiUniti && `${r.contattiUniti} contatti uniti`,
+        r.note && `${r.note} note sui documenti`, r.conversazioni && `${r.conversazioni} conversazioni di mail`,
+      ].filter(Boolean);
+      alert(`Importazione fatta.\n${parts.join('\n') || 'Niente di nuovo da aggiungere.'}${r.saltati.length ? `\n\nSaltate (non hai il permesso di scrivere): ${r.saltati.join(', ')}.` : ''}`);
+    } catch (e) {
+      toast(e.message, { err: true });
+    }
+  },
+});
 
 const restoreInput = h('input', {
   type: 'file', accept: '.db,application/octet-stream', hidden: true,

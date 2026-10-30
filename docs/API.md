@@ -65,6 +65,8 @@ In `/api/sync` ogni oggetto ha `shared_all`, e `shares` elenca `{kind, obj_id, u
 | | |
 |---|---|
 | `GET /api/info` | `{app, version, api}`, senza autenticazione |
+| `GET /api/export` | `.zip` con `organizer-export.json` e `files/`: il magazzino e i documenti del workspace e quello che ha creato chi lo chiede (aree che può leggere) |
+| `POST /api/import` | corpo: lo `.zip` di un'esportazione → riepilogo (`articoli`, `articoliUniti`, `documenti`, `voci`, `progetti`, `progettiUniti`, `contatti`, `contattiUniti`, `note`, `conversazioni`, `saltati`); aggiunge senza sovrascrivere, solo nelle aree in cui può scrivere |
 | `GET /api/me` | account, workspace attivo (`id`, `name`, `role`) ed elenco dei workspace |
 | `PATCH /api/me` | `{name}`, `{password, current}` o `{mailIgnore: [...]}`: le regole per i contatti "da salvare" da non proporre (indirizzi interi o pezzi di indirizzo o nome; in `/api/sync` come `mailIgnore`) |
 | `GET /api/workspaces` | i tuoi workspace: `[{id, name, role}]` |

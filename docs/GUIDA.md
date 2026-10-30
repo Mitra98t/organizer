@@ -252,9 +252,16 @@ SITE_ADDRESS=todo.miodominio.it CADDY_TLS="tls tu@mail.it" docker compose --prof
 ```
 Caddy ottiene il certificato Let's Encrypt da solo. Puoi togliere la porta `8080` pubblica in `docker-compose.yml` (impostando `APP_PORT=127.0.0.1:8080`).
 
+## Esportare e importare i propri dati
+
+Chiunque, non solo gli admin: Impostazioni → *I tuoi dati* (*Backup e dati* per gli admin).
+
+- **Esporta i miei dati** scarica un `.zip`: dentro `organizer-export.json` (leggibile) e in `files/` i file veri. Contiene tutto il magazzino e i documenti del workspace (sono di tutti) e quello che hai creato tu: todo, diario, mail scritte, progetti, contatti, note sui documenti, la tua posta. Le cose private degli altri e la chat no. Solo le aree che puoi leggere.
+- **Importa dati…** aggiunge un'esportazione al workspace in cui sei, anche su un altro server, **senza sovrascrivere niente**: un articolo con lo stesso codice (o alternativo) resta com'è e prende solo i documenti che gli mancano; un progetto con lo stesso tag e un contatto con la stessa mail si uniscono a quelli che ci sono. Tutto quello che arriva diventa tuo. Le aree in cui non puoi scrivere si saltano (il riepilogo lo dice). I collegamenti `[[…]]` nei testi puntano alle cose nuove; quelli a cose non esportate diventano il loro nome in chiaro.
+
 ## Backup
 
-- Solo database: Impostazioni → Backup e ripristino (admin) → **Scarica backup** (file `.db`).
+- Solo database: Impostazioni → Backup e dati (admin) → **Scarica backup** (file `.db`). Contiene tutto il workspace, anche le cose private dei membri: per spostare solo le proprie cose c'è l'esportazione qui sopra.
 - Ripristino dal browser: stesso pannello → **Ripristina da backup…** con un file `.db`, anche di una versione precedente dell'app (viene aggiornato). Prima di sovrascrivere il server salva una copia del database attuale (`pre-restore-*.db` nel volume, tiene le ultime 3); dopo, tutti rientrano con le credenziali del backup. I file caricati non sono nel `.db`: se mancano, il ripristino lo segnala.
 - Tutto (database + file caricati): `make backup` crea `backups/organizer-AAAAMMGG-HHMMSS.tgz`
   (ferma l'app per qualche secondo così la copia di SQLite è coerente).

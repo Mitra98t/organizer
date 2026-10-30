@@ -3,6 +3,9 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.19 — 2026-10-30
+- **Esporta e importa i tuoi dati** (Impostazioni → I tuoi dati, per tutti, non solo gli admin): un `.zip` con tutto il magazzino e i documenti (con i file) e quello che hai creato tu, posta compresa; niente cose private degli altri. Importandolo in un altro workspace, o su un altro server, i dati si aggiungono senza sovrascrivere: articoli già presenti restano come sono e prendono solo i documenti mancanti, progetti con lo stesso tag e contatti con la stessa mail si uniscono, i collegamenti `[[…]]` si aggiornano. Le aree in cui non puoi scrivere si saltano.
+
 ## 0.18.1 — 2026-10-30
 - Correzione: il logo in alto a sinistra (barra laterale e pagina di accesso) usa l'icona dell'app scelta e cambia subito.
 

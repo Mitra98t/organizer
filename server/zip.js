@@ -1,5 +1,6 @@
 // Archivio ZIP minimale (deflate, nomi UTF-8), senza dipendenze: serve a impacchettare l'estensione di
-// Thunderbird (un .xpi è uno zip). files: [{ name, data: Buffer }].
+// Thunderbird (un .xpi è uno zip) e l'esportazione dei dati (transfer.js). files: [{ name, data: Buffer }].
+// unzip legge gli archivi senza cifratura né ZIP64 (quelli fatti qui, o con gli strumenti comuni).
 import zlib from 'node:zlib';
 
 const DOS_DATE = (0 << 9) | (1 << 5) | 1; // 1 gennaio 1980: la data non conta, ma 0 non è valida
@@ -47,4 +48,35 @@ export function zip(files) {
   end.writeUInt32LE(dir.length, 12);
   end.writeUInt32LE(offset, 16);
   return Buffer.concat([...parts, dir, end]);
+}
+
+// Nome → funzione che restituisce il contenuto (si decomprime solo quando serve).
+export function unzip(buf) {
+  let end = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) { end = i; break; }
+  }
+  if (end < 0) throw new Error('Il file non è un archivio zip');
+  const count = buf.readUInt16LE(end + 10);
+  let p = buf.readUInt32LE(end + 16);
+  const out = new Map();
+  for (let i = 0; i < count; i++) {
+    if (buf.readUInt32LE(p) !== 0x02014b50) throw new Error('Archivio zip danneggiato');
+    const method = buf.readUInt16LE(p + 10);
+    const size = buf.readUInt32LE(p + 20);
+    const nameLen = buf.readUInt16LE(p + 28);
+    const extraLen = buf.readUInt16LE(p + 30);
+    const commentLen = buf.readUInt16LE(p + 32);
+    const offset = buf.readUInt32LE(p + 42);
+    const name = buf.toString('utf8', p + 46, p + 46 + nameLen);
+    const start = offset + 30 + buf.readUInt16LE(offset + 26) + buf.readUInt16LE(offset + 28);
+    const raw = buf.subarray(start, start + size);
+    out.set(name, () => {
+      if (method === 0) return raw;
+      if (method === 8) return zlib.inflateRawSync(raw);
+      throw new Error(`Compressione non supportata in ${name}`);
+    });
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+  return out;
 }

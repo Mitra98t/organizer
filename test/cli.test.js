@@ -808,3 +808,40 @@ test('icone dell\'app: SVG, PNG nelle misure giuste, manifest con l\'icona scelt
   assert.ok(m.icons.some(i => i.src === 'icons/app/min-ring-512-maskable.png' && i.purpose === 'maskable'));
   assert.equal(m.start_url, './#/agenda');
 });
+
+test('esporta e importa i propri dati: magazzino con i file, voci, collegamenti, posta, in un altro workspace', async () => {
+  const cookie = (await call('POST', '/login', { body: { username: 'fede', password: 'password-di-prova' } })).headers.get('set-cookie').split(';')[0];
+  const json = r => (r.status === 204 ? null : r.json());
+  const me = (method, p, body) => call(method, p, { cookie, body }).then(json);
+  const { id: item } = await me('POST', '/items', { code: 'EXP-1', name: 'Scheda da esportare', category: 'prova' });
+  const up = await fetch(`${url}/api/items/${item}/docs?${new URLSearchParams({ name: 'exp1.txt', kind: 'altro' })}`, {
+    method: 'POST', headers: { Cookie: cookie, 'X-Requested-With': 'organizer', 'Content-Type': 'text/plain' }, body: 'contenuto di prova',
+  }).then(r => r.json());
+  await me('POST', '/projects', { name: 'Esportazione', tag: 'export-prova' });
+  const { id: todo } = await me('POST', '/entries', { text: `controllare il file #EXP-1 @export-prova` });
+  await me('PATCH', `/entries/${todo}`, { notes: `vedi [[doc:${up.id}]]` });
+  await me('POST', '/mail/incoming', { message_id: '<exp1@fornitore.it>', from: 'x@fornitore.it', subject: 'Esportazione', body: 'serve EXP-1', inbox: true });
+
+  const zipFile = Buffer.from(await (await fetch(`${url}/api/export`, { headers: { Cookie: cookie, 'X-Requested-With': 'organizer' } })).arrayBuffer());
+  assert.equal(zipFile.subarray(0, 2).toString(), 'PK');
+
+  // In un workspace nuovo (vuoto): arriva tutto, con id nuovi e collegamenti aggiornati.
+  await me('POST', '/workspaces', { name: 'Altrove' });
+  const imp = body => fetch(`${url}/api/import`, { method: 'POST', headers: { Cookie: cookie, 'X-Requested-With': 'organizer', 'Content-Type': 'application/zip' }, body }).then(r => r.json());
+  const r1 = await imp(zipFile);
+  assert.ok(r1.articoli >= 1 && r1.documenti >= 1 && r1.voci >= 1 && r1.progetti >= 1 && r1.conversazioni >= 1, JSON.stringify(r1));
+  const d = await me('GET', '/sync');
+  const it = d.items.find(i => i.code === 'EXP-1');
+  const doc = d.docs.find(x => x.item_id === it.id && x.filename === 'exp1.txt');
+  assert.equal(await fetch(`${url}/api/docs/${doc.id}/file`, { headers: { Cookie: cookie } }).then(r => r.text()), 'contenuto di prova');
+  const e = d.entries.find(x => x.title.startsWith('controllare il file'));
+  assert.equal(e.notes, `vedi [[doc:${doc.id}]]`);
+  assert.equal(e.project_id, d.projects.find(p => p.tag === 'export-prova').id);
+  assert.ok(d.mailThreads.some(t => t.subject === 'Esportazione'));
+  // Una seconda volta: gli articoli e i documenti che ci sono già non si duplicano.
+  const r2 = await imp(zipFile);
+  assert.deepEqual([r2.articoli, r2.documenti, r2.progetti], [0, 0, 0]);
+  assert.ok(r2.articoliUniti >= 1 && r2.progettiUniti >= 1);
+  // Un file che non è un'esportazione: rifiutato.
+  assert.match((await imp(Buffer.from('ciao'))).error, /esportazione/);
+});

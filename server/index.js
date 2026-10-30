@@ -16,6 +16,7 @@ import './chat.js';
 import './feedback.js';
 import './notifications.js';
 import './tour.js';
+import './transfer.js';
 import { purgeExpired } from './trash.js';
 import { resolveAuth, resolveApiToken, workspaceById, acc } from './accounts.js';
 import { bump } from './events.js';
