@@ -1201,7 +1201,7 @@ const inviteLink = code => `${location.origin}${location.pathname}#/registrati?c
 function themeCard(id, name, t) {
   const on = currentTheme() === id;
   const prev = t
-    ? h('span.th-prev', { style: `background:${t.bg}` },
+    ? h('span.th-prev', { style: `background:${t.bg};background-image:${t.grad || 'none'}` },
       h('span.th-panel', { style: `background:${t.panel};border-color:${t.line}` },
         h('span.th-line', { style: `background:${t.text}` }), h('span.th-line.short', { style: `background:${t.muted}` }),
         h('span.th-dots', [t.accent, t.blue, t.purple, t.orange].map(c => h('span', { style: `background:${c}` })))))
@@ -1215,10 +1215,12 @@ function themeSection() {
   return card('set-theme', 'Tema', [
     h('div.th-grid', Object.entries(BASE_THEMES).map(([id, name]) => themeCard(id, name, null))),
     h('div.th-h', 'Scuri'),
-    h('div.th-grid', all.filter(([, t]) => t.dark).map(([id, t]) => themeCard(id, t.name, t))),
+    h('div.th-grid', all.filter(([, t]) => t.dark && !t.funky).map(([id, t]) => themeCard(id, t.name, t))),
     h('div.th-h', 'Chiari'),
-    h('div.th-grid', all.filter(([, t]) => !t.dark).map(([id, t]) => themeCard(id, t.name, t))),
-    h('p.muted', 'Ispirati agli schemi di colori più usati in Neovim e VS Code. Il tema vale per questo dispositivo.'),
+    h('div.th-grid', all.filter(([, t]) => !t.dark && !t.funky).map(([id, t]) => themeCard(id, t.name, t))),
+    h('div.th-h', 'Funky'),
+    h('div.th-grid', all.filter(([, t]) => t.funky).map(([id, t]) => themeCard(id, t.name, t))),
+    h('p.muted', 'Ispirati agli schemi di colori più usati in Neovim e VS Code, più qualche tema funky (sfondi sfumati, accenti luminosi, terminali d\'altri tempi). Il tema vale per questo dispositivo.'),
   ], { count: '', collapsed: true });
 }
 

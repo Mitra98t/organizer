@@ -3,6 +3,10 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.17.1 — 2026-10-30
+- **Temi nuovi** (Impostazioni → Aspetto): Monokai Pro, Ayu Mirage, Night Owl, Material Palenight tra gli scuri; Rosé Pine Dawn e Ayu Light tra i chiari.
+- **Temi funky**, in una sezione loro: Synthwave '84, Vaporwave, Matrix, Terminale ambra, Cobalt2, Shades of Purple, Halloween, Bubblegum, Sorbetto e Limonata. Alcuni hanno lo sfondo sfumato dietro ai pannelli, l'accento luminoso (pulsanti, menu e titoli), angoli più tondi; Matrix e Terminale ambra usano il carattere da terminale.
+
 ## 0.17 — 2026-10-30
 - **Barra in basso su telefono rifatta**: Progetti, Agenda, Magazzino, Mail, Impostazioni. Tenendo premuto un tasto si apre attorno al dito un menu radiale con le altre pagine del gruppo (Diario; Documenti; Contatti e Chat; Cestino, Novità, Feedback): scorrendo su una la si apre e prende il posto del tasto. Il menu si apre lontano dal dito e verso il centro dello schermo, così il dito non lo copre. Chat e Impostazioni non stanno più in alto.
 - **Barra comandi** (⌘K o ⌘P, su telefono toccando "Cerca"): apre al volo pagine, voci, conversazioni di mail (anche cercando nel testo), articoli, documenti, progetti e contatti, con la ricerca di `[[`; "Cerca ovunque" porta alla pagina Cerca.

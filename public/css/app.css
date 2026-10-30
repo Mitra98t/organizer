@@ -83,6 +83,8 @@ html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
   background: var(--bg);
+  background-image: var(--bg-image, none); /* temi funky: sfondo sfumato dietro ai pannelli */
+  background-attachment: fixed;
   color: var(--text);
   font: 15px/1.45 var(--sans);
   -webkit-font-smoothing: antialiased;
@@ -1452,3 +1454,9 @@ dialog.pal::backdrop { background: rgb(0 0 0 / 40%); }
 .pal-x { flex: none; color: var(--muted); font-size: 12px; }
 .pal-empty { margin: 10px; }
 @media (max-width: 899px) { dialog.pal { margin-top: 10px; } .pal-list { max-height: calc(100dvh - 140px); } }
+
+/* ---------- temi funky: accento luminoso ---------- */
+:root[data-glow] .btn.primary { box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 55%, transparent); }
+:root[data-glow] .nav.on, :root[data-glow] .tab.on, :root[data-glow] .vtitle { text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 60%, transparent); }
+:root[data-glow] .nav.on .ic, :root[data-glow] .tab.on .ic { filter: drop-shadow(0 0 5px var(--accent)); }
+:root[data-glow] .seg button.on, :root[data-glow] .fchip.on { box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 40%, transparent); }

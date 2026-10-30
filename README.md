@@ -75,7 +75,7 @@ Scorciatoie da tastiera: `n` o `/` per scrivere, `Ctrl/⌘ K` per cercare.
 
 ## Temi
 
-Impostazioni → Tema: Organizer (automatico, chiaro, scuro) e temi ispirati a quelli più usati in Neovim e VS Code (Tokyo Night, Catppuccin, Gruvbox, Nord, Dracula, One Dark, Rosé Pine, Kanagawa, Everforest, GitHub, Solarized). Il tema vale per il dispositivo.
+Impostazioni → Aspetto: Organizer (automatico, chiaro, scuro), temi ispirati a quelli più usati in Neovim e VS Code (Tokyo Night, Catppuccin, Gruvbox, Nord, Dracula, One Dark, Monokai Pro, Ayu, Night Owl, Palenight, Rosé Pine, Kanagawa, Everforest, GitHub, Solarized) e qualche tema funky (Synthwave '84, Vaporwave, Matrix, Terminale ambra, Cobalt2, Shades of Purple, Halloween, Bubblegum, Sorbetto, Limonata), con sfondi sfumati, accenti luminosi o il carattere da terminale. Il tema vale per il dispositivo.
 
 ## Muoversi nell'app
 
