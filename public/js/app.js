@@ -17,7 +17,7 @@ import { bell, updateBell, notifyNew, viewNotification } from './notifiche.js';
 import { openFeedback, viewFeedback } from './feedback.js';
 import { viewChangelog, hasNews, appVersion } from './changelog.js';
 import { applyTheme, currentTheme } from './themes.js';
-import { applyIcon } from './appicons.js';
+import { applyIcon, logoSrc } from './appicons.js';
 import { parseQuick, extractCodes, today, parseItemLine, parseProjectLine } from './parse.js';
 import {
   viewAgenda, viewProjects, viewProject, viewDiary, viewItems, viewItem, viewSearch, viewSettings, viewEntryPage,
@@ -322,7 +322,7 @@ function buildShell() {
   root.replaceChildren(
     h('div.app',
       h('aside.side',
-        h('div.brand', h('img', { src: 'icons/icon.svg', alt: '' }), h('span', 'Organizer')),
+        h('div.brand', h('img.app-logo', { src: logoSrc(), alt: '' }), h('span', 'Organizer')),
         wsSwitch,
         // Gruppi separati da un divisore leggero; Diario, Documenti e Contatti stanno sotto la voce a cui si legano.
         h('nav.side-nav', SIDE.map(group => h('div.nav-group',
@@ -522,7 +522,7 @@ function renderAuth() {
       }
     },
   },
-  h('div.brand', h('img', { src: 'icons/icon.svg', alt: '' }), h('span', 'Organizer')),
+  h('div.brand', h('img.app-logo', { src: logoSrc(), alt: '' }), h('span', 'Organizer')),
   h('h2', titles[mode]),
   code && inviteInfo,
   mode === 'register' && h('label.f', h('span', 'Codice invito'), h('input', { name: 'code', value: code, required: true, autocapitalize: 'characters' })),

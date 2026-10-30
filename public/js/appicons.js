@@ -41,10 +41,16 @@ export const currentIcon = () => {
   try { return localStorage.getItem('org.icon') || 'auto'; } catch { return 'auto'; }
 };
 
-// L'icona da usare adesso e i link della pagina che la indicano (scheda del browser, iPhone/iPad, installazione).
+// L'icona da usare adesso e i link della pagina che la indicano (scheda del browser, iPhone/iPad, installazione),
+// più il logo in alto a sinistra (img.app-logo).
+let active = 'organizer';
+export const logoSrc = () => `icons/app/${active}.svg`;
+
 export function applyIcon(themeId) {
   const pick = currentIcon();
   const id = pick !== 'auto' && iconById(pick) ? pick : themeIcon(themeId);
+  active = id;
+  document.querySelectorAll('img.app-logo').forEach(i => { i.src = logoSrc(); });
   const set = (sel, href) => document.querySelectorAll(sel).forEach(l => l.setAttribute('href', href));
   set('link[rel="icon"]', `icons/app/${id}.svg`);
   set('link[rel="apple-touch-icon"]', `icons/app/${id}-180.png`);

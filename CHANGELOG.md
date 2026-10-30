@@ -3,6 +3,9 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.18.1 — 2026-10-30
+- Correzione: il logo in alto a sinistra (barra laterale e pagina di accesso) usa l'icona dell'app scelta e cambia subito.
+
 ## 0.18 — 2026-10-30
 - **Icona dell'app a scelta** (Impostazioni → Aspetto): una per ogni tema (le funky con lo sfondo sfumato) e alcune minimal (spunta nera, bianca o verde, punto, cerchio, casella), scelte indipendentemente dal tema; "Automatica" segue il tema. Vale per il dispositivo: cambia subito l'icona della scheda del browser e quella che il sistema prende quando installi l'app. Per l'app già installata va rimossa e aggiunta di nuovo (con Chrome su Android a volte si aggiorna da sola).
 - Le icone le disegna il server, in SVG e PNG nelle misure che servono, senza file in più.
