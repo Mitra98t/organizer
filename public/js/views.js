@@ -14,6 +14,7 @@ import { today, addDays, parseQuick } from './parse.js';
 import { mailComposer, mailSide } from './mail.js';
 import { threadLink, threadInfo, threadSubject, topicTitle } from './topics.js';
 import { THEMES, BASE_THEMES, currentTheme, setTheme } from './themes.js';
+import { APP_ICONS, currentIcon, setIcon, applyIcon, themeIcon } from './appicons.js';
 import { AREAS, LEVELS, CAPS, WRITE_NEEDS, READ_NEEDS, PRIVACY_NOTE, fullAccess, setLevel, isRestricted } from './perms.js';
 import { draggable } from './dnd.js';
 import { startTour, deleteTour, tourState } from './tour.js';
@@ -1207,7 +1208,7 @@ function themeCard(id, name, t) {
         h('span.th-dots', [t.accent, t.blue, t.purple, t.orange].map(c => h('span', { style: `background:${c}` })))))
     : h('span.th-prev', { class: `base-${id}` }, h('span.th-panel', h('span.th-line'), h('span.th-line.short'), h('span.th-dots', h('span'), h('span'), h('span'), h('span'))));
   // .keep: il tema vale per questo dispositivo, si cambia anche offline.
-  return h('button.th-card.keep', { class: on ? 'on' : null, title: name, 'aria-pressed': String(on), onclick: () => { setTheme(id); render(); } }, prev, h('span.th-name', name));
+  return h('button.th-card.keep', { class: on ? 'on' : null, title: name, 'aria-pressed': String(on), onclick: () => { setTheme(id); applyIcon(id); render(); } }, prev, h('span.th-name', name));
 }
 
 function themeSection() {
@@ -1221,6 +1222,25 @@ function themeSection() {
     h('div.th-h', 'Funky'),
     h('div.th-grid', all.filter(([, t]) => t.funky).map(([id, t]) => themeCard(id, t.name, t))),
     h('p.muted', 'Ispirati agli schemi di colori più usati in Neovim e VS Code, più qualche tema funky (sfondi sfumati, accenti luminosi, terminali d\'altri tempi). Il tema vale per questo dispositivo.'),
+  ], { count: '', collapsed: true });
+}
+
+// Icona dell'app: automatica (quella del tema) o una a scelta, anche di un altro tema. Vale per questo dispositivo.
+function iconSection() {
+  const pick = currentIcon();
+  const auto = themeIcon(currentTheme());
+  const choice = (id, name, src) => h('button.ic-card.keep', {
+    class: pick === id ? 'on' : null, title: name, 'aria-pressed': String(pick === id),
+    onclick: () => { setIcon(id, currentTheme()); render(); },
+  }, h('img', { src: `icons/app/${src}-192.png`, alt: '', width: 56, height: 56, loading: 'lazy' }), h('span.th-name', name));
+  const group = g => APP_ICONS.filter(i => i.group === g).map(i => choice(i.id, i.name, i.id));
+  return card('set-icon', 'Icona dell\'app', [
+    h('div.ic-grid', choice('auto', 'Automatica (del tema)', auto), group('base'), group('minimal')),
+    h('div.th-h', 'Dei temi'),
+    h('div.ic-grid', group('tema')),
+    h('div.th-h', 'Funky'),
+    h('div.ic-grid', group('funky')),
+    h('p.muted', 'L\'icona cambia subito nella scheda del browser e vale per questo dispositivo. Per l\'app già installata il sistema tiene l\'icona di quando l\'hai installata: per vedere quella nuova va rimossa e aggiunta di nuovo (iPhone, iPad e Mac: "Aggiungi alla schermata Home" o "Aggiungi al Dock"; Android: reinstalla dal menu del browser; con Chrome a volte si aggiorna da sola dopo qualche giorno).'),
   ], { count: '', collapsed: true });
 }
 
@@ -1354,6 +1374,7 @@ function settingsPane(sec, D) {
     ];
     case 'aspetto': return [
       themeSection(),
+      iconSection(),
       card('set-contacts', 'Colore dei contatti', [
         h('label.f', h('span', 'Colora il nome dei contatti'),
           selectOf(ui.contactColor, Object.entries(CONTACT_COLOR), v => { ui.contactColor = v; save('org.contactColor', v); render(); })),

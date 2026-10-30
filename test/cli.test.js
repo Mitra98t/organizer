@@ -791,3 +791,20 @@ test('permessi per area: dati filtrati, scritture bloccate, dipendenze rispettat
   await call('PATCH', `/admin/users/${id}`, { cookie: admin, body: { perms: null } });
   assert.equal((await sync(intern)).perms, null);
 });
+
+test('icone dell\'app: SVG, PNG nelle misure giuste, manifest con l\'icona scelta', async () => {
+  const get = p => fetch(`${url}${p}`);
+  const svg = await get('/icons/app/min-dot.svg');
+  assert.deepEqual([svg.status, svg.headers.get('content-type')], [200, 'image/svg+xml']);
+  assert.match(await svg.text(), /<circle/);
+  for (const p of ['/icons/app/t-nord-180.png', '/icons/app/t-synthwave-512-maskable.png']) {
+    const r = await get(p);
+    const buf = Buffer.from(await r.arrayBuffer());
+    assert.deepEqual([r.status, buf.subarray(1, 4).toString()], [200, 'PNG']);
+  }
+  assert.equal((await get('/icons/app/t-nord-64.png')).status, 404); // misura non prevista
+  assert.equal((await get('/icons/app/non-esiste-192.png')).status, 404);
+  const m = await get('/manifest.webmanifest?icon=min-ring').then(r => r.json());
+  assert.ok(m.icons.some(i => i.src === 'icons/app/min-ring-512-maskable.png' && i.purpose === 'maskable'));
+  assert.equal(m.start_url, './#/agenda');
+});

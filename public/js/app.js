@@ -17,6 +17,7 @@ import { bell, updateBell, notifyNew, viewNotification } from './notifiche.js';
 import { openFeedback, viewFeedback } from './feedback.js';
 import { viewChangelog, hasNews, appVersion } from './changelog.js';
 import { applyTheme, currentTheme } from './themes.js';
+import { applyIcon } from './appicons.js';
 import { parseQuick, extractCodes, today, parseItemLine, parseProjectLine } from './parse.js';
 import {
   viewAgenda, viewProjects, viewProject, viewDiary, viewItems, viewItem, viewSearch, viewSettings, viewEntryPage,
@@ -603,6 +604,7 @@ function start() {
 setRenderer(renderApp, updateStatus);
 initAutocomplete(() => { const c = quickContext(); return c.mode || c.kind; });
 applyTheme(currentTheme());
+applyIcon(currentTheme()); // icona della scheda e dell'installazione (vedi appicons.js)
 window.addEventListener('hashchange', () => { window.scrollTo(0, 0); render(); });
 window.addEventListener('org:logout', logout);
 window.addEventListener('org:data', ev => notifyNew(ev.detail.prev, ev.detail.data));

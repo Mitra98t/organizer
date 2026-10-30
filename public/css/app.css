@@ -1291,6 +1291,12 @@ dialog.fb textarea { width: 100%; min-height: 120px; resize: vertical; }
 .cl-ver code.k { white-space: normal; overflow-wrap: anywhere; }
 
 /* ---------- temi (Impostazioni) ---------- */
+.ic-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
+.ic-card { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 4px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); text-align: center; }
+.ic-card img { width: 56px; height: 56px; border-radius: 13px; box-shadow: 0 2px 8px rgb(0 0 0 / 25%); }
+.ic-card .th-name { font-size: 12px; line-height: 1.25; }
+.ic-card:hover { border-color: var(--muted); }
+.ic-card.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .th-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
 .th-h { margin: 14px 0 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .th-card { display: flex; flex-direction: column; gap: 6px; padding: 6px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); text-align: left; }

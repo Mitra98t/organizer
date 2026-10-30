@@ -3,6 +3,10 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.18 — 2026-10-30
+- **Icona dell'app a scelta** (Impostazioni → Aspetto): una per ogni tema (le funky con lo sfondo sfumato) e alcune minimal (spunta nera, bianca o verde, punto, cerchio, casella), scelte indipendentemente dal tema; "Automatica" segue il tema. Vale per il dispositivo: cambia subito l'icona della scheda del browser e quella che il sistema prende quando installi l'app. Per l'app già installata va rimossa e aggiunta di nuovo (con Chrome su Android a volte si aggiorna da sola).
+- Le icone le disegna il server, in SVG e PNG nelle misure che servono, senza file in più.
+
 ## 0.17.6 — 2026-10-30
 - **Codici di 2 caratteri**: una lettera e una cifra (`Q5`, `R1`) si collegano da soli nelle mail, come parola a sé (non dentro `Q55`). Le sigle di sole lettere o sole cifre restano escluse.
 - All'avvio il server ricontrolla i collegamenti automatici delle conversazioni attive con le regole della versione: chi aggiorna non deve fare niente.

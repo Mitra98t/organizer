@@ -7,6 +7,7 @@ import { assertCan } from './perms.js';
 import './contacts.js';
 import './mail.js';
 import { migrateInbox, relinkAllActive } from './thunderbird.js';
+import { serveAppIcon } from './appicons.js';
 import './backup.js';
 import './workspaces.js';
 import './remote.js';
@@ -134,6 +135,7 @@ const server = http.createServer(async (req, res) => {
   try {
     if (url.pathname === '/healthz') return sendJson(res, 200, { ok: true });
     if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
+    if (req.method === 'GET' && serveAppIcon(res, url, PUBLIC)) return; // icone dell'app scelte (vedi appicons.js)
     serveStatic(req, res, url.pathname);
   } catch (e) {
     let status = e instanceof HttpError ? e.status : 500;
