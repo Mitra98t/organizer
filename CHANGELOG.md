@@ -3,6 +3,9 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.17.3 — 2026-10-30
+- Mail: nelle schede dei topic non c'è più il pallino per cambiare colore (si cambia aprendo il topic); la scheda mostra il colore nel bordo in alto.
+
 ## 0.17.2 — 2026-10-30
 - **Codici scritti alla buona**: nelle mail un codice di magazzino con dei numeri si collega anche scritto senza trattini, punti o barre e senza gli zeri davanti ai numeri: `sch44`, `SCH.044` e `sch-44` trovano SCH-44. Vale per i codici principali e per quelli alternativi.
 - Correzione: nella barra comandi le persone di una conversazione compaiono una volta sola.

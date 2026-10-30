@@ -181,7 +181,7 @@ function topicCard(topic, rows, total) {
       unreadBadge((S.data.threadsOfTopic.get(topic.id) || []).reduce((n, t) => n + (S.data.msgsOfThread.get(t.id) || []).filter(m => m.direction === 'in' && !m.read_at).length, 0)),
       // Il numero di conversazioni; con una sola si vede solo su telefono (serve a scheda chiusa).
       h(`span.muted.tp-n${total > 1 ? '' : '.only-mobile'}`, { title: `${total} ${total === 1 ? 'conversazione' : 'conversazioni'} in questo topic` }, `${total} conv.`),
-      huePop(`thue:${topic.id}`, topic, autoHue(topic.id), v => patchTopic(topic, { hue: v })),
+      // Il colore si sceglie nella pagina del topic: qui la scheda lo mostra soltanto (bordo in alto).
       topicMenu(topic)),
     rows.map(x => threadRow(x, total === 1 && threadSubject(x.t) === topicTitle(topic)))));
 }
