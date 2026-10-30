@@ -1194,8 +1194,9 @@ a.ref:hover { border-color: var(--accent); }
 .dv-notes .backlinks { margin-top: 12px; }
 
 /* Tipo di ciò che si collega, nel menu dei suggerimenti di [[ */
-/* Larghezza fissa (quella di "conversazione"): i nomi accanto partono tutti dalla stessa colonna. */
-.ac-k { flex: none; box-sizing: border-box; width: 112px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; padding: 1px 5px; border-radius: 4px; text-align: center; align-self: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Larghezza dell'etichetta più lunga della lista (--kw, misurata in fitPills): i nomi accanto partono tutti
+   dalla stessa colonna. */
+.ac-k { flex: none; box-sizing: border-box; width: var(--kw, auto); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; padding: 1px 5px; border-radius: 4px; text-align: center; align-self: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ac-k.t-todo { color: var(--accent); background: var(--accent-soft); }
 .ac-k.t-mail { color: var(--mail); background: color-mix(in srgb, var(--mail) 15%, transparent); }
 .ac-k.t-note { color: var(--note); background: color-mix(in srgb, var(--note) 15%, transparent); }

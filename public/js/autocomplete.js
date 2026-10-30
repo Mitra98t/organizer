@@ -232,6 +232,13 @@ export function findAll(ql, { bare = false, self = null, limit = 12 } = {}) {
 
 export { scoreWords, PILL };
 
+// Etichette di tipo larghe quanto la più lunga della lista: si misurano alla larghezza naturale e si fissano.
+export function fitPills(list) {
+  list.style.removeProperty('--kw');
+  const w = Math.max(0, ...[...list.querySelectorAll('.ac-k')].map(k => k.getBoundingClientRect().width));
+  if (w) list.style.setProperty('--kw', `${Math.ceil(w)}px`);
+}
+
 // Seconda riga dei suggerimenti: il contesto (a quale articolo appartiene, dove sta, di chi è…), pezzi separati da ·.
 const line = (...parts) => parts.filter(x => x && String(x).trim()).join(' · ');
 const snippet = (t, n = 70) => {
@@ -449,6 +456,7 @@ function draw() {
   it.extra && h('span.ac-x', it.extra))));
   box.classList.toggle('wide', st.items.some(it => it.sub));
   box.hidden = false;
+  fitPills(box); // dopo hidden = false: nascosto non si misura
   place();
   // Il menu scorre con la selezione (frecce su e giù), anche quando dall'ultima si torna alla prima.
   box.querySelector('.ac-i.on')?.scrollIntoView({ block: 'nearest' });

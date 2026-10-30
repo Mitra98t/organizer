@@ -3,6 +3,9 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.20.4 — 2026-10-30
+- Nei suggerimenti (e nella barra comandi) l'etichetta del tipo è larga quanto la più lunga della lista: con soli articoli resta stretta, con "nota su file" si allarga, e i nomi partono sempre dalla stessa colonna.
+
 ## 0.20.3 — 2026-10-30
 - **Ricerca nei PDF (⌘F) di nuovo funzionante in Safari e nell'app installata dal Dock**: il testo si leggeva con un costrutto che Safari non supporta ("undefined is not a function"), così nessuna pagina risultava leggibile.
 - Nei suggerimenti l'etichetta del tipo ha sempre la stessa larghezza: i nomi accanto partono tutti dalla stessa colonna.

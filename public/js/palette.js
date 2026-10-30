@@ -3,7 +3,7 @@
 // ricerca è la stessa di "[[" (più parole, ognuna in un campo qualsiasi, anche nel testo intero delle mail);
 // in fondo "Cerca ovunque" porta alla pagina Cerca con le stesse parole. ↑↓ per scegliere, Invio per aprire.
 import { h, icon, S, can } from './core.js';
-import { findAll, askMailSearch, scoreWords, PILL } from './autocomplete.js';
+import { findAll, askMailSearch, scoreWords, PILL, fitPills } from './autocomplete.js';
 
 const lc = s => String(s ?? '').toLowerCase();
 
@@ -96,6 +96,7 @@ function draw() {
     it.sub && h('span.pal-sub', it.sub)),
   it.extra && h('span.pal-x', it.extra))));
   if (!st.items.length) list.append(h('p.muted.pal-empty', 'Scrivi qualche parola: un pezzo del titolo, una persona, un codice…'));
+  fitPills(list);
   list.querySelector('.on')?.scrollIntoView({ block: 'nearest' });
 }
 
