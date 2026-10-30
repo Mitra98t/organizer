@@ -509,10 +509,14 @@ async function pageText(p) {
   if (p.text) return p.text;
   const { Util } = await loadPdfjs();
   const vt = p.page.getViewport({ scale: 1 }).transform;
-  const tc = await p.page.getTextContent();
+  // Non getTextContent(): legge lo stream con "for await", che Safari (e l'app installata dal Dock) non ha
+  // sugli stream ("undefined is not a function"). Il lettore dello stream funziona ovunque.
+  const items = [];
+  const reader = p.page.streamTextContent().getReader();
+  for (let r = await reader.read(); !r.done; r = await reader.read()) items.push(...r.value.items);
   let str = '';
   const spans = [];
-  for (const it of tc.items) {
+  for (const it of items) {
     if (it.str) {
       const [, , c, d, e, f] = Util.transform(vt, it.transform);
       const size = Math.hypot(c, d) || it.height || 10;
