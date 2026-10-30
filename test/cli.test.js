@@ -293,6 +293,13 @@ test('thunderbird: thread, mandata, risposta, storia, collegamenti, archivio', a
   assert.deepEqual((await tb('GET', `/backlinks/mail/${found[0]}`).then(json)).map(e => e.id), [cite]);
   assert.equal((await tb('POST', '/refs', { refs: [['mail', found[0]]] }).then(json))[`mail:${found[0]}`].status, 'ok');
 
+  // Codici scritti alla buona nelle mail (senza trattino, con o senza zeri davanti): si collegano lo stesso.
+  const { id: s44 } = await tb('POST', '/items', { code: 'SCH-44', name: 'Scheda di prova' }).then(json);
+  const loose = await tb('POST', '/mail/incoming', { message_id: '<l1@fornitore.it>', from: 'mario@fornitore.it', subject: 'Disponibilità',
+    body: 'Abbiamo la sch44 e anche qualche sch042, ma non la sch4.', inbox: true }).then(json);
+  const looseLinks = (await tb('GET', '/sync').then(json)).threadLinks.filter(l => l.thread_id === loose.thread && l.kind === 'articolo').map(l => l.target_id);
+  assert.deepEqual(looseLinks.sort(), [s44, sch.id].sort());
+
   // Contatti da non proporre: regole dell'account (minuscole, senza doppioni).
   await tb('PATCH', '/me', { mailIgnore: ['NoReply', 'noreply', '@amazon.it'] });
   assert.deepEqual((await tb('GET', '/sync').then(json)).mailIgnore, ['noreply', '@amazon.it']);

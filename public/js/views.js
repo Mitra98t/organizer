@@ -1426,7 +1426,7 @@ function settingsPane(sec, D) {
       card('set-app', 'Installa l\'app', [
         h('ul.install',
           h('li', h('b', 'iPhone/iPad: '), 'apri in Safari → Condividi → "Aggiungi alla schermata Home".'),
-          h('li', h('b', 'Android: '), 'apri in Chrome → menu ⋮ → "Installa app" (serve HTTPS, vedi README).'),
+          h('li', h('b', 'Android: '), 'apri in Chrome → menu ⋮ → "Installa app" (serve HTTPS, vedi docs/GUIDA.md).'),
           h('li', h('b', 'Mac: '), 'Safari → File → "Aggiungi al Dock", oppure Chrome → icona di installazione nella barra indirizzi.'),
           h('li', h('b', 'Linux: '), 'Chrome/Chromium → icona di installazione nella barra indirizzi.')),
         h('p.muted', `Indirizzo attuale: ${location.origin}${isSecureContext ? '' : ' (non HTTPS: niente modalità offline)'}`),

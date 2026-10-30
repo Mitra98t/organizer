@@ -164,6 +164,11 @@ export function findAll(ql, { bare = false, self = null, limit = 12 } = {}) {
   const entryState = e => (e.done_at ? (e.kind === 'mail' ? 'mandata' : e.kind === 'todo' ? 'fatta' : '') : e.kind === 'mail' ? 'da mandare' : '');
   const names = list => String(list || '').split(',').map(a => (a.match(/<([^>]+)>/)?.[1] || a).trim().toLowerCase()).filter(Boolean)
     .map(a => D.contactByEmail.get(a)?.name || '').join(' ');
+  // Le persone di una conversazione, una volta sola: il nome in rubrica, altrimenti quello della mail o l'indirizzo.
+  const people = list => [...new Set(String(list || '').split(',').map(a => {
+    const email = (a.match(/<([^>]+)>/)?.[1] || a).trim().toLowerCase();
+    return email && !D.mine.has(email) ? D.contactByEmail.get(email)?.name || a.replace(/<[^>]*>/, '').replace(/"/g, '').trim() || email : '';
+  }).filter(Boolean))].slice(0, 3).join(', ');
   const KIND_WORD = { todo: 'todo', mail: 'mail', note: 'nota' };
   const scored = (list, fields, make) => list.map(x => ({ x, r: scoreWords(words, fields(x)) })).filter(o => o.r != null)
     .map(o => ({ ...make(o.x), r: o.r }));
@@ -178,7 +183,7 @@ export function findAll(ql, { bare = false, self = null, limit = 12 } = {}) {
       const addrs = msgs.map(m => `${m.from_addr},${m.to_addr},${m.cc}`).join(',');
       return [[t.subject], [D.topicById.get(t.topic_id)?.title, 0.3], [addrs, 0.5, true], [names(addrs), 0.3, true], ['mail', 1], ['conversazione', 1],
         ...msgs.map(m => [m.snippet, 0.5, true]), ...(mailIds.includes(t.id) ? [[ql, 0, true]] : [])];
-    }, t => ({ insert: `[[mail:${t.id}]]`, href: `#/t/${t.topic_id}?th=${t.id}`, label: plain(t.subject), hint: names((D.msgsOfThread.get(t.id) || []).map(m => m.direction === 'in' ? m.from_addr : m.to_addr).join(',')).trim(),
+    }, t => ({ insert: `[[mail:${t.id}]]`, href: `#/t/${t.topic_id}?th=${t.id}`, label: plain(t.subject), hint: people((D.msgsOfThread.get(t.id) || []).map(m => m.direction === 'in' ? m.from_addr : m.to_addr).join(',')),
       extra: t.archived_at ? 'archiviata' : '', pill: 'conv', sort: t.last_at })),
     scored(D.docs.filter(d => D.itemById.has(d.item_id)), d => {
       const it = D.itemById.get(d.item_id);

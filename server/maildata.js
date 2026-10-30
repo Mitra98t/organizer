@@ -51,16 +51,22 @@ export function dropEmptyTopics(ownerId) {
 
 // Codici di magazzino (principali e alternativi, anche senza #) e progetti (il tag, con o senza @) scritti in
 // oggetto e testo diventano collegamenti automatici. Quelli tolti a mano restano nascosti (hidden): non tornano.
+// I codici con dei numeri si riconoscono anche scritti alla buona: senza trattini, punti o barre e senza gli zeri
+// davanti ai numeri ("sch44", "SCH.044" → SCH-44); quelli di sole lettere solo come sono.
+const bare = s => String(s || '').toUpperCase().replace(/[-_./]+/g, '').replace(/(^|\D)0+(?=\d)/g, '$1');
 export function autoLink(threadId, uid, text) {
   const t = ` ${String(text || '')} `.toUpperCase();
+  // Le "parole" del testo (lettere e cifre, anche unite da - _ . /), nella forma alla buona.
+  const words = new Set((String(text || '').match(/[A-Za-z0-9]+(?:[-_./][A-Za-z0-9]+)*/g) || []).map(bare));
+  const link = (kind, id) => db.prepare('INSERT OR IGNORE INTO mail_thread_links (thread_id, kind, target_id, auto) VALUES (?, ?, ?, 1)').run(threadId, kind, id);
   const found = (code, kind, id) => {
     const word = String(code || '').toUpperCase();
     if (word.length < 3) return;
     for (let at = t.indexOf(word); at >= 0; at = t.indexOf(word, at + 1)) {
       if (/[A-Z0-9]/.test(t[at - 1]) || /[A-Z0-9]/.test(t[at + word.length])) continue; // dentro una parola più lunga
-      db.prepare('INSERT OR IGNORE INTO mail_thread_links (thread_id, kind, target_id, auto) VALUES (?, ?, ?, 1)').run(threadId, kind, id);
-      return;
+      return link(kind, id);
     }
+    if (kind === 'articolo' && /\d/.test(word) && bare(word).length >= 3 && words.has(bare(word))) link(kind, id);
   };
   for (const { id, code } of db.prepare(`SELECT id, code FROM items WHERE deleted_at IS NULL
     UNION SELECT a.item_id, a.code FROM item_aliases a JOIN items i ON i.id = a.item_id WHERE i.deleted_at IS NULL`).all()) found(code, 'articolo', id);

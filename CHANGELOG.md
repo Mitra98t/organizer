@@ -3,6 +3,10 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.17.2 — 2026-10-30
+- **Codici scritti alla buona**: nelle mail un codice di magazzino con dei numeri si collega anche scritto senza trattini, punti o barre e senza gli zeri davanti ai numeri: `sch44`, `SCH.044` e `sch-44` trovano SCH-44. Vale per i codici principali e per quelli alternativi.
+- Correzione: nella barra comandi le persone di una conversazione compaiono una volta sola.
+
 ## 0.17.1 — 2026-10-30
 - **Temi nuovi** (Impostazioni → Aspetto): Monokai Pro, Ayu Mirage, Night Owl, Material Palenight tra gli scuri; Rosé Pine Dawn e Ayu Light tra i chiari.
 - **Temi funky**, in una sezione loro: Synthwave '84, Vaporwave, Matrix, Terminale ambra, Cobalt2, Shades of Purple, Halloween, Bubblegum, Sorbetto e Limonata. Alcuni hanno lo sfondo sfumato dietro ai pannelli, l'accento luminoso (pulsanti, menu e titoli), angoli più tondi; Matrix e Terminale ambra usano il carattere da terminale.
