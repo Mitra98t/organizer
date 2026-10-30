@@ -27,7 +27,7 @@ export async function loadData(api) {
   return D;
 }
 
-// [[doc:12]] [[voce:34]] [[contatto:5]] [[progetto:3]] → «nome attuale» (come i link nell'app).
+// [[doc:12]] [[voce:34]] [[contatto:5]] [[progetto:3]] [[mail:7]] [[nota:9]] → «nome attuale» (come i link nell'app).
 export function refName(D, kind, id) {
   if (kind === 'doc') {
     const d = D.docById.get(id);
@@ -35,12 +35,17 @@ export function refName(D, kind, id) {
   }
   if (kind === 'voce') return D.entryById.get(id)?.title.replace(/(^|\s)#/g, '$1').replace(/\[\[\w+:\d+\]\]/g, '…') ?? `voce ${id}`;
   if (kind === 'progetto') return D.projectById.get(id)?.name ?? 'progetto eliminato';
+  if (kind === 'mail') return D.mailThreads?.find(t => t.id === id)?.subject ?? 'conversazione di mail';
+  if (kind === 'nota') {
+    const n = D.docNotes?.find(x => x.id === id);
+    return n ? n.text.split('\n')[0].slice(0, 80) : 'nota';
+  }
   const ct = D.contacts.find(x => x.id === id);
   return ct ? ct.name || ct.email : 'contatto eliminato';
 }
 
 export const linkRefs = (D, text, color = s => s) =>
-  String(text ?? '').replace(/\[\[(doc|voce|contatto|progetto):(\d+)\]\]/g, (_, kind, id) => color(`«${refName(D, kind, +id)}»`));
+  String(text ?? '').replace(/\[\[(doc|voce|contatto|progetto|mail|nota):(\d+)\]\]/g, (_, kind, id) => color(`«${refName(D, kind, +id)}»`));
 
 export const userName = (D, id) => {
   const u = D.userById.get(id);

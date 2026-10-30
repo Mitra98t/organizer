@@ -89,6 +89,7 @@ In qualunque testo (titoli, note, aggiornamenti, testo delle mail, appunti, chat
 | `[[voce:ID]]` | una voce (todo, mail o nota) |
 | `[[doc:ID]]` | un documento |
 | `[[progetto:ID]]` | un progetto (senza aggiungere la voce al progetto, come farebbe `@tag` nel titolo) |
+| `[[nota:ID]]` | una nota su un documento (anche su un pezzo di testo di un PDF); privata come la nota: chi non la vede legge "non hai permessi sufficienti" |
 | `[[contatto:ID]]` | un contatto |
 | `#CODICE` | un articolo di magazzino |
 
@@ -184,6 +185,8 @@ Parametri: `kind`, `name` (nome del file), `version`, `label` (nome mostrato). U
 | `GET /api/docs/:id/remote` | il PDF di un link esterno, scaricato dal server (solo indirizzi pubblici, max 60 MB) |
 | `PATCH /api/docs/:id` `{label?, kind?, version?}` | rinomina, cambia tipo o versione |
 | `DELETE /api/docs/:id` | nel cestino |
+| `POST /api/docs/:id/notes` `{text, page?, x?, y?, z?, quote?, marks?}` | nota: senza `page` è generale, con `page`/`x`/`y` (0..1) è un segnaposto (`z` nei modelli 3D); `quote` e `marks` (`[[pagina, x, y, w, h], …]` in 0..1, max 300) per una nota su un pezzo di testo di un PDF |
+| `PATCH /api/doc-notes/:id` `{text?, resolved?, page?, x?, y?, z?}` · `DELETE /api/doc-notes/:id` | modifica, risolve, sposta; nel cestino |
 
 ## Mail
 

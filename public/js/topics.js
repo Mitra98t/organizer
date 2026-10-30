@@ -448,7 +448,7 @@ async function addLinks(base, text) {
   const want = [];
   for (const c of extractCodes(text)) { const it = D.itemByCode.get(c.toUpperCase()); if (it) want.push(['articolo', it.id]); }
   for (const m of text.matchAll(/(?:^|\s)@([\p{L}\d_.-]+)/gu)) { const p = D.projectByTag.get(m[1].toLowerCase()); if (p) want.push(['progetto', p.id]); }
-  for (const m of text.matchAll(REF_RE)) want.push([m[1], +m[2]]);
+  for (const m of text.matchAll(REF_RE)) if (m[1] !== 'nota') want.push([m[1], +m[2]]); // le note sui documenti non si collegano alle mail
   if (!want.length) return toast('Scrivi #codice, @progetto o [[ per scegliere cosa collegare', { err: true });
   for (const [kind, id] of want) await api('POST', `${base}/links`, { kind, id });
 }

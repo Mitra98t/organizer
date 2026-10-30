@@ -131,7 +131,7 @@ export function askMailSearch(ql, done) {
 }
 
 // Etichette di tipo nel menu dei collegamenti, per distinguere al volo cosa si sta collegando.
-const PILL = { todo: 'todo', mail: 'mail', note: 'nota', doc: 'documento', item: 'articolo', project: 'progetto', contact: 'contatto', conv: 'conversazione' };
+const PILL = { todo: 'todo', mail: 'mail', note: 'nota', doc: 'documento', docnote: 'nota su file', item: 'articolo', project: 'progetto', contact: 'contatto', conv: 'conversazione' };
 
 // Punteggio di più parole su più campi (più basso = meglio, null = qualche parola non c'è): ogni parola deve
 // trovarsi in almeno un campo, conta il campo migliore. Campi: [testo, peso, lungo]. Nei campi brevi (titoli,
@@ -189,6 +189,17 @@ export function findAll(ql, { bare = false, self = null, limit = 12 } = {}) {
       const it = D.itemById.get(d.item_id);
       return [[docName(d)], [d.filename, 0.3], [d.kind, 0.5], [it.code, 0.3], ...(D.aliasesOf.get(it.id) || []).map(a => [a.code, 0.4]), [it.name, 0.8], [d.version, 1], ['documento', 1]];
     }, d => ({ insert: `[[doc:${d.id}]]`, href: `#/d/${d.id}`, label: docName(d), hint: D.itemById.get(d.item_id).code, extra: d.kind, pill: 'doc', sort: d.created_at })),
+    // Note sui documenti (anche quelle su un pezzo di testo di un PDF): si cercano per testo, testo citato e documento.
+    scored(D.docNotes.filter(n => D.docById.has(n.doc_id) && (ql || !n.resolved_at)), n => {
+      const d = D.docById.get(n.doc_id);
+      const it = D.itemById.get(d.item_id);
+      return [[n.text.split('\n')[0]], [n.text, 0.3, true], [n.quote, 0.3, true], [docName(d), 0.6], [it?.code, 0.6], ['nota', 1], ['appunto', 1]];
+    }, n => {
+      const d = D.docById.get(n.doc_id);
+      const first = plain(n.text.split('\n')[0]);
+      return { insert: `[[nota:${n.id}]]`, href: `#/d/${n.doc_id}?n=${n.id}`, label: first.length > 80 ? `${first.slice(0, 80)}…` : first,
+        hint: docName(d), extra: n.resolved_at ? 'risolta' : n.page != null && n.z == null && /pdf/i.test(d.mime || d.filename || d.url || '') ? `pag. ${n.page}` : '', pill: 'docnote', sort: n.updated_at };
+    }),
     scored(D.items, i => [[i.code], ...(D.aliasesOf.get(i.id) || []).map(a => [a.code, 0.2]), [i.name, 0.5], [i.category, 1], [i.firmware, 1], ['articolo', 1]],
       i => ({ insert: bare ? i.code : `#${i.code}`, href: `#/i/${i.id}`, label: i.code, hint: i.name, extra: i.category, code: true, cat: i.category, pill: 'item', sort: i.updated_at || '' })),
     scored(D.projects.filter(p => ql || p.status !== 'closed'), p => [[p.name], [p.tag], ['progetto', 1], [p.notes, 0.5, true]],
@@ -197,7 +208,7 @@ export function findAll(ql, { bare = false, self = null, limit = 12 } = {}) {
       c => ({ insert: `[[contatto:${c.id}]]`, href: `#/contatti/${c.id}`, label: c.name || c.email, hint: c.company || (c.name ? c.email : ''), pill: 'contact', sort: c.updated_at || '' })),
   ];
   const recent = (a, b) => String(b.sort).localeCompare(String(a.sort));
-  if (!ql) return groups.flatMap((g, i) => g.sort(recent).slice(0, [4, 2, 2, 2, 1, 1][i]));
+  if (!ql) return groups.flatMap((g, i) => g.sort(recent).slice(0, [4, 2, 2, 1, 2, 1, 1][i]));
   return groups.flat().sort((a, b) => a.r - b.r || recent(a, b)).slice(0, limit);
 }
 

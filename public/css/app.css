@@ -1194,7 +1194,7 @@ a.ref:hover { border-color: var(--accent); }
 .ac-k.t-todo { color: var(--accent); background: var(--accent-soft); }
 .ac-k.t-mail { color: var(--mail); background: color-mix(in srgb, var(--mail) 15%, transparent); }
 .ac-k.t-note { color: var(--note); background: color-mix(in srgb, var(--note) 15%, transparent); }
-.ac-k.t-doc { color: var(--today); background: color-mix(in srgb, var(--today) 14%, transparent); }
+.ac-k.t-doc, .ac-k.t-docnote { color: var(--today); background: color-mix(in srgb, var(--today) 14%, transparent); }
 .ac-k.t-item { color: var(--code-ink); background: var(--code-bg); }
 .ac-k.t-project { color: var(--tag-ink); background: var(--tag-bg); }
 .ac-k.t-contact { color: var(--muted); background: var(--panel-2); }
@@ -1214,6 +1214,39 @@ a.ref:hover { border-color: var(--accent); }
 .dv-hit.on { background: rgb(255 120 0 / 55%); outline: 2px solid rgb(255 120 0 / 90%); }
 .dv-text mark { background: rgb(255 200 0 / 45%); color: inherit; border-radius: 2px; }
 .dv-text mark.on { background: rgb(255 120 0 / 70%); }
+
+/* ---------- testo selezionabile dei PDF (strato di testo di PDF.js, da pdf_viewer.css) e testi evidenziati ---------- */
+.dv-main { position: relative; }
+.textLayer {
+  position: absolute; inset: 0; width: 100% !important; height: 100% !important; overflow: clip; z-index: 0;
+  color-scheme: only light; text-align: initial; line-height: 1; letter-spacing: normal; word-spacing: normal;
+  text-size-adjust: none; -webkit-text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.textLayer :is(span, br) { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; user-select: text; -webkit-user-select: text; }
+.textLayer > :not(.markedContent), .textLayer .markedContent span:not(.markedContent) {
+  z-index: 1; --font-height: 0; font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1; --rotate: 0deg; transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.textLayer .markedContent { display: contents; }
+.textLayer span[role="img"] { user-select: none; -webkit-user-select: none; cursor: default; }
+.textLayer ::selection { background: color-mix(in srgb, AccentColor, transparent 50%); color: transparent; }
+.textLayer br::selection { background: transparent; }
+.textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none; -webkit-user-select: none; }
+.textLayer.selecting .endOfContent { top: 0; user-select: text; -webkit-user-select: text; }
+.ro .textLayer :is(span, br) { cursor: text; }
+.dv-marks { position: absolute; inset: 0; pointer-events: none; }
+.dv-mark { position: absolute; background: color-mix(in srgb, var(--accent) 35%, transparent); border-radius: 2px; mix-blend-mode: multiply; }
+.dv-mark.on { background: color-mix(in srgb, var(--today) 45%, transparent); }
+.dv-mark.draft { background: color-mix(in srgb, var(--mail) 40%, transparent); }
+.dv-mark.resolved { opacity: 0.4; }
+.dnote-q { font-size: 13px; color: var(--muted); border-left: 3px solid var(--accent); padding-left: 8px; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.dnote.on .dnote-q { -webkit-line-clamp: unset; }
+.dv-selbtn { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 5; box-shadow: 0 4px 14px rgb(0 0 0 / 35%); }
+.dv-selbtn[hidden] { display: none; }
 
 /* ---------- tipi di documento aggiunti e documenti per categoria ---------- */
 .dk.k-custom, .dk-sel.k-custom { color: hsl(var(--h) 60% var(--tag-l)); background: hsl(var(--h) 65% 50% / 0.14); }

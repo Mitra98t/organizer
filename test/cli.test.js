@@ -112,6 +112,16 @@ test('documenti: carica, rinomina, scarica', async () => {
   assert.deepEqual(notes.pinned.map(n => [n.num, n.text]), [[1, 'in alto'], [2, 'in fondo']]);
   assert.equal(JSON.parse(await org(['doc', 'notes', String(id), '--all', '--json'])).pinned[0].text, 'vecchia');
 
+  // Nota su un pezzo di testo: il testo selezionato e i riquadri evidenziati (anche su due pagine).
+  const marks = [[1, 0.1, 0.3, 0.5, 0.02], [2, 0.1, 0.05, 0.2, 0.02]];
+  await note({ text: 'controlla il valore', page: 1, x: 0.1, y: 0.3, quote: '  tensione   di uscita\n12 V ', marks });
+  const q = JSON.parse(await org(['doc', 'notes', String(id), '--json'])).pinned.find(n => n.text === 'controlla il valore');
+  assert.equal(q.quote, 'tensione di uscita 12 V');
+  assert.deepEqual(JSON.parse(q.marks), marks);
+  assert.match(await org(['doc', 'notes', String(id)]), /«tensione di uscita 12 V»/);
+  const bad = await call('POST', `/docs/${id}/notes`, { token: config().token, body: { text: 'x', page: 1, x: 0.1, y: 0.1, quote: 'x', marks: [[0, 0.1, 0.1, 2, 0.1]] } });
+  assert.equal(bad.status, 400);
+
   // Modelli 3D: il punto ha anche z (0..1 nel riquadro del modello).
   const stl = path.join(dir, 'staffa.stl');
   fs.writeFileSync(stl, 'solid staffa\nendsolid staffa\n');
@@ -819,7 +829,11 @@ test('esporta e importa i propri dati: magazzino con i file, voci, collegamenti,
   }).then(r => r.json());
   await me('POST', '/projects', { name: 'Esportazione', tag: 'export-prova' });
   const { id: todo } = await me('POST', '/entries', { text: `controllare il file #EXP-1 @export-prova` });
-  await me('PATCH', `/entries/${todo}`, { notes: `vedi [[doc:${up.id}]]` });
+  const { id: dn } = await me('POST', `/docs/${up.id}/notes`, { text: 'riga 3 da rivedere', page: 1, x: 0.1, y: 0.2 });
+  await me('PATCH', `/entries/${todo}`, { notes: `vedi [[doc:${up.id}]] e [[nota:${dn}]]` });
+  // La nota citata: la voce compare tra i suoi collegamenti, e lo stato si legge anche senza i dati.
+  assert.deepEqual((await me('GET', `/backlinks/nota/${dn}`)).map(x => x.id), [todo]);
+  assert.equal((await me('POST', '/refs', { refs: [['nota', dn]] }))[`nota:${dn}`].status, 'ok');
   await me('POST', '/mail/incoming', { message_id: '<exp1@fornitore.it>', from: 'x@fornitore.it', subject: 'Esportazione', body: 'serve EXP-1', inbox: true });
 
   const zipFile = Buffer.from(await (await fetch(`${url}/api/export`, { headers: { Cookie: cookie, 'X-Requested-With': 'organizer' } })).arrayBuffer());
@@ -835,7 +849,8 @@ test('esporta e importa i propri dati: magazzino con i file, voci, collegamenti,
   const doc = d.docs.find(x => x.item_id === it.id && x.filename === 'exp1.txt');
   assert.equal(await fetch(`${url}/api/docs/${doc.id}/file`, { headers: { Cookie: cookie } }).then(r => r.text()), 'contenuto di prova');
   const e = d.entries.find(x => x.title.startsWith('controllare il file'));
-  assert.equal(e.notes, `vedi [[doc:${doc.id}]]`);
+  const note = d.docNotes.find(x => x.doc_id === doc.id && x.text === 'riga 3 da rivedere');
+  assert.equal(e.notes, `vedi [[doc:${doc.id}]] e [[nota:${note.id}]]`);
   assert.equal(e.project_id, d.projects.find(p => p.tag === 'export-prova').id);
   assert.ok(d.mailThreads.some(t => t.subject === 'Esportazione'));
   // Una seconda volta: gli articoli e i documenti che ci sono già non si duplicano.

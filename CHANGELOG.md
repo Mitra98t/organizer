@@ -3,6 +3,11 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.20 — 2026-10-30
+- **Note su un pezzo di testo nei PDF**: trascinando sul testo (o con doppio o triplo clic) la nota si attacca a quel testo, che resta evidenziato nel documento e citato nella nota; il clic su un punto per una nota lì resta com'è. Cliccando il testo evidenziato si apre la sua nota. Sul telefono: tieni premuto per selezionare, poi **Nota sul testo**. La citazione compare anche in `org doc notes` e nella todo creata dalla nota.
+- **Citare una nota di un documento con `[[`**: le note sui file (anche quelle su un pezzo di testo) compaiono nei suggerimenti di `[[` e nella barra comandi come "nota su file"; il link `[[nota:ID]]` apre il documento sulla nota, e la nota selezionata mostra le voci che la citano ("Citata in"). Una nota non condivisa con te si vede come "non hai permessi sufficienti". Funziona anche nell'esportazione e importazione dei dati.
+- Schema dati v23.
+
 ## 0.19 — 2026-10-30
 - **Esporta e importa i tuoi dati** (Impostazioni → I tuoi dati, per tutti, non solo gli admin): un `.zip` con tutto il magazzino e i documenti (con i file) e quello che hai creato tu, posta compresa; niente cose private degli altri. Importandolo in un altro workspace, o su un altro server, i dati si aggiungono senza sovrascrivere: articoli già presenti restano come sono e prendono solo i documenti mancanti, progetti con lo stesso tag e contatti con la stessa mail si uniscono, i collegamenti `[[…]]` si aggiornano. Le aree in cui non puoi scrivere si saltano.
 

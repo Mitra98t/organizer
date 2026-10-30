@@ -269,6 +269,7 @@ function indexData(d) {
   d.docsOf = group(d.docs, 'item_id');
   d.docById = new Map(d.docs.map(x => [x.id, x]));
   d.docNotesOf = group(d.docNotes, 'doc_id');
+  d.docNoteById = new Map(d.docNotes.map(n => [n.id, n]));
   d.childItems = group(d.itemLinks, 'parent_id');
   d.parentItems = group(d.itemLinks, 'child_id');
   d.contactById = new Map(d.contacts.map(c => [c.id, c]));
@@ -904,11 +905,12 @@ export function richField({ fk, value, placeholder, cls, rows = 2, attrs = {}, o
 // Si scrivono con "[[" in qualunque campo di testo (l'autocompletamento inserisce il token) e si vedono come
 // link con il nome sempre attuale. Gli articoli restano #CODICE. Le mail li mandano come testo semplice.
 // [[mail:ID]] è una conversazione di mail: personale, chi non la riceve vede "non hai permessi sufficienti".
-const REF_RE = /\[\[(doc|voce|contatto|progetto|mail):(\d+)\]\]/g;
+// [[nota:ID]] è una nota su un documento (anche su un pezzo di testo di un PDF): privata, salvo condivisione.
+const REF_RE = /\[\[(doc|voce|contatto|progetto|mail|nota):(\d+)\]\]/g;
 const ENTRY_ICON = { todo: 'check', mail: 'mail', note: 'diary' };
 const plainTitle = t => t.replace(/(^|\s)#/g, '$1');
 
-const REF_AREA = { doc: 'documenti', progetto: 'progetti', contatto: 'contatti', mail: 'mail' };
+const REF_AREA = { doc: 'documenti', progetto: 'progetti', contatto: 'contatti', mail: 'mail', nota: 'documenti' };
 
 // Collegamenti a cose che l'app non ha nei dati (archiviate, non condivise, eliminate): si chiede al server
 // una volta, tutti insieme dopo il ridisegno. Il server dice solo lo stato (e il titolo se si può vedere).
@@ -959,6 +961,15 @@ export function refChip(kind, id) {
     const subject = t ? t.subject : r.title;
     return h('a.ref', { href: `#/t/${t ? t.topic_id : r.topic}?th=${id}`, onclick: stop, title: 'Conversazione di mail' }, icon('mail'), plainTitle(subject || '(senza oggetto)'));
   }
+  if (kind === 'nota') {
+    const n = D.docNoteById.get(id);
+    const r = !n && askRef('nota', id);
+    if (r?.status === 'hidden') return noAccess();
+    if (!n && r?.status !== 'ok') return h('span.ref.gone', icon('log'), r ? 'nota eliminata' : 'nota…');
+    const d = D.docById.get(n ? n.doc_id : r.doc);
+    return h('a.ref', { href: `#/d/${n ? n.doc_id : r.doc}?n=${id}`, onclick: stop, class: (n ? n.resolved_at : r.done) ? 'done' : null, title: n?.quote ? `«${n.quote}»` : 'Nota su un documento' },
+      icon('log'), noteTitle(n ? n.text : r.title), d && h('span.ref-x', `${docName(d)}${n?.page && n.z == null && /pdf/i.test(d.mime || d.filename || d.url || '') ? ` · pag. ${n.page}` : ''}`));
+  }
   if (kind === 'progetto') {
     const p = D.projectById.get(id);
     const st = !p && askRef('progetto', id)?.status;
@@ -973,6 +984,12 @@ export function refChip(kind, id) {
     : h('span.ref.gone', icon('user'), st ? 'contatto eliminato' : 'contatto…');
 }
 
+// Titolo di una nota su un documento: la prima riga, accorciata.
+const noteTitle = t => {
+  const first = String(t || '').split('\n')[0].trim();
+  return first.length > 80 ? `${first.slice(0, 80)}…` : first || 'nota';
+};
+
 function refInfoEntry(id) {
   const r = askRef('voce', id);
   if (!r) return null;
@@ -984,8 +1001,9 @@ function refInfoEntry(id) {
 export function plainRefs(text) {
   const D = S.data;
   return String(text || '').replace(REF_RE, (m, kind, id) => {
-    const x = { doc: D.docById, voce: D.entryById, contatto: D.contactById, progetto: D.projectById, mail: D.threadById }[kind].get(+id);
-    const name = x && (kind === 'doc' ? docName(x) : kind === 'voce' ? plainTitle(x.title) : kind === 'mail' ? plainTitle(x.subject) : x.name || x.email);
+    const x = { doc: D.docById, voce: D.entryById, contatto: D.contactById, progetto: D.projectById, mail: D.threadById, nota: D.docNoteById }[kind].get(+id);
+    const name = x && (kind === 'doc' ? docName(x) : kind === 'voce' ? plainTitle(x.title) : kind === 'mail' ? plainTitle(x.subject)
+      : kind === 'nota' ? noteTitle(x.text) : x.name || x.email);
     return name || m;
   });
 }

@@ -101,11 +101,18 @@ function getViewer(d) {
       h('span.grow'),
       h('span.muted.dv-hint', v.kind === 'model'
         ? 'Trascina per ruotare, tasto destro per spostare, rotella per lo zoom. Clicca sul modello per una nota in quel punto'
-        : pinnable(v) ? 'Clicca sul documento per aggiungere una nota in quel punto, trascina un segnaposto per spostarlo' : ''),
+        : v.kind === 'pdf' ? 'Clicca per una nota in quel punto o seleziona del testo per una nota su quel testo; trascina un segnaposto per spostarlo'
+          : pinnable(v) ? 'Clicca sul documento per aggiungere una nota in quel punto, trascina un segnaposto per spostarlo' : ''),
       searchable(v) && h('button.icon-btn', { title: `Cerca nel documento (${MOD}F)`, onclick: () => openSearch(v) }, icon('search'))),
     searchBar(v),
-    v.scroller);
-  v.el.addEventListener('pointerdown', () => { lastActive = v; });
+    v.scroller,
+    v.kind === 'pdf' && (v.selBtn = h('button.btn.sm.primary.dv-selbtn', {
+      hidden: true,
+      onpointerdown: ev => ev.preventDefault(), // la selezione deve restare
+      onclick: () => { const sel = selectionIn(v); if (sel) textDraft(v, sel); },
+    }, icon('log'), 'Nota sul testo')));
+  v.el.addEventListener('pointerdown', ev => { lastActive = v; v.pointer = ev.pointerType; });
+  if (v.kind === 'pdf') v.pagesEl.addEventListener('pointerup', ev => textPointerUp(v, ev));
   v.resize = new ResizeObserver(() => { clearTimeout(v.rt); v.rt = setTimeout(() => layout(v), 120); });
   v.resize.observe(v.scroller);
   viewers.set(d.id, v);
@@ -154,7 +161,7 @@ function fail(v, msg) {
 async function openPdf(v, d) {
   v.pagesEl.replaceChildren(h('div.empty', 'Caricamento del PDF…'));
   try {
-    const pdfjs = await loadPdfjs();
+    const pdfjs = v.pdfjs = await loadPdfjs();
     // PDF da link: lo scarica il server; si legge prima la risposta per mostrare il motivo di un errore.
     let data;
     if (d.url) {
@@ -364,11 +371,15 @@ function pinDrag3d(v, n, pin) {
 function newPage(v, num, w, h0, extra) {
   const pins = h('div.dv-pins');
   const hits = h('div.dv-hits');
+  const marks = h('div.dv-marks');
   const wrap = h('div.dv-page', { 'data-page': num, onclick: ev => clickPage(v, num, wrap, ev) });
   if (extra.img) wrap.append(extra.img);
   else wrap.append(extra.canvas = h('canvas'));
-  wrap.append(hits, pins);
-  v.pages.push({ num, w, h: h0, wrap, pins, hits, ...extra });
+  wrap.append(hits, marks);
+  // PDF: sopra il disegno, il testo vero della pagina (trasparente) per selezionarlo.
+  if (extra.page) wrap.append(extra.textEl = h('div.textLayer'));
+  wrap.append(pins);
+  v.pages.push({ num, w, h: h0, wrap, pins, hits, marks, ...extra });
   return wrap;
 }
 
@@ -389,6 +400,7 @@ function layout(v) {
   const avail = Math.max(200, v.scroller.clientWidth - 16); // 8 px di margine per lato
   for (const p of v.pages) {
     p.cssW = Math.round(avail * v.zoom);
+    p.wrap.style.setProperty('--total-scale-factor', p.cssW / p.w); // dimensione del testo selezionabile
     p.wrap.style.width = `${p.cssW}px`;
     p.wrap.style.height = `${Math.round(p.cssW * p.h / p.w)}px`;
     if (p.visible) renderPage(v, p);
@@ -402,6 +414,7 @@ function renderPage(v, p) {
   const dpr = window.devicePixelRatio || 1;
   const scale = (p.cssW / p.w) * dpr;
   if (p.renderedScale === scale) return;
+  renderText(v, p);
   p.task?.cancel();
   const viewport = p.page.getViewport({ scale });
   // Si disegna su un canvas nuovo e si sostituisce a fine render: niente pagina bianca durante lo zoom.
@@ -414,6 +427,14 @@ function renderPage(v, p) {
     p.canvas = canvas;
     p.renderedScale = scale;
   }).catch(e => { if (e?.name !== 'RenderingCancelledException') console.warn(e); });
+}
+
+// Strato di testo di PDF.js: si costruisce la prima volta che la pagina si vede, poi si adatta allo zoom.
+function renderText(v, p) {
+  const viewport = p.page.getViewport({ scale: p.cssW / p.w });
+  if (p.textLayer) return p.textLayer.update({ viewport });
+  p.textLayer = new v.pdfjs.TextLayer({ textContentSource: p.page.streamTextContent(), container: p.textEl, viewport });
+  p.textLayer.render().then(() => p.textEl.append(h('div.endOfContent'))).catch(e => { if (e?.name !== 'AbortException') console.warn(e); });
 }
 
 function setZoom(v, z) {
@@ -595,16 +616,138 @@ function drawMatches(v) {
 
 function clickPage(v, num, wrap, ev) {
   if (isReadOnly(wrap)) return; // in sola lettura non si aggiungono note
-  if (ev.target.closest('.dv-pin')) return;
+  if (ev.target.closest('.dv-pin') || v.textJust) return; // il rilascio ha appena preparato una nota sul testo
+  if (selectionIn(v)) return; // testo selezionato (sul telefono): la nota si fa dal pulsante
   const r = wrap.getBoundingClientRect();
   const x = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width));
   const y = Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height));
+  // Clic su un testo evidenziato: si apre la sua nota.
+  const hit = numbered(v.id).find(({ n }) => marksOf(n).some(([pg, mx, my, mw, mh]) => pg === num && x >= mx && x <= mx + mw && y >= my && y <= my + mh));
+  if (hit) {
+    openNotes(v);
+    return selectNote(hit.n.id, false);
+  }
   for (const o of viewers.values()) o.draft = null; // una nota in preparazione alla volta
   v.draft = { page: num, x, y, fresh: true };
   openNotes(v);
   ui.docNote = null;
   render();
 }
+
+// ---------- note su un pezzo di testo (PDF) ----------
+// Il testo selezionato (trascinando col mouse; sul telefono tenendo premuto e poi "Nota sul testo") diventa
+// una nota in preparazione con quel testo evidenziato: riquadri in 0..1 per pagina, come i segnaposto, e il
+// segnaposto alla fine della prima riga.
+function selectionIn(v) {
+  const sel = window.getSelection();
+  if (!sel?.rangeCount || sel.isCollapsed) return null;
+  const range = sel.getRangeAt(0);
+  if (!v.pagesEl.contains(range.commonAncestorContainer)) return null;
+  const quote = sel.toString().replace(/\s+/g, ' ').trim();
+  const marks = quote ? rangeMarks(v, range) : [];
+  return marks.length ? { quote: quote.slice(0, 2000), marks } : null;
+}
+
+// Riquadri della selezione, pezzo per pezzo di testo (i rettangoli del range intero comprenderebbero
+// anche pagine intere), uniti per riga.
+function rangeMarks(v, range) {
+  const out = [];
+  for (const p of v.pages) {
+    if (!p.textEl || !range.intersectsNode(p.textEl)) continue;
+    const r = p.wrap.getBoundingClientRect();
+    const boxes = [];
+    const walk = document.createTreeWalker(p.textEl, NodeFilter.SHOW_TEXT);
+    for (let t = walk.nextNode(); t; t = walk.nextNode()) {
+      if (!range.intersectsNode(t)) continue;
+      const sub = document.createRange();
+      sub.selectNodeContents(t);
+      if (t === range.startContainer) sub.setStart(t, range.startOffset);
+      if (t === range.endContainer) sub.setEnd(t, range.endOffset);
+      for (const c of sub.getClientRects()) if (c.width >= 1 && c.height >= 1) boxes.push({ l: c.left, t: c.top, r: c.right, b: c.bottom });
+    }
+    const lines = [];
+    for (const c of boxes.sort((a, b) => a.t - b.t || a.l - b.l)) {
+      const hgt = c.b - c.t;
+      const m = lines.find(x => Math.min(x.b, c.b) - Math.max(x.t, c.t) > 0.5 * Math.min(x.b - x.t, hgt) && c.l - x.r < hgt && x.l - c.r < hgt);
+      if (m) Object.assign(m, { l: Math.min(m.l, c.l), t: Math.min(m.t, c.t), r: Math.max(m.r, c.r), b: Math.max(m.b, c.b) });
+      else lines.push({ ...c });
+    }
+    for (const c of lines) out.push([p.num, (c.l - r.left) / r.width, (c.t - r.top) / r.height, (c.r - c.l) / r.width, (c.b - c.t) / r.height]);
+  }
+  return out.slice(0, 300);
+}
+
+const parsedMarks = new Map(); // JSON salvato → riquadri
+function marksOf(n) {
+  if (!n.marks) return [];
+  if (Array.isArray(n.marks)) return n.marks; // nota in preparazione
+  if (!parsedMarks.has(n.marks)) parsedMarks.set(n.marks, (() => { try { return JSON.parse(n.marks); } catch { return []; } })());
+  return parsedMarks.get(n.marks);
+}
+
+// Rilascio del mouse dopo una selezione (anche doppio o triplo clic su una parola o una riga).
+function textPointerUp(v, ev) {
+  if (ev.pointerType === 'touch' || ev.button !== 0 || isReadOnly(v.pagesEl) || ev.target.closest('.dv-pin')) return;
+  const sel = selectionIn(v);
+  if (sel) textDraft(v, sel);
+}
+
+function textDraft(v, sel) {
+  // Segnaposto alla fine della prima riga evidenziata: così non copre il testo selezionato.
+  const [page, x, y, w, hh] = sel.marks[0];
+  for (const o of viewers.values()) o.draft = null;
+  v.draft = { page, x: Math.min(1, x + w), y: Math.min(1, y + hh), quote: sel.quote, marks: sel.marks, fresh: true };
+  v.textJust = true; // il clic che segue il rilascio non deve preparare anche una nota in un punto
+  setTimeout(() => { v.textJust = false; }, 0);
+  window.getSelection().removeAllRanges();
+  if (v.selBtn) v.selBtn.hidden = true;
+  openNotes(v);
+  ui.docNote = null;
+  render();
+}
+
+// Trascinando oltre la fine di una riga il puntatore finisce nel vuoto tra i pezzi di testo e la selezione
+// salterebbe a fine pagina: come nel visualizzatore di PDF.js, durante la selezione il riquadro "fine del
+// contenuto" copre la pagina e segue il punto in cui la selezione finisce.
+let selecting = null; // strato di testo in cui è iniziata la selezione
+document.addEventListener('pointerdown', ev => {
+  const layer = ev.button === 0 && ev.target.closest?.('.textLayer');
+  if (!layer) return;
+  selecting = layer;
+  layer.classList.add('selecting');
+});
+document.addEventListener('pointerup', () => {
+  if (!selecting) return;
+  selecting.classList.remove('selecting');
+  const end = selecting.querySelector('.endOfContent');
+  if (end) selecting.append(end); // torna in fondo
+  selecting = null;
+});
+
+function followSelection() {
+  const sel = window.getSelection();
+  if (!selecting || !sel?.rangeCount || sel.isCollapsed) return;
+  let anchor = sel.focusNode;
+  if (anchor?.nodeType === Node.TEXT_NODE) anchor = anchor.parentNode;
+  const layer = anchor?.closest?.('.textLayer');
+  const end = layer?.querySelector('.endOfContent');
+  if (!end || anchor === end || anchor === layer) return;
+  const back = sel.anchorNode.compareDocumentPosition(sel.focusNode) & Node.DOCUMENT_POSITION_PRECEDING
+    || (sel.anchorNode === sel.focusNode && sel.focusOffset < sel.anchorOffset);
+  anchor.parentNode.insertBefore(end, back ? anchor : anchor.nextSibling);
+}
+
+// Sul telefono la selezione si fa tenendo premuto: compare il pulsante per farne una nota.
+let selTimer = null;
+document.addEventListener('selectionchange', () => {
+  followSelection();
+  clearTimeout(selTimer);
+  selTimer = setTimeout(() => {
+    for (const v of viewers.values()) {
+      if (v.selBtn) v.selBtn.hidden = v.pointer === 'mouse' || isReadOnly(v.pagesEl) || !selectionIn(v);
+    }
+  }, 200);
+});
 
 // ---------- spazio per il documento ----------
 // Barra delle note nascondibile e modalità "espandi" che toglie il resto dell'app.
@@ -663,20 +806,31 @@ function updatePins(v) {
     return updatePins3d(v, false);
   }
   const list = numbered(v.id);
+  const pct = ([, x, y, w, hh]) => `left:${x * 100}%;top:${y * 100}%;width:${w * 100}%;height:${hh * 100}%`;
   for (const p of v.pages) {
-    const pins = list.filter(x => x.n.page === p.num).map(({ n, num }) => pinDrag(v, n, h('button.dv-pin', {
-      class: [ui.docNote === n.id && 'on', n.resolved_at && 'resolved'].filter(Boolean).join(' ') || null,
-      style: `left:${n.x * 100}%;top:${n.y * 100}%`,
-      title: `${n.text}\n(trascina per spostare)`,
-      onclick: ev => {
-        ev.stopPropagation();
-        if (ev.currentTarget.dragged) return; // fine di un trascinamento, non un clic
-        openNotes(v);
-        selectNote(n.id, false);
-      },
-    }, num)));
+    const pins = list.filter(x => x.n.page === p.num).map(({ n, num }) => {
+      const pin = h('button.dv-pin', {
+        class: [ui.docNote === n.id && 'on', n.resolved_at && 'resolved'].filter(Boolean).join(' ') || null,
+        style: `left:${n.x * 100}%;top:${n.y * 100}%`,
+        // Le note su un testo restano attaccate al testo: il segnaposto non si sposta.
+        title: n.marks ? `«${n.quote || ''}»\n${n.text}` : `${n.text}\n(trascina per spostare)`,
+        onclick: ev => {
+          ev.stopPropagation();
+          if (ev.currentTarget.dragged) return; // fine di un trascinamento, non un clic
+          openNotes(v);
+          selectNote(n.id, false);
+        },
+      }, num);
+      return n.marks ? pin : pinDrag(v, n, pin);
+    });
     if (v.draft?.page === p.num) pins.push(h('span.dv-pin.draft', { style: `left:${v.draft.x * 100}%;top:${v.draft.y * 100}%` }, '+'));
     p.pins.replaceChildren(...pins);
+    // Testi evidenziati (anche su più pagine).
+    p.marks.replaceChildren(
+      ...list.flatMap(({ n }) => marksOf(n).filter(m => m[0] === p.num).map(m => h('div.dv-mark', {
+        class: [ui.docNote === n.id && 'on', n.resolved_at && 'resolved'].filter(Boolean).join(' ') || null, style: pct(m),
+      }))),
+      ...marksOf(v.draft || {}).filter(m => m[0] === p.num).map(m => h('div.dv-mark.draft', { style: pct(m) })));
   }
 }
 
@@ -769,7 +923,8 @@ async function noteToTodo(d, n) {
   const r = await act(async () => {
     const e = await api('POST', '/entries', { text, today: today() });
     // Negli aggiornamenti (non nei dettagli) perché lì i link sono cliccabili.
-    await api('POST', `/entries/${e.id}/log`, { text: `Da ${d.label || d.filename}${n.page && kindOf(d) === 'pdf' ? `, pag. ${n.page}` : ''}: ${link}` });
+    const quote = n.quote ? `, su «${n.quote.length > 80 ? `${n.quote.slice(0, 80)}…` : n.quote}»` : '';
+    await api('POST', `/entries/${e.id}/log`, { text: `Da ${d.label || d.filename}${n.page && kindOf(d) === 'pdf' ? `, pag. ${n.page}` : ''}${quote}: ${link}` });
     return e;
   });
   if (r) toast('Todo creata dalla nota', { action: { label: 'Agenda', fn: () => { location.hash = '#/agenda'; } } });
@@ -806,6 +961,7 @@ function noteCard(d, n, num) {
     n.page != null && kindOf(d) === 'pdf' && h('span.muted', `pag. ${n.page}`),
     h('span.grow'),
     h('span.muted', `${userName(n.created_by)} · ${fmtTime(n.created_at)}`)),
+  n.quote && h('div.dnote-q', n.quote),
   editing
     ? h('textarea.dnote-edit', { 'data-ac': 'text', 'data-ac-only': '#+',
       value: n.text, rows: 2, 'data-fk': `dnedit-${n.id}`, oninput: autosize,
@@ -820,7 +976,9 @@ function noteCard(d, n, num) {
     h('button.chip', { onclick: () => noteToTodo(d, n) }, '→ todo'),
     (n.created_by === me.id || me.is_admin) && h('button.icon-btn.sm', { title: 'Elimina', onclick: () => trashIt('docnote', `/doc-notes/${n.id}`, 'Nota') }, icon('trash'))),
   // Le note sono private di chi le scrive: qui si vede (e chi l'ha scritta sceglie) con chi è condivisa.
-  shareBox('docnote', n));
+  shareBox('docnote', n),
+  // Nota selezionata: le voci che la citano con [[nota:…]].
+  ui.docNote === n.id && backlinksBox('nota', n.id, { title: 'Citata in', compact: true }));
 }
 
 function notesPanel(d, v) {
@@ -829,9 +987,9 @@ function notesPanel(d, v) {
   const pins = numbered(d.id);
   const resolved = all.filter(n => n.resolved_at).length;
   const saveDraft = text => {
-    const { page, x, y, z } = v.draft;
+    const { page, x, y, z, quote, marks } = v.draft;
     v.draft = null;
-    act(async () => { const r = await api('POST', `/docs/${d.id}/notes`, { text, page, x, y, z }); ui.docNote = r.id; });
+    act(async () => { const r = await api('POST', `/docs/${d.id}/notes`, { text, page, x, y, z, quote, marks }); ui.docNote = r.id; });
   };
   const cancelDraft = () => { v.draft = null; render(); };
 
@@ -842,7 +1000,9 @@ function notesPanel(d, v) {
       resolved > 0 && h('button.chip', { class: ui.docShowResolved && 'on', onclick: () => { ui.docShowResolved = !ui.docShowResolved; render(); } },
         `risolte ${resolved}`)),
     v.draft && h('div.dnote.draft',
-      h('div.dnote-h', h('span.dv-pin.mini.draft', '+'), h('span', v.kind === 'pdf' ? `Nuova nota a pag. ${v.draft.page}` : 'Nuova nota in questo punto')),
+      h('div.dnote-h', h('span.dv-pin.mini.draft', '+'), h('span', v.draft.quote ? `Nuova nota sul testo, pag. ${v.draft.page}`
+        : v.kind === 'pdf' ? `Nuova nota a pag. ${v.draft.page}` : 'Nuova nota in questo punto')),
+      v.draft.quote && h('div.dnote-q', v.draft.quote),
       h('textarea.dnote-edit', { 'data-ac': 'text', 'data-ac-only': '#+',
         rows: 3, placeholder: 'Cosa c\'è da ricordare qui? (+persona per condividerla; Invio salva, Esc annulla)', 'data-fk': `draft-${d.id}`,
         oninput: autosize, onkeydown: enterSave(saveDraft, cancelDraft),
@@ -858,7 +1018,7 @@ function notesPanel(d, v) {
     pins.length > 0 && h('div.dv-sub', v.kind === 'model' ? 'Sul modello' : pinnable(v) ? 'Sul documento' : 'Posizionate'),
     pins.map(({ n, num }) => noteCard(d, n, num)),
     !all.length && !v.draft && h('p.muted.dv-empty', pinnable(v)
-      ? `Nessuna nota. Clicca su un punto del ${v.kind === 'model' ? 'modello' : 'documento'} per lasciarne una lì, oppure scrivi una nota generale qui sopra.`
+      ? `Nessuna nota. Clicca su un punto del ${v.kind === 'model' ? 'modello' : 'documento'} per lasciarne una lì${v.kind === 'pdf' ? ' o seleziona del testo per una nota su quel testo' : ''}, oppure scrivi una nota generale qui sopra.`
       : 'Nessuna nota. Scrivi qui sopra una nota sul file.'),
     // Mail (da mandare e mandate) che lo allegano o lo collegano, e le altre voci che lo citano.
     backlinksBox('doc', d.id, { title: 'Collegato in', compact: true }));

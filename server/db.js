@@ -481,6 +481,12 @@ const MIGRATIONS = [
     PRIMARY KEY (topic_id, kind, target_id)
   );
   `,
+  // v23: note su un pezzo di testo di un PDF: quote è il testo selezionato, marks i riquadri evidenziati
+  // (JSON [[pagina, x, y, w, h], …] in 0..1); page/x/y restano il segnaposto, alla fine della prima riga.
+  `
+  ALTER TABLE doc_notes ADD COLUMN quote TEXT;
+  ALTER TABLE doc_notes ADD COLUMN marks TEXT;
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

@@ -21,13 +21,14 @@ import { ensureTopic } from './maildata.js';
 import { fail, now } from './util.js';
 
 const FORMAT = 'organizer-export';
-const REF_RE = /\[\[(doc|voce|contatto|progetto|mail):(\d+)\]\]/g;
+const REF_RE = /\[\[(doc|voce|contatto|progetto|mail|nota):(\d+)\]\]/g;
 const REF_NAME = {
   doc: "SELECT COALESCE(NULLIF(label, ''), filename, url) AS n FROM documents WHERE id = ?",
   voce: 'SELECT title AS n FROM entries WHERE id = ?',
   contatto: "SELECT COALESCE(NULLIF(name, ''), email) AS n FROM contacts WHERE id = ?",
   progetto: 'SELECT name AS n FROM projects WHERE id = ?',
   mail: 'SELECT subject AS n FROM mail_threads WHERE id = ?',
+  nota: 'SELECT substr(text, 1, 120) AS n FROM doc_notes WHERE id = ?',
 };
 const json = (sql, p = {}) => db.prepare(sql).all(p);
 
@@ -116,13 +117,13 @@ function importAll(meta, files, user) {
   const from = meta.by?.id;
   const can = area => allows(user.perms, area, 'write');
   const at = now();
-  const M = { items: new Map(), documents: new Map(), projects: new Map(), contacts: new Map(), entries: new Map(), mail_topics: new Map(), mail_threads: new Map(), mail_messages: new Map() };
+  const M = { items: new Map(), documents: new Map(), projects: new Map(), contacts: new Map(), entries: new Map(), mail_topics: new Map(), mail_threads: new Map(), mail_messages: new Map(), doc_notes: new Map() };
   const n = { articoli: 0, articoliUniti: 0, documenti: 0, voci: 0, progetti: 0, progettiUniti: 0, contatti: 0, contattiUniti: 0, note: 0, conversazioni: 0, saltati: [] };
   const skip = area => { if (!n.saltati.includes(area)) n.saltati.push(area); };
   const has = name => (T[name] || []).length > 0;
   const mine = row => ({ ...row, created_by: uid, deleted_at: null, deleted_by: null });
   // Collegamenti [[tipo:id]]: all'id nuovo, o al nome in chiaro se la cosa non è arrivata.
-  const refMap = { doc: 'documents', voce: 'entries', contatto: 'contacts', progetto: 'projects', mail: 'mail_threads' };
+  const refMap = { doc: 'documents', voce: 'entries', contatto: 'contacts', progetto: 'projects', mail: 'mail_threads', nota: 'doc_notes' };
   const fixRefs = s => (s == null ? s : String(s).replace(REF_RE, (m, kind, id) => {
     const to = M[refMap[kind]].get(+id);
     return to ? `[[${kind}:${to}]]` : (meta.names?.[m] || m.slice(2, -2)).replace(/(^|\s)#/g, '$1');
@@ -222,6 +223,16 @@ function importAll(meta, files, user) {
     }
   }
 
+  // Note sui documenti prima delle voci, che possono citarle ([[nota:…]]); i loro testi si sistemano alla fine.
+  if (can('documenti')) {
+    for (const x of T.doc_notes || []) {
+      const doc = M.documents.get(x.doc_id);
+      if (!doc) continue;
+      M.doc_notes.set(x.id, insert('doc_notes', { ...mine(x), doc_id: doc }));
+      n.note++;
+    }
+  }
+
   // Voci: le mie, con i loro aggiornamenti, progetti, articoli e collegamenti.
   const kindOk = kind => can(kind === 'mail' ? 'mail' : 'voci');
   for (const e of T.entries || []) {
@@ -253,7 +264,7 @@ function importAll(meta, files, user) {
   for (const x of T.entry_items || []) {
     if (M.entries.get(x.entry_id) && M.items.get(x.item_id)) insert('entry_items', { entry_id: M.entries.get(x.entry_id), item_id: M.items.get(x.item_id) });
   }
-  const target = { doc: 'documents', voce: 'entries', contatto: 'contacts', progetto: 'projects', mail: 'mail_threads', articolo: 'items' };
+  const target = { doc: 'documents', voce: 'entries', contatto: 'contacts', progetto: 'projects', mail: 'mail_threads', nota: 'doc_notes', articolo: 'items' };
   for (const x of T.entry_links || []) {
     const to = M[target[x.kind]]?.get(x.target_id);
     if (M.entries.get(x.entry_id) && to) insert('entry_links', { entry_id: M.entries.get(x.entry_id), kind: x.kind, target_id: to });
@@ -277,20 +288,12 @@ function importAll(meta, files, user) {
     }
   }
 
-  // Note sui documenti (dopo le voci: possono citarle).
-  if (can('documenti')) {
-    for (const x of T.doc_notes || []) {
-      const doc = M.documents.get(x.doc_id);
-      if (!doc) continue;
-      insert('doc_notes', { ...mine(x), doc_id: doc, text: fixRefs(x.text) });
-      n.note++;
-    }
-  }
-  // Testi di progetti, contatti e articoli nuovi: collegamenti aggiornati.
-  for (const [table, map] of [['projects', M.projects], ['contacts', M.contacts], ['items', M.items]]) {
+  // Testi di note, progetti, contatti e articoli nuovi: collegamenti aggiornati.
+  for (const [table, map] of [['doc_notes', M.doc_notes], ['projects', M.projects], ['contacts', M.contacts], ['items', M.items]]) {
+    const field = table === 'doc_notes' ? 'text' : 'notes';
     for (const row of T[table] || []) {
       const id = map.get(row.id);
-      if (id && row.notes && /\[\[\w+:\d+\]\]/.test(row.notes)) db.prepare(`UPDATE ${table} SET notes = ? WHERE id = ? AND notes = ?`).run(fixRefs(row.notes), id, row.notes);
+      if (id && row[field] && /\[\[\w+:\d+\]\]/.test(row[field])) db.prepare(`UPDATE ${table} SET ${field} = ? WHERE id = ? AND ${field} = ?`).run(fixRefs(row[field]), id, row[field]);
     }
   }
   return n;

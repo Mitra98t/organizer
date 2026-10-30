@@ -175,6 +175,7 @@ export default {
       const print = n => {
         const done = n.resolved_at ? c.green(' ✓ risolta') : '';
         console.log(`${n.num ? c.yellow(`[${n.num}]`) : c.dim('•')} ${c.bold(userName(D, n.created_by))} ${c.dim(fmtTime(n.updated_at || n.created_at))}${done}`);
+        if (n.quote) console.log(c.dim(`    «${n.quote}»`)); // nota su un pezzo di testo del PDF
         const text = linkRefs(D, rich(n.text), c.blue).split('\n').map(l => `    ${l}`).join('\n');
         console.log(n.resolved_at ? c.dim(text) : text);
       };

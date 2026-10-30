@@ -162,7 +162,7 @@ export function outAttachments(e) {
 }
 
 // Collegamenti in avanti: articoli (#codice) e [[…]] scritti nella mail.
-export const REF_RE = /\[\[(doc|voce|contatto|progetto|mail):(\d+)\]\]/g;
+export const REF_RE = /\[\[(doc|voce|contatto|progetto|mail|nota):(\d+)\]\]/g;
 function linksBlock(itemIds, text) {
   const D = S.data;
   const items = [...new Set(itemIds)].map(id => D.itemById.get(id)).filter(Boolean);
@@ -171,6 +171,7 @@ function linksBlock(itemIds, text) {
     if (kind === 'voce') { const x = D.entryById.get(id); return h('a.ms-link', { href: `#/v/${id}` }, icon('log'), x ? plainRefs(x.title) : `voce ${id}`); }
     if (kind === 'contatto') { const c = D.contactById.get(id); return c && h('a.ms-link', { href: `#/contatti/${id}` }, icon('user'), c.name || c.email); }
     if (kind === 'mail') { const t = D.threadById.get(id); return t && h('a.ms-link', { href: `#/t/${t.topic_id}?th=${id}` }, icon('mail'), t.subject); }
+    if (kind === 'nota') { const n = D.docNoteById.get(id); return n && h('a.ms-link', { href: `#/d/${n.doc_id}?n=${id}` }, icon('log'), plainRefs(`[[nota:${id}]]`)); }
     const p = D.projectById?.get(id);
     return p && h('a.ms-link', { href: `#/p/${id}` }, '@', p.tag || p.name);
   }).filter(Boolean);

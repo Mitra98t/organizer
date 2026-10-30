@@ -204,8 +204,9 @@ export function syncEntryItems(entryId, user) {
 }
 
 // mail = una conversazione di mail (mail_threads): personale, la vede solo chi la riceve.
-export const LINK_KINDS = ['doc', 'voce', 'contatto', 'progetto', 'mail'];
-const REF_RE = /\[\[(doc|voce|contatto|progetto|mail):(\d+)\]\]/g;
+// nota = una nota su un documento (doc_notes): privata di chi la scrive, salvo condivisione.
+export const LINK_KINDS = ['doc', 'voce', 'contatto', 'progetto', 'mail', 'nota'];
+const REF_RE = /\[\[(doc|voce|contatto|progetto|mail|nota):(\d+)\]\]/g;
 const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // Gli altri collegamenti (per i backlink): [[tipo:ID]] ovunque nel testo della voce e, nelle mail, i codici
@@ -666,6 +667,13 @@ route('POST', '/api/refs', async ({ user, body }) => {
       const t = db.prepare('SELECT owner_id, topic_id, subject, deleted_at FROM mail_threads WHERE id = ?').get(id);
       if (!t || t.deleted_at) out[key] = { status: 'gone' };
       else out[key] = t.owner_id === uid && allows(user.perms, 'mail') ? { status: 'ok', title: t.subject, topic: t.topic_id } : { status: 'hidden' };
+    } else if (kind === 'nota') {
+      const n = db.prepare(`SELECT n.id, n.doc_id, n.text, n.resolved_at, n.deleted_at, d.deleted_at AS doc_deleted
+        FROM doc_notes n JOIN documents d ON d.id = n.doc_id WHERE n.id = ?`).get(id);
+      if (!n || n.deleted_at || n.doc_deleted) out[key] = { status: 'gone' };
+      else if (db.prepare(`SELECT 1 FROM doc_notes n WHERE n.id = $id AND ${NVIS_ANY}`).get({ id, uid }) && allows(user.perms, 'documenti')) {
+        out[key] = { status: 'ok', title: n.text, doc: n.doc_id, done: !!n.resolved_at };
+      } else out[key] = { status: 'hidden' };
     }
   }
   return out;
@@ -1108,6 +1116,17 @@ function notePosition(b) {
   return { page, x, y, z };
 }
 
+// Testo evidenziato (solo per le note con una pagina): il testo selezionato e i suoi riquadri.
+function noteMarks(b, page) {
+  if (page == null || !Array.isArray(b.marks) || !b.marks.length) return { quote: null, marks: null };
+  const unit = n => typeof n === 'number' && n >= -0.01 && n <= 1.01;
+  const marks = b.marks.slice(0, 300).map(m => {
+    if (!Array.isArray(m) || m.length !== 5 || !Number.isInteger(m[0]) || m[0] < 1 || !m.slice(1).every(unit)) fail(400, 'Evidenziazione non valida');
+    return [m[0], ...m.slice(1).map(n => Math.round(Math.min(1, Math.max(0, n)) * 1e4) / 1e4)];
+  });
+  return { quote: String(b.quote || '').replace(/\s+/g, ' ').trim().slice(0, 2000) || null, marks: JSON.stringify(marks) };
+}
+
 // Le note sono private di chi le scrive; +persona / +all nel testo le condividono (e non restano nel testo).
 const getNote = (id, user) => db.prepare(`SELECT * FROM doc_notes n WHERE n.id = $id AND n.deleted_at IS NULL AND ${NVIS_ANY}`)
   .get({ id: +id, uid: user.id }) || fail(404, 'Nota non trovata');
@@ -1132,9 +1151,10 @@ route('POST', '/api/docs/:id/notes', async ({ params, user, body }) => {
   const nt = noteText(b.text);
   if (!nt.text) fail(400, 'Scrivi la nota');
   const { page, x, y, z } = notePosition(b);
+  const { quote, marks } = noteMarks(b, z == null ? page : null);
   const t = now();
-  const id = insertId(db.prepare(`INSERT INTO doc_notes (doc_id, page, x, y, z, text, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(d.id, page, x, y, z, nt.text, user.id, t, t));
+  const id = insertId(db.prepare(`INSERT INTO doc_notes (doc_id, page, x, y, z, text, quote, marks, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(d.id, page, x, y, z, nt.text, quote, marks, user.id, t, t));
   addShares('docnote', id, nt.ids.filter(x => x !== user.id), nt.all);
   notifyNote(user, { id, doc_id: d.id, text: nt.text }, nt.ids);
   return { id };
