@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { db, tx, withWorkspace } from './db.js';
 import { acc, workspacesOf, workspaceById, permsIn, mailAddressesOf, defaultWorkspace } from './accounts.js';
 import { route, entryFor, updateEntry, addLog, insertId, syncEntryItems, docKind, CVIS_ANY } from './api.js';
-import { newThread, ensureEntryThread, touchThread, autoLink, findThread, dropEmptyTopics, ensureTopic } from './maildata.js';
+import { newThread, ensureEntryThread, touchThread, autoLink, findThread, dropEmptyTopics, ensureTopic, relinkThread } from './maildata.js';
 import { mailParts, sendFile } from './mail.js';
 import { allows } from './perms.js';
 import { bump, mailExtOn, openMailExtStream, notifyMailExt } from './events.js';
@@ -105,6 +105,7 @@ route('PATCH', '/api/mail/threads/:id', async ({ params, user, body }) => {
         .run(...(b.read === false ? [t.id] : [at, t.id]));
     }
     if (b.archived !== undefined) db.prepare('UPDATE mail_threads SET archived_at = ? WHERE id = ?').run(b.archived ? at : null, t.id);
+    if (b.archived === false && t.archived_at) relinkThread(t.id); // torna attiva: si ricontrolla con i codici di adesso
     if (b.subject !== undefined) db.prepare('UPDATE mail_threads SET subject = ? WHERE id = ?').run(str(b.subject, 300) || t.subject, t.id);
     if (b.starred !== undefined) db.prepare('UPDATE mail_threads SET starred = ? WHERE id = ?').run(b.starred ? 1 : 0, t.id);
     if (b.hue !== undefined) db.prepare('UPDATE mail_threads SET hue = ? WHERE id = ?').run(hueOf(b.hue), t.id);

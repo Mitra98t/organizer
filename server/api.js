@@ -14,7 +14,7 @@ import {
 import { HttpError, fail, now, bool, str, sendJson, clientIp } from './util.js';
 import { rev, openStream, dropUser, mailExtOn, mailExtVersion } from './events.js';
 import { chatSync, readKey } from './chatdata.js';
-import { threadsSync, ensureEntryThread, autoLink } from './maildata.js';
+import { threadsSync, ensureEntryThread, autoLink, relinkItem } from './maildata.js';
 import { notify, notificationsOf } from './notify.js';
 import { allows, assertCan, entryArea, readableKinds } from './perms.js';
 import { currentWorkspace } from './db.js';
@@ -895,6 +895,7 @@ route('POST', '/api/items', async ({ user, body }) => {
       .run(code, user.id, t, t));
     setFields('items', id, itemFields(b));
     if (projectId) db.prepare('INSERT INTO project_items (project_id, item_id, created_at) VALUES (?, ?, ?)').run(projectId, id, t);
+    relinkItem(id); // le mail attive che lo citavano già ora ci sono collegate
     return { id };
   });
 }, { area: 'magazzino' });
@@ -917,6 +918,7 @@ route('PATCH', '/api/items/:id', async ({ params, body }) => {
     }
     f.updated_at = now();
     setFields('items', it.id, f);
+    if (f.code) relinkItem(it.id); // codice nuovo: si ricontrollano le mail attive
   });
 }, { area: 'magazzino' });
 
@@ -954,6 +956,7 @@ route('POST', '/api/items/:id/aliases', async ({ params, user, body }) => {
     const ids = db.prepare(`SELECT DISTINCT e.id FROM entries e LEFT JOIN entry_log l ON l.entry_id = e.id
       WHERE e.title LIKE $q ESCAPE '\\' OR e.notes LIKE $q ESCAPE '\\' OR l.text LIKE $q ESCAPE '\\'`).all({ q });
     for (const { id } of ids) syncEntryItems(id, user);
+    relinkItem(it.id); // e le conversazioni di mail attive che lo citano
   });
 }, { area: 'magazzino' });
 

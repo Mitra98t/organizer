@@ -300,6 +300,24 @@ test('thunderbird: thread, mandata, risposta, storia, collegamenti, archivio', a
   const looseLinks = (await tb('GET', '/sync').then(json)).threadLinks.filter(l => l.thread_id === loose.thread && l.kind === 'articolo').map(l => l.target_id);
   assert.deepEqual(looseLinks.sort(), [s44, sch.id].sort());
 
+  // Codici nuovi in magazzino (articolo creato, codice cambiato, alternativo aggiunto): le conversazioni attive
+  // che li citano si collegano; quelle archiviate no, finché non tornano attive.
+  const mk = (n, body) => tb('POST', '/mail/incoming', { message_id: `<rl${n}@fornitore.it>`, from: `p${n}@fornitore.it`, subject: `Relè ${n}`, body, inbox: true }).then(json);
+  const ra = await mk(1, 'Serve il RLY-77 e il modulo G5V1, poi il nuovo RLY-88.');
+  const rb = await mk(2, 'Anche qui RLY-77.');
+  await tb('PATCH', `/mail/threads/${rb.thread}`, { archived: true });
+  const linksOf = async th => (await tb('GET', '/sync').then(json)).threadLinks.filter(l => l.thread_id === th && l.kind === 'articolo').map(l => l.target_id);
+  const { id: rly } = await tb('POST', '/items', { code: 'RLY-77' }).then(json);
+  assert.deepEqual([await linksOf(ra.thread), await linksOf(rb.thread)], [[rly], []]);
+  const { id: abc } = await tb('POST', '/items', { code: 'ABC-100' }).then(json);
+  await tb('POST', `/items/${abc}/aliases`, { code: 'G5V-1' });
+  assert.deepEqual((await linksOf(ra.thread)).sort(), [rly, abc].sort());
+  const { id: third } = await tb('POST', '/items', { code: 'XYZ-1' }).then(json);
+  await tb('PATCH', `/items/${third}`, { code: 'RLY-88' });
+  assert.ok((await linksOf(ra.thread)).includes(third));
+  await tb('PATCH', `/mail/threads/${rb.thread}`, { archived: false });
+  assert.deepEqual(await linksOf(rb.thread), [rly]);
+
   // Contatti da non proporre: regole dell'account (minuscole, senza doppioni).
   await tb('PATCH', '/me', { mailIgnore: ['NoReply', 'noreply', '@amazon.it'] });
   assert.deepEqual((await tb('GET', '/sync').then(json)).mailIgnore, ['noreply', '@amazon.it']);

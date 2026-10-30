@@ -3,6 +3,9 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.17.4 — 2026-10-30
+- **Collegamenti delle mail sempre aggiornati**: quando nasce un articolo, ne cambia il codice o gli si aggiunge un codice alternativo, le conversazioni di mail attive che lo citano (anche scritto alla buona) gli si collegano da sole. Quelle archiviate si ricontrollano per intero quando tornano attive. I collegamenti tolti a mano non tornano.
+
 ## 0.17.3 — 2026-10-30
 - Mail: nelle schede dei topic non c'è più il pallino per cambiare colore (si cambia aprendo il topic); la scheda mostra il colore nel bordo in alto.
 
