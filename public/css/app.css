@@ -471,7 +471,7 @@ a.ext { color: var(--accent); text-decoration: underline; text-decoration-color:
 .ac-i { display: flex; align-items: baseline; gap: 10px; padding: 7px 9px; border-radius: 7px; cursor: pointer; font-size: 14px; }
 .ac-i:hover { background: var(--panel-2); }
 .ac-i.on { background: var(--accent-soft); }
-.ac-l { font-family: var(--mono); font-weight: 600; white-space: nowrap; }
+.ac-l { font-family: var(--mono); font-weight: 600; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .ac-l.code { color: var(--code-ink); }
 .ac-h { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
 .ac-x { flex: none; font-size: 12px; color: var(--muted); font-family: var(--mono); }

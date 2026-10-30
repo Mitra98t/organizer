@@ -3,6 +3,9 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.20.1 — 2026-10-30
+- Il menu dei suggerimenti (`[[`, `#`, `@`, `+`…) scorre insieme alla selezione con le frecce, ed è più largo (fino a 720 px): titoli e dettagli si leggono per intero.
+
 ## 0.20 — 2026-10-30
 - **Note su un pezzo di testo nei PDF**: trascinando sul testo (o con doppio o triplo clic) la nota si attacca a quel testo, che resta evidenziato nel documento e citato nella nota; il clic su un punto per una nota lì resta com'è. Cliccando il testo evidenziato si apre la sua nota. Sul telefono: tieni premuto per selezionare, poi **Nota sul testo**. La citazione compare anche in `org doc notes` e nella todo creata dalla nota.
 - **Citare una nota di un documento con `[[`**: le note sui file (anche quelle su un pezzo di testo) compaiono nei suggerimenti di `[[` e nella barra comandi come "nota su file"; il link `[[nota:ID]]` apre il documento sulla nota, e la nota selezionata mostra le voci che la citano ("Citata in"). Una nota non condivisa con te si vede come "non hai permessi sufficienti". Funziona anche nell'esportazione e importazione dei dati.

@@ -406,13 +406,16 @@ function draw() {
   it.extra && h('span.ac-x', it.extra))));
   box.hidden = false;
   place();
+  // Il menu scorre con la selezione (frecce su e giù), anche quando dall'ultima si torna alla prima.
+  box.querySelector('.ac-i.on')?.scrollIntoView({ block: 'nearest' });
 }
 
 function place() {
   if (!st.el.isConnected) return close();
   const r = st.el.getBoundingClientRect();
   const vh = window.visualViewport?.height ?? window.innerHeight;
-  const width = Math.min(Math.max(r.width, 260), 460, window.innerWidth - 16);
+  // Largo almeno quanto il campo, e abbastanza da leggere titolo, dettaglio e tipo per intero.
+  const width = Math.min(Math.max(r.width, 420), 720, window.innerWidth - 16);
   box.style.width = `${width}px`;
   box.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - width - 8))}px`;
   const below = r.bottom + 4;
