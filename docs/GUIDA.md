@@ -102,6 +102,8 @@ Un progetto può stare dentro un altro (campo "Dentro" nella sua pagina, o `@pad
 
 ## Documenti e note
 
+Con più file, **Scarica tutti** nella sezione Documenti dell'articolo li scarica in un unico `.zip` (`CODICE-documenti.zip`, ognuno con il nome dato nell'app; i link restano fuori).
+
 Cliccando un documento nella scheda di un articolo si apre il visualizzatore con le note a lato. Il documento usa tutta la larghezza della pagina; con **note** nascondi la barra delle note (la preferenza resta), con **espandi** sparisce anche il resto dell'app e il documento occupa tutta la finestra (Esc per tornare).
 
 - **PDF** (con PDF.js, incluso nel progetto in `public/vendor/pdfjs`, nessuna connessione esterna) e **immagini**: clicchi un punto e lasci una nota lì; il segnaposto numerato resta al suo posto a ogni zoom e si trascina per spostarlo, anche su un’altra pagina. Cliccando una nota il documento scorre al punto, e viceversa.
@@ -109,7 +111,8 @@ Cliccando un documento nella scheda di un articolo si apre il visualizzatore con
 - **Disegni DXF** (con dxf-parser, incluso nel progetto): il disegno diventa un'immagine su carta bianca (linee, polilinee, cerchi, archi, ellissi, spline, testi, blocchi, quote; i layer spenti no) e funziona come un'immagine: zoom fino a 12×, note nei punti. I DWG no: il formato è chiuso, si esportano in DXF dal programma CAD.
 - **Modelli 3D** (STL, 3MF, STEP, con three.js e OpenCascade inclusi nel progetto): il modello si gira, si sposta e si ingrandisce; clicchi un punto della superficie e lasci una nota lì. I segnaposto seguono la vista e si trascinano sul modello; cliccando una nota la vista si gira verso il punto. Gli STEP si convertono nel browser: un modello grande può richiedere qualche secondo.
 - **File di testo**: anteprima del contenuto.
-- **Cerca nel documento**: ⌘F (Ctrl+F su Linux) apre la ricerca nel PDF o nel file di testo aperto; Invio e Maiusc+Invio passano da un risultato all'altro, Esc chiude. Nella revisione affiancata cerca nel documento toccato per ultimo. Funziona sui PDF con testo vero (non sulle scansioni).
+- **Tabelle CSV e TSV** (`.csv`, `.tsv`, `.scsv`): le colonne in una tabella con righe zebrate, intestazione che resta in vista scorrendo e numero di riga. Il separatore (virgola, punto e virgola, tab o `|`) si riconosce da solo; i campi fra virgolette possono contenere il separatore e andare a capo; i CSV salvati da Excel con le lettere accentate si leggono giusti. Si vedono le prime 5000 righe (fino a 8 MB): oltre, si scarica il file.
+- **Cerca nel documento**: ⌘F (Ctrl+F su Linux) apre la ricerca nel PDF, nel file di testo o nella tabella aperta; Invio e Maiusc+Invio passano da un risultato all'altro, Esc chiude. Nella revisione affiancata cerca nel documento toccato per ultimo. Funziona sui PDF con testo vero (non sulle scansioni).
 - **Link a un PDF** (es. un datasheet su mouser.com): il server lo scarica al momento e lo mostra come un PDF caricato, con le stesse note. Solo indirizzi internet pubblici (mai la rete locale), solo PDF, massimo 60 MB (`REMOTE_MAX_MB`); se il sito mostra una pagina o una protezione anti-bot al posto del file, compare il motivo e il link originale.
 - **Qualsiasi altro file o link** (firmware, archivi, …): niente anteprima, ma le **note generali** sul file funzionano per tutti.
 

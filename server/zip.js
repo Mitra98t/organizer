@@ -1,5 +1,5 @@
 // Archivio ZIP minimale (deflate, nomi UTF-8), senza dipendenze: serve a impacchettare l'estensione di
-// Thunderbird (un .xpi è uno zip) e l'esportazione dei dati (transfer.js). files: [{ name, data: Buffer }].
+// Thunderbird (un .xpi è uno zip), l'esportazione dei dati (transfer.js) e i documenti di un articolo. files: [{ name, data: Buffer }].
 // unzip legge gli archivi senza cifratura né ZIP64 (quelli fatti qui, o con gli strumenti comuni).
 import zlib from 'node:zlib';
 
@@ -11,13 +11,16 @@ export function zip(files) {
   let offset = 0;
   for (const f of files) {
     const name = Buffer.from(f.name);
-    const comp = zlib.deflateRawSync(f.data);
+    // PDF, immagini e firmware spesso non si comprimono: in quel caso si salvano così come sono.
+    const packed = zlib.deflateRawSync(f.data);
+    const method = packed.length < f.data.length ? 8 : 0;
+    const comp = method ? packed : f.data;
     const crc = zlib.crc32(f.data);
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
     local.writeUInt16LE(20, 4); // versione necessaria
     local.writeUInt16LE(0x0800, 6); // nomi in UTF-8
-    local.writeUInt16LE(8, 8); // deflate
+    local.writeUInt16LE(method, 8); // deflate o senza compressione
     local.writeUInt16LE(DOS_DATE, 12);
     local.writeUInt32LE(crc, 14);
     local.writeUInt32LE(comp.length, 18);
@@ -30,7 +33,7 @@ export function zip(files) {
     c.writeUInt16LE(20, 4);
     c.writeUInt16LE(20, 6);
     c.writeUInt16LE(0x0800, 8);
-    c.writeUInt16LE(8, 10);
+    c.writeUInt16LE(method, 10);
     c.writeUInt16LE(DOS_DATE, 14);
     c.writeUInt32LE(crc, 16);
     c.writeUInt32LE(comp.length, 20);

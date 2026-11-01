@@ -969,6 +969,7 @@ async function uploadDocs(it, files) {
 function docSection(it) {
   const D = S.data;
   const docs = D.docsOf.get(it.id) || [];
+  const files = docs.filter(d => !d.url).length;
   const fileInput = h('input', { type: 'file', multiple: true, hidden: true, onchange: ev => { const files = [...ev.target.files]; ev.target.value = ''; uploadDocs(it, files); } });
   const addLink = () => {
     const url = prompt('URL del documento (repo, wiki, drive…)');
@@ -982,7 +983,10 @@ function docSection(it) {
       h('input', { placeholder: 'versione', size: 9, value: ui.docVer, 'data-fk': `docver-${it.id}`, oninput: ev => { ui.docVer = ev.target.value; } }),
       h('button.btn', { onclick: () => fileInput.click() }, icon('upload'), 'File'),
       h('button.btn.ghost', { onclick: addLink }, icon('link'), 'Link'),
-      fileInput),
+      fileInput,
+      // Un link e non un pulsante: resta attivo anche per chi può solo leggere.
+      files > 1 && h('a.btn.ghost.dl-all', { href: `api/items/${it.id}/docs.zip`, download: '', title: `I ${files} file dell'articolo in un .zip (i link no)` },
+        icon('download'), 'Scarica tutti')),
     !docs.length && h('p.muted.drop-hint', 'Trascina qui i file, oppure usa i pulsanti. Un firmware con versione aggiorna il campo "Firmware".'),
     docs.map(d => h('div.doc',
       docMeta(d),

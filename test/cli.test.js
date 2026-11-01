@@ -144,6 +144,18 @@ test('documenti: carica, rinomina, scarica', async () => {
   fs.mkdirSync(out);
   await org(['doc', 'get', String(id), '-o', out]);
   assert.deepEqual(fs.readFileSync(path.join(out, 'firmware relè.bin')), fs.readFileSync(src));
+
+  // Scarica tutti: i file dell'articolo in un .zip, con i nomi dell'app; due nomi uguali non si sovrascrivono.
+  await org(['doc', 'up', 'SCH-042', stl, '-k', 'altro']);
+  const zr = await call('GET', `/items/${item.id}/docs.zip`, { token: config().token });
+  assert.equal(zr.status, 200);
+  assert.match(zr.headers.get('content-disposition'), /SCH-042-documenti\.zip/);
+  const { unzip } = await import('../server/zip.js');
+  const files = unzip(Buffer.from(await zr.arrayBuffer()));
+  assert.deepEqual([...files.keys()].sort(), ['firmware relè.bin', 'staffa (2).stl', 'staffa.stl']);
+  assert.deepEqual(files.get('firmware relè.bin')(), fs.readFileSync(src));
+  assert.equal(files.get('staffa (2).stl')().toString(), fs.readFileSync(stl, 'utf8'));
+  assert.equal((await call('GET', '/items/999999/docs.zip', { token: config().token })).status, 404);
 });
 
 test('thunderbird: thread, mandata, risposta, storia, collegamenti, archivio', async () => {

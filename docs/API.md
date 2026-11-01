@@ -182,6 +182,7 @@ Parametri: `kind`, `name` (nome del file), `version`, `label` (nome mostrato). U
 | | |
 |---|---|
 | `GET /api/docs/:id/file` | scarica; il nome nel `Content-Disposition` è `label` più l'estensione originale (`?inline=1` per vederlo nel browser) |
+| `GET /api/items/:id/docs.zip` | tutti i file dell'articolo in un `.zip` (`CODICE-documenti.zip`), con i nomi come nel download singolo; due nomi uguali diventano `nome (2).ext`; 404 se l'articolo non ha file |
 | `GET /api/docs/:id/remote` | il PDF di un link esterno, scaricato dal server (solo indirizzi pubblici, max 60 MB) |
 | `PATCH /api/docs/:id` `{label?, kind?, version?}` | rinomina, cambia tipo o versione |
 | `DELETE /api/docs/:id` | nel cestino |

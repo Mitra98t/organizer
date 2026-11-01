@@ -18,6 +18,7 @@ import { threadsSync, ensureEntryThread, autoLink, relinkItem } from './maildata
 import { notify, notificationsOf } from './notify.js';
 import { allows, assertCan, entryArea, readableKinds } from './perms.js';
 import { currentWorkspace } from './db.js';
+import { zip } from './zip.js';
 
 const KINDS = ['todo', 'mail', 'note'];
 const STATUSES = ['open', 'paused', 'closed'];
@@ -1044,6 +1045,15 @@ route('POST', '/api/items/:id/docs', async ({ req, params, query, user, body }) 
   return { id };
 }, { area: 'documenti' });
 
+// Scaricando, il file prende il nome dato nell'app (con l'estensione del file originale).
+function downloadName(d) {
+  const ext = path.extname(d.filename || '');
+  const label = (d.label || '').replace(/[\\/:*?"<>|\r\n]+/g, ' ').replace(/\s+/g, ' ').replace(/\s+(\.\w+)$/, '$1').trim();
+  return label ? (ext && !label.toLowerCase().endsWith(ext.toLowerCase()) ? `${label}${ext}` : label) : d.filename || `documento-${d.id}`;
+}
+
+const attachment = name => `attachment; filename="${name.replace(/[^\x20-\x7e]|"/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`;
+
 export const INLINE_OK = /^(application\/pdf|image\/(png|jpeg|gif|webp)|text\/plain)$/;
 
 route('GET', '/api/docs/:id/file', ({ res, params, query }) => {
@@ -1052,19 +1062,43 @@ route('GET', '/api/docs/:id/file', ({ res, params, query }) => {
   const file = path.join(UPLOAD_DIR, d.stored);
   if (!fs.existsSync(file)) fail(404, 'File mancante sul server');
   const safe = INLINE_OK.test(d.mime || '');
-  // Scaricando, il file prende il nome dato nell'app (con l'estensione del file originale).
-  const ext = path.extname(d.filename || '');
-  const label = (d.label || '').replace(/[\\/:*?"<>|\r\n]+/g, ' ').replace(/\s+/g, ' ').replace(/\s+(\.\w+)$/, '$1').trim();
-  const name = label ? (ext && !label.toLowerCase().endsWith(ext.toLowerCase()) ? `${label}${ext}` : label) : d.filename || `documento-${d.id}`;
+  const name = downloadName(d);
   res.writeHead(200, {
     'Content-Type': safe ? d.mime : 'application/octet-stream',
     'Content-Length': fs.statSync(file).size,
-    'Content-Disposition': `${query.inline && safe ? 'inline' : 'attachment'}; filename="${name.replace(/[^\x20-\x7e]|"/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+    'Content-Disposition': query.inline && safe ? `inline; filename="${name.replace(/[^\x20-\x7e]|"/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}` : attachment(name),
     'X-Content-Type-Options': 'nosniff',
     'Cache-Control': 'private, max-age=3600',
     ...(d.mime === 'application/pdf' ? {} : { 'Content-Security-Policy': "sandbox; default-src 'none'; img-src 'self'" }),
   });
   fs.createReadStream(file).pipe(res);
+}, { area: 'documenti' });
+
+// Tutti i file di un articolo in un .zip (i link restano fuori: non c'è un file da scaricare).
+route('GET', '/api/items/:id/docs.zip', ({ res, params }) => {
+  const it = db.prepare('SELECT code FROM items WHERE id = ?').get(+params.id) || fail(404, 'Articolo non trovato');
+  const docs = db.prepare('SELECT * FROM documents WHERE item_id = ? AND deleted_at IS NULL AND stored IS NOT NULL ORDER BY created_at').all(+params.id);
+  const used = new Set();
+  const files = [];
+  for (const d of docs) {
+    const file = path.join(UPLOAD_DIR, d.stored);
+    if (!fs.existsSync(file)) continue;
+    // Due documenti con lo stesso nome: il secondo diventa "nome (2).ext".
+    let name = downloadName(d);
+    const ext = path.extname(name);
+    for (let n = 2; used.has(name.toLowerCase()); n++) name = `${path.basename(name, ext).replace(/ \(\d+\)$/, '')} (${n})${ext}`;
+    used.add(name.toLowerCase());
+    files.push({ name, data: fs.readFileSync(file) });
+  }
+  if (!files.length) fail(404, 'L\'articolo non ha file da scaricare');
+  const body = zip(files);
+  res.writeHead(200, {
+    'Content-Type': 'application/zip',
+    'Content-Length': body.length,
+    'Content-Disposition': attachment(`${it.code.replace(/[\\/:*?"<>|\r\n]+/g, '_')}-documenti.zip`),
+    'Cache-Control': 'no-store',
+  });
+  res.end(body);
 }, { area: 'documenti' });
 
 route('PATCH', '/api/docs/:id', async ({ params, body }) => {

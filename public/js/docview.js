@@ -15,6 +15,9 @@ const PDFJS = new URL('../vendor/pdfjs/', import.meta.url).href;
 // nei datasheet, non si legge), profili colore e decodificatori di immagini.
 const PDF_RES = { standardFontDataUrl: `${PDFJS}standard_fonts/`, cMapUrl: `${PDFJS}cmaps/`, cMapPacked: true, iccUrl: `${PDFJS}iccs/`, wasmUrl: `${PDFJS}wasm/` };
 const TEXT_MAX = 512 * 1024;
+const TABLE_MAX = 8 * 1024 * 1024;
+const TABLE_ROWS = 5000; // oltre, il resto si legge scaricando il file
+const TABLE_EXT = /\.(csv|tsv|scsv)$/i;
 let pdfjsLib = null;
 const viewers = new Map(); // id documento → visualizzatore aperto
 
@@ -39,7 +42,8 @@ function kindOf(d) {
   if (/\.dxf$/i.test(d.filename || '')) return 'cad';
   if (d.mime === 'application/pdf' || /\.pdf$/i.test(d.filename || '')) return 'pdf';
   if (/^image\/(png|jpeg|gif|webp)$/.test(d.mime || '')) return 'image';
-  if (/^text\//.test(d.mime || '') || /\.(txt|log|md|csv|ini|cfg|json|ya?ml|h|c|cpp|py|sh)$/i.test(d.filename || '')) return 'text';
+  if (TABLE_EXT.test(d.filename || '') || d.mime === 'text/csv' || d.mime === 'text/tab-separated-values') return 'table';
+  if (/^text\//.test(d.mime || '') || /\.(txt|log|md|ini|cfg|json|ya?ml|h|c|cpp|py|sh)$/i.test(d.filename || '')) return 'text';
   return 'none';
 }
 
@@ -79,6 +83,13 @@ export function docThumb(d, width = 300) {
       thumbs.set(key, fetch(docFileUrl(d), { credentials: 'same-origin' }).then(r => (r.ok ? r.text() : '')).catch(() => ''));
     }
     return thumbs.get(key).then(t => t && h('pre.peek-text', t.split('\n').slice(0, 14).join('\n')));
+  }
+  if (kind === 'table' && (d.size ?? 0) < TABLE_MAX) {
+    if (!thumbs.has(key)) thumbs.set(key, fetchText(d).catch(() => ''));
+    return thumbs.get(key).then(t => {
+      const rows = t && parseCsv(t, d.filename, 12);
+      return rows?.length ? h('div.peek-table', csvTable(rows.map(r => r.slice(0, 6))).table) : null;
+    });
   }
   return Promise.resolve(null);
 }
@@ -123,6 +134,7 @@ function getViewer(d) {
   else if (v.kind === 'image') openImage(v, d);
   else if (v.kind === 'cad') openCad(v, d);
   else if (v.kind === 'text') openText(v, d);
+  else if (v.kind === 'table') openTable(v, d);
   else if (v.kind === 'model') openModel(v, d);
   else v.status = 'ready';
   return v;
@@ -249,6 +261,76 @@ async function openText(v, d) {
     if (!r.ok) throw new Error(`errore ${r.status}`);
     v.rawText = await r.text();
     v.pagesEl.replaceChildren(v.textEl = h('pre.dv-text', v.rawText));
+    v.status = 'ready';
+  } catch (e) {
+    fail(v, `Impossibile leggere il file: ${e.message}`);
+  }
+}
+
+// ---------- tabelle (CSV, TSV) ----------
+// Il file come testo: UTF-8, oppure Windows-1252 se non lo è (i CSV salvati da Excel).
+async function fetchText(d) {
+  const r = await fetch(docFileUrl(d), { credentials: 'same-origin' });
+  if (!r.ok) throw new Error(`errore ${r.status}`);
+  const buf = await r.arrayBuffer();
+  let t;
+  try { t = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch { t = new TextDecoder('windows-1252').decode(buf); }
+  return t.replace(/^\uFEFF/, '');
+}
+
+// Separatore: tab per .tsv, ";" per .scsv, altrimenti quello che compare di più nella prima riga (fuori dalle
+// virgolette) fra , ; tab e |. Le virgolette seguono la RFC 4180: "" dentro un campo è una virgoletta.
+function parseCsv(text, filename = '', limit = Infinity) {
+  let sep = /\.tsv$/i.test(filename) ? '\t' : /\.scsv$/i.test(filename) ? ';' : null;
+  if (!sep) {
+    const first = text.slice(0, text.search(/\r?\n|$/)).replace(/"[^"]*"/g, '');
+    sep = [',', ';', '\t', '|'].map(c => [c, first.split(c).length]).sort((a, b) => b[1] - a[1])[0][0];
+  }
+  const rows = [];
+  let row = [], cell = '', quoted = false;
+  for (let i = 0; i < text.length && rows.length < limit; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c !== '"') cell += c;
+      else if (text[i + 1] === '"') { cell += '"'; i++; } else quoted = false;
+    } else if (c === '"' && cell === '') quoted = true;
+    else if (c === sep) { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(cell); rows.push(row); row = []; cell = '';
+    } else cell += c;
+  }
+  if ((cell || row.length) && rows.length < limit) { row.push(cell); rows.push(row); }
+  return rows;
+}
+
+// Prima riga come intestazione (resta in vista scorrendo), righe zebrate, numero di riga a sinistra.
+function csvTable(rows) {
+  const cols = Math.max(...rows.map(r => r.length));
+  const pad = r => [...r, ...Array(cols - r.length).fill('')];
+  const cells = [];
+  const tr = (r, i, tag) => {
+    const tds = pad(r).map(x => h(tag, x));
+    cells.push(tds);
+    return h('tr', h(`${tag}.n`, i || ''), ...tds);
+  };
+  const [head, ...body] = rows;
+  const table = h('table.dv-table', h('thead', tr(head, 0, 'th')), h('tbody', body.map((r, i) => tr(r, i + 1, 'td'))));
+  return { table, cells };
+}
+
+async function openTable(v, d) {
+  if (d.size > TABLE_MAX) return fail(v, `Tabella troppo grande per l'anteprima (${fmtSize(d.size)}): scaricala.`);
+  try {
+    const text = await fetchText(d);
+    const all = parseCsv(text, d.filename, TABLE_ROWS + 2);
+    if (!all.length) return fail(v, 'Il file è vuoto.');
+    v.rows = all.slice(0, TABLE_ROWS + 1);
+    const { table, cells } = csvTable(v.rows);
+    v.cells = cells;
+    v.textEl = table;
+    v.pagesEl.replaceChildren(h('div.dv-table-wrap', table,
+      all.length > v.rows.length && h('p.muted.dv-table-more', `Mostro le prime ${TABLE_ROWS} righe: scarica il file per vederle tutte.`)));
     v.status = 'ready';
   } catch (e) {
     fail(v, `Impossibile leggere il file: ${e.message}`);
@@ -458,7 +540,7 @@ function updatePageLabel(v) {
 // PDF.js (una volta sola), i risultati sono riquadri sopra la pagina in percentuale (seguono lo zoom).
 // Nei file di testo le occorrenze si evidenziano direttamente. Maiuscole e minuscole non contano.
 const MOD = /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl+';
-const searchable = v => v.kind === 'pdf' || v.kind === 'text';
+const searchable = v => v.kind === 'pdf' || v.kind === 'text' || v.kind === 'table';
 let lastActive = null; // nella revisione affiancata: il documento toccato per ultimo
 
 function searchBar(v) {
@@ -567,6 +649,11 @@ async function runSearch(v) {
   if (v.kind === 'text') {
     const { norm, at } = normalize(v.rawText || '');
     for (let i = norm.indexOf(q); i >= 0; i = norm.indexOf(q, i + q.length)) v.matches.push({ from: at[i], to: at[i + q.length] });
+  } else if (v.kind === 'table') {
+    v.rows.forEach((r, ri) => r.forEach((x, ci) => {
+      const { norm, at } = normalize(x);
+      for (let i = norm.indexOf(q); i >= 0; i = norm.indexOf(q, i + q.length)) v.matches.push({ cell: [ri, ci], from: at[i], to: at[i + q.length] });
+    }));
   } else {
     v.searchCount.textContent = 'cerco…';
     let empty = true;
@@ -615,8 +702,8 @@ function showMatch(v, i) {
   v.searchCount.textContent = `${i + 1} / ${v.matches.length}`;
   drawMatches(v);
   const m = v.matches[i];
-  if (v.kind === 'text') {
-    v.textEl.querySelector('mark.on')?.scrollIntoView({ block: 'center' });
+  if (v.kind === 'text' || v.kind === 'table') {
+    v.textEl.querySelector('mark.on')?.scrollIntoView({ block: 'center', inline: 'nearest' });
     return;
   }
   const p = v.pages[m.page - 1];
@@ -639,6 +726,31 @@ function drawMatches(v) {
     });
     parts.push(v.rawText.slice(last));
     v.textEl.replaceChildren(...parts);
+    return;
+  }
+  if (v.kind === 'table') {
+    if (!v.cells) return;
+    for (const [ri, ci] of v.marked || []) v.cells[ri][ci].textContent = v.rows[ri][ci];
+    const byCell = new Map();
+    (v.matches || []).forEach((m, i) => {
+      const k = m.cell.join(':');
+      if (!byCell.has(k)) byCell.set(k, []);
+      byCell.get(k).push([m, i]);
+    });
+    v.marked = [];
+    for (const list of byCell.values()) {
+      const [ri, ci] = list[0][0].cell;
+      const x = v.rows[ri][ci];
+      const parts = [];
+      let last = 0;
+      for (const [m, i] of list) {
+        parts.push(x.slice(last, m.from), h('mark', { class: i === v.matchIndex ? 'on' : null }, x.slice(m.from, m.to)));
+        last = m.to;
+      }
+      parts.push(x.slice(last));
+      v.cells[ri][ci].replaceChildren(...parts);
+      v.marked.push([ri, ci]);
+    }
     return;
   }
   for (const p of v.pages) p.hits.replaceChildren();

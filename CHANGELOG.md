@@ -3,6 +3,10 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.21 — 2026-11-01
+- **Scarica tutti**: nella sezione Documenti di un articolo, con più file, un tasto li scarica tutti in un `.zip` (`CODICE-documenti.zip`) con i nomi dati nell'app.
+- **Visualizzatore di tabelle** per i file `.csv`, `.tsv` e `.scsv`: colonne in tabella, righe zebrate, intestazione fissa e numero di riga; separatore riconosciuto da solo, virgolette gestite, CSV di Excel (Windows-1252) con gli accenti giusti. ⌘F cerca anche nelle celle. Nella pagina Documenti l'anteprima al passaggio del mouse mostra le prime righe.
+
 ## 0.20.5 — 2026-11-01
 - **Nuovo stato degli articoli: "in valutazione"** (pallino blu), oltre ad attivo, outdated e scartato: si sceglie nella scheda, compare negli elenchi e ha il suo filtro in cima al magazzino. Dalla CLI: `org item set CODICE -s valutazione`. Sul telefono gli stati stanno su una riga loro, così il codice dell'articolo resta leggibile.
 - **Note degli articoli in Markdown**: titoli (`#`, `##`, `###`), **grassetto**, *corsivo*, ~~barrato~~, `codice`, elenchi puntati e numerati (anche annidati), caselle (`- [ ]` / `- [x]`), citazioni (`>`), blocchi di codice (```` ``` ````), linee (`---`) e link `[testo](url)`. I `#CODICI`, gli indirizzi e i collegamenti `[[…]]` restano cliccabili; `#CODICE` attaccato non diventa un titolo.
