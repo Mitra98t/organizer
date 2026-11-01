@@ -870,7 +870,68 @@ const masonryWatch = new ResizeObserver(entries => {
 // ---------- campi di testo che si leggono come la chat ----------
 // Il testo si mostra già colorato (#CODICI, collegamenti [[…]], link) e i link si cliccano; un clic sul testo
 // (o Invio quando ha il focus) apre il campo per scrivere, uscendo si salva e si torna alla lettura.
-export function richField({ fk, value, placeholder, cls, rows = 2, attrs = {}, onSave, bare = false }) {
+// Markdown semplice per le note lunghe (note degli articoli): titoli (# ## ###), elenchi (- * 1.), caselle
+// (- [ ] / - [x]), citazioni (>), blocchi di codice (```), linee (---), **grassetto**, *corsivo*, ~~barrato~~,
+// `codice` e [testo](url); dentro restano attivi #CODICI, URL e collegamenti [[…]]. "#CODICE" non è un titolo:
+// il titolo vuole lo spazio dopo i #.
+const MD_INLINE = /`([^`\n]+)`|\*\*([^*\n]+?)\*\*|~~([^~\n]+?)~~|(?<![\w*])\*(?!\s)([^*\n]+?)\*(?![\w*])|(?<![\w_])_(?!\s)([^_\n]+?)_(?![\w_])|\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g;
+function mdInline(s, opts) {
+  const out = [];
+  let last = 0;
+  for (const m of s.matchAll(MD_INLINE)) {
+    if (m.index > last) out.push(...richText(s.slice(last, m.index), opts));
+    if (m[1] != null) out.push(h('code.md-code', m[1]));
+    else if (m[2] != null) out.push(h('b', mdInline(m[2], opts)));
+    else if (m[3] != null) out.push(h('s', mdInline(m[3], opts)));
+    else if (m[4] != null || m[5] != null) out.push(h('i', mdInline(m[4] ?? m[5], opts)));
+    else out.push(h('a.ext', { href: m[7], target: '_blank', rel: 'noopener noreferrer', onclick: stop }, m[6]));
+    last = m.index + m[0].length;
+  }
+  if (last < s.length) out.push(...richText(s.slice(last), opts));
+  return out;
+}
+
+export function mdText(text, opts = {}) {
+  const out = [];
+  const lines = String(text || '').split('\n');
+  let para = null;
+  let list = null;
+  const end = () => { para = null; list = null; };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*```/.test(line)) {
+      end();
+      const code = [];
+      while (++i < lines.length && !/^\s*```/.test(lines[i])) code.push(lines[i]);
+      out.push(h('pre.md-pre', code.join('\n')));
+      continue;
+    }
+    if (!line.trim()) { end(); continue; }
+    let m;
+    if ((m = line.match(/^(#{1,3})\s+(.*)$/))) { end(); out.push(h(`div.md-h${m[1].length}`, mdInline(m[2], opts))); continue; }
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { end(); out.push(h('hr.md-hr')); continue; }
+    if ((m = line.match(/^>\s?(.*)$/))) { end(); out.push(h('blockquote.md-q', mdInline(m[1], opts))); continue; }
+    if ((m = line.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/))) {
+      para = null;
+      const ordered = /\d/.test(m[2]);
+      if (!list || list.ordered !== ordered) {
+        list = { ordered, el: h(ordered ? 'ol.md-list' : 'ul.md-list') };
+        out.push(list.el);
+      }
+      const task = m[3].match(/^\[([ xX])\]\s+(.*)$/);
+      list.el.append(h('li', { class: [m[1].length >= 2 && 'md-sub', task && 'md-task'].filter(Boolean).join(' ') || null },
+        task ? [h('span.md-box', task[1] === ' ' ? '☐' : '☑'), ' ', ...mdInline(task[2], opts)] : mdInline(m[3], opts)));
+      continue;
+    }
+    list = null;
+    if (!para) out.push(para = h('p.md-p'));
+    else para.append(h('br'));
+    para.append(...mdInline(line, opts));
+  }
+  return out;
+}
+
+export function richField({ fk, value, placeholder, cls, rows = 2, attrs = {}, onSave, bare = false, md = false }) {
   if (ui.richEdit === fk) {
     return h(`textarea.${cls}`, {
       rows, value: value || '', placeholder, 'data-fk': fk, ...attrs,
@@ -894,11 +955,11 @@ export function richField({ fk, value, placeholder, cls, rows = 2, attrs = {}, o
   };
   // In sola lettura (vedi isReadOnly) il testo si legge e i link funzionano, ma non si apre il campo.
   const editable = ev => !isReadOnly(ev.currentTarget);
-  return h(`div.${cls}.rich-view`, {
+  return h(`div.${cls}.rich-view${md ? '.md' : ''}`, {
     tabindex: 0, role: 'textbox', title: 'Clicca per modificare', style: `--rows:${rows}`,
     onclick: ev => { if (editable(ev) && !ev.target.closest('a, button') && !String(getSelection())) edit(); },
     onkeydown: ev => { if (editable(ev) && ev.key === 'Enter' && ev.target === ev.currentTarget) { ev.preventDefault(); edit(); } },
-  }, value ? richText(value, { bare }) : h('span.rich-ph', placeholder));
+  }, value ? (md ? mdText(value, { bare }) : richText(value, { bare })) : h('span.rich-ph', placeholder));
 }
 
 // ---------- collegamenti [[tipo:ID]] ----------

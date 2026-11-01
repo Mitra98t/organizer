@@ -226,6 +226,7 @@ const MIGRATIONS = [
   ALTER TABLE users ADD COLUMN member INTEGER NOT NULL DEFAULT 1;
   `,
   // v8: stato dell'articolo: '' attivo, 'outdated' superato, 'discarded' scartato (valutato e poi lasciato perdere).
+  // Dalla 0.20.5 anche 'evaluation' (in valutazione), senza cambiare lo schema.
   `
   ALTER TABLE items ADD COLUMN status TEXT NOT NULL DEFAULT '';
   `,

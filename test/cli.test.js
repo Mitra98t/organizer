@@ -98,6 +98,12 @@ test('documenti: carica, rinomina, scarica', async () => {
   const [id] = JSON.parse(await org(['doc', 'up', 'SCH-042', src, '-V', '1.1', '--json']));
   const item = JSON.parse(await org(['item', 'show', 'SCH-042', '--json']));
   assert.equal(item.firmware, '1.1');
+  // Stato "in valutazione" (dalla CLI come "valutazione"); uno stato sconosciuto è rifiutato.
+  await org(['item', 'set', 'SCH-042', '-s', 'valutazione']);
+  assert.equal(JSON.parse(await org(['item', 'show', 'SCH-042', '--json'])).status, 'evaluation');
+  assert.match(await org(['item', 'show', 'SCH-042']), /in valutazione/);
+  assert.equal((await call('PATCH', `/items/${item.id}`, { token: config().token, body: { status: 'boh' } })).status, 400);
+  await org(['item', 'set', 'SCH-042', '-s', 'ok']);
   assert.equal(item.docs[0].kind, 'firmware');
 
   // Note sul documento: generali prima, poi per pagina con i numeri dei segnaposto; le risolte solo con --all.

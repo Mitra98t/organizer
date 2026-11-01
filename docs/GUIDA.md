@@ -115,7 +115,7 @@ Cliccando un documento nella scheda di un articolo si apre il visualizzatore con
 
 Su schermo largo la pagina del documento (e la revisione) è alta quanto la finestra: scorre solo il documento.
 
-La pagina **Documenti** (barra laterale; su telefono dal pulsante in Magazzino) raccoglie tutti i documenti per articolo o per tipo, con filtri e "con note aperte". Spunta fino a 3 documenti e **Rivedi affiancati**: si aprono uno accanto all'altro, ognuno con le sue note (si aprono nel pannello in cui clicchi). Un documento si **rinomina** dal titolo nel visualizzatore o con la matita accanto al nome (scheda articolo, Documenti, revisione): il file originale non cambia, ma quando lo scarichi prende il nuovo nome con la sua estensione. Tipo e versione di un documento si cambiano in qualsiasi momento, qui, nella scheda dell'articolo o nel visualizzatore; se cambia un firmware, l'articolo prende la versione del firmware più recente.
+La pagina **Documenti** (barra laterale; su telefono dalla barra in basso) raccoglie tutti i documenti per articolo o per tipo, con filtri e "con note aperte". Spunta fino a 3 documenti e **Rivedi affiancati**: si aprono uno accanto all'altro, ognuno con le sue note (si aprono nel pannello in cui clicchi). Un documento si **rinomina** dal titolo nel visualizzatore o con la matita accanto al nome (scheda articolo, Documenti, revisione): il file originale non cambia, ma quando lo scarichi prende il nuovo nome con la sua estensione. Tipo e versione di un documento si cambiano in qualsiasi momento, qui, nella scheda dell'articolo o nel visualizzatore; se cambia un firmware, l'articolo prende la versione del firmware più recente.
 
 Ogni nota si può modificare, segnare come risolta (sparisce, si rivede con il filtro "risolte"), eliminare (va nel cestino) o trasformare in todo con **→ todo**: la voce nasce con il `#CODICE` dell'articolo e negli aggiornamenti un link che riapre il documento su quella nota. Il file originale non viene modificato: le note vivono nell'app. Nella scheda dell'articolo ogni documento mostra quante note aperte ha; la ricerca trova anche il testo delle note.
 
@@ -173,7 +173,7 @@ Eliminare sposta nel cestino: voci (con le loro sotto-attività), progetti, arti
 
 Ogni articolo ha il suo **codice** (quello con cui è noto) e può avere dei **codici alternativi** (del fornitore, del produttore, vecchie sigle), da aggiungere nella sua scheda sotto il codice. Un `#ALTERNATIVO` scritto in una voce porta allo stesso articolo, e filtri, ricerca e suggerimenti li trovano; i suggerimenti inseriscono sempre il codice principale. Ogni codice appartiene a un solo articolo. Scrivendo un alternativo come nuovo codice dell'articolo, diventa il principale e quello di prima resta tra gli alternativi.
 
-Ogni articolo ha uno **stato**: attivo, **outdated** (superato) o **scartato** (valutato e lasciato perdere), da scegliere nella sua scheda. Negli elenchi e nelle colonne compare come pallino (arancione / rosso) e in cima ci sono i filtri per stato e "nascondi scartati".
+Ogni articolo ha uno **stato**: attivo, **in valutazione** (lo si sta provando), **outdated** (superato) o **scartato** (valutato e lasciato perdere), da scegliere nella sua scheda. Negli elenchi e nelle colonne compare come pallino (blu / arancione / rosso) e in cima ci sono i filtri per stato e "nascondi scartati".
 
 Ogni articolo può avere un **link** facoltativo (pagina prodotto, repo, wiki). Nella vista per categoria un articolo si sposta in un'altra categoria **trascinandolo** nella colonna (o in "Nuova categoria").
 
@@ -181,7 +181,7 @@ Ogni articolo può avere un **link** facoltativo (pagina prodotto, repo, wiki). 
 
 Il colore di un articolo dipende dalla sua categoria, ovunque compaia (elenchi, `#CODICE` nel testo, suggerimenti); senza categoria è grigio. Si può filtrare per categoria o passare alla vista **per categoria**, a colonne sugli schermi larghi. Nella composizione e nei collegamenti ai progetti il codice si autocompleta; se non esiste viene creato.
 
-Ogni articolo ha codice, descrizione, categoria, versione firmware, posizione, quantità e note (pinout, procedura di flash…). Gli carichi documenti (firmware, datasheet, schemi, footprint, manuali, foto) o link esterni. Un file di tipo firmware con versione aggiorna da solo il campo Firmware, e per ogni file si vede lo sha256. "Composizione" collega prodotti e schede. In basso trovi tutte le voci che citano quel `#CODICE`. Se rinomini un codice, i riferimenti nel testo delle voci vengono aggiornati.
+Ogni articolo ha codice, descrizione, categoria, versione firmware, posizione, quantità e note (pinout, procedura di flash…). Le note si scrivono in **Markdown**: `# titolo`, `**grassetto**`, `*corsivo*`, `- elenco`, `- [ ] da fare`, `> avviso`, `` `codice` `` e blocchi tra ```` ``` ````; i `#CODICI` e i `[[…]]` restano link. Gli carichi documenti (firmware, datasheet, schemi, footprint, manuali, foto) o link esterni. Un file di tipo firmware con versione aggiorna da solo il campo Firmware, e per ogni file si vede lo sha256. "Composizione" collega prodotti e schede. In basso trovi tutte le voci che citano quel `#CODICE`. Se rinomini un codice, i riferimenti nel testo delle voci vengono aggiornati.
 
 ## Workspace e più persone
 

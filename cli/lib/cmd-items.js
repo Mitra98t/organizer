@@ -3,8 +3,8 @@ import { c, fail, table, heading, rich, fmtSize, fmtTime } from './term.js';
 import { itemRef, projectRef, entryProjects } from './data.js';
 import { printTree, printBacklinks } from './cmd-entries.js';
 
-const STATUS_IN = { ok: '', '': '', outdated: 'outdated', superato: 'outdated', discarded: 'discarded', scartato: 'discarded' };
-const STATUS_LABEL = { outdated: c.yellow('outdated'), discarded: c.red('scartato') };
+const STATUS_IN = { ok: '', '': '', valutazione: 'evaluation', evaluation: 'evaluation', outdated: 'outdated', superato: 'outdated', discarded: 'discarded', scartato: 'discarded' };
+const STATUS_LABEL = { evaluation: c.blue('in valutazione'), outdated: c.yellow('outdated'), discarded: c.red('scartato') };
 
 // Opzioni comuni a "add" e "set" → campi dell'API.
 const FIELD_OPTS = {
@@ -20,7 +20,7 @@ function fields(o) {
   if (o.qty !== undefined) f.qty = o.qty === '' || o.qty === '-' ? null : Number.isInteger(+o.qty) ? +o.qty : fail('Quantità: un numero intero ("-" la toglie)');
   if (o.status !== undefined) {
     f.status = STATUS_IN[o.status.toLowerCase()];
-    if (f.status === undefined) fail('Stato: ok, outdated o scartato');
+    if (f.status === undefined) fail('Stato: ok, valutazione, outdated o scartato');
   }
   return f;
 }
@@ -112,7 +112,7 @@ export default {
   },
 
   set: {
-    usage: 'item set CODICE [--code NUOVO] [-n NOME] [-c CATEGORIA] [--fw VER] [-l POSIZIONE] [-q N] [--url URL] [--notes TESTO] [-s ok|outdated|scartato]',
+    usage: 'item set CODICE [--code NUOVO] [-n NOME] [-c CATEGORIA] [--fw VER] [-l POSIZIONE] [-q N] [--url URL] [--notes TESTO] [-s ok|valutazione|outdated|scartato]',
     summary: 'modifica un articolo (cambiando il codice si aggiornano anche i #riferimenti nelle voci)',
     options: { ...FIELD_OPTS, code: { type: 'string' } },
     async run(ctx, [ref], o) {

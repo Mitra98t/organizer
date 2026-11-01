@@ -749,7 +749,7 @@ export function viewDiary() {
 
 // ---------- magazzino ----------
 // Stato dell'articolo: pallino visibile negli elenchi (nessun pallino = attivo).
-const ITEM_STATUS = { outdated: 'outdated', discarded: 'scartato' };
+const ITEM_STATUS = { evaluation: 'in valutazione', outdated: 'outdated', discarded: 'scartato' };
 const statusDot = it => it?.status && h('span.sdot', { class: `s-${it.status}`, title: ITEM_STATUS[it.status] });
 
 function itemChip(it) {
@@ -889,7 +889,7 @@ export function viewItems() {
   const cats = new Map();
   for (const i of D.items) cats.set(i.category || '', (cats.get(i.category || '') || 0) + 1);
   if (ui.itemCat != null && !cats.has(ui.itemCat)) ui.itemCat = null;
-  const statusCount = { outdated: 0, discarded: 0 };
+  const statusCount = { evaluation: 0, outdated: 0, discarded: 0 };
   for (const i of D.items) if (statusCount[i.status] != null) statusCount[i.status]++;
   if (ui.itemStatusF && !statusCount[ui.itemStatusF]) ui.itemStatusF = null;
   const items = D.items
@@ -915,14 +915,13 @@ export function viewItems() {
       }),
       h('div.seg',
         h('button', { class: ui.itemView === 'list' && 'on', onclick: () => setView('list'), title: 'Elenco' }, icon('log')),
-        h('button', { class: ui.itemView === 'groups' && 'on', onclick: () => setView('groups'), title: 'Per categoria' }, icon('cols'))),
-      h('a.btn.ghost', { href: '#/documenti', title: 'Tutti i documenti, per la revisione' }, icon('file'), h('span.only-wide', 'Documenti'))),
+        h('button', { class: ui.itemView === 'groups' && 'on', onclick: () => setView('groups'), title: 'Per categoria' }, icon('cols')))),
     cats.size > 1 && h('div.toolbar.cats',
       [...cats].sort(([a], [b]) => (!a) - (!b) || a.localeCompare(b)).map(([c, n]) => filterChip({
         on: ui.itemCat === c, label: c || NO_CAT, n, cls: c ? 'tint by-hue' : 'tint', style: catStyle(c),
         onclick: () => { ui.itemCat = ui.itemCat === c ? null : c; render(); },
       }))),
-    (statusCount.outdated > 0 || statusCount.discarded > 0) && h('div.toolbar.cats',
+    Object.values(statusCount).some(Boolean) && h('div.toolbar.cats',
       Object.entries(ITEM_STATUS).filter(([k]) => statusCount[k]).map(([k, label]) => filterChip({
         on: ui.itemStatusF === k, label, n: statusCount[k], cls: `tint s-${k}`, title: `Solo gli articoli ${label}`,
         onclick: () => { ui.itemStatusF = ui.itemStatusF === k ? null : k; render(); },
@@ -1051,7 +1050,7 @@ export function viewItem(id) {
       h('input.h-title.mono', { value: it.code, 'data-fk': `icode-${it.id}`, onchange: ev => patch({ code: ev.target.value }) }),
       h('button.icon-btn', { title: 'Copia codice', onclick: () => copy(it.code) }, icon('copy')),
       h('div.seg.status-seg', { title: 'Stato dell\'articolo' },
-        [['', 'attivo'], ['outdated', 'outdated'], ['discarded', 'scartato']].map(([k, label]) =>
+        [['', 'attivo'], ...Object.entries(ITEM_STATUS)].map(([k, label]) =>
           h('button', { class: (it.status || '') === k && 'on', onclick: () => patch({ status: k }) }, k && h('span.sdot', { class: `s-${k}` }), label)))),
     it.category && ui.catPicker === it.category && h('div.cat-pick', h('span.muted', `Colore della categoria "${it.category}" (vale per tutti i suoi articoli): `), catColorPicker(it.category)),
     // Codici alternativi: il principale resta quello con cui l'articolo è noto; questi lo trovano lo stesso.
@@ -1076,8 +1075,8 @@ export function viewItem(id) {
           it.url && h('a.icon-btn', { href: it.url, target: '_blank', rel: 'noopener noreferrer', title: 'Apri il link' }, icon('link')))),
       h('datalist#item-cats', [...new Set(D.items.map(i => i.category).filter(Boolean))].map(c => h('option', { value: c })))),
     richField({
-      fk: `inotes-${it.id}`, cls: 'proj-notes', value: it.notes, placeholder: 'Note: pinout, jumper, procedura di flash, password di default…',
-      attrs: { 'data-ac': 'text', 'data-ac-only': '#' }, onSave: notes => patch({ notes }),
+      fk: `inotes-${it.id}`, cls: 'proj-notes', value: it.notes, placeholder: 'Note: pinout, jumper, procedura di flash, password di default… (Markdown: # titolo, **grassetto**, - elenco)',
+      attrs: { 'data-ac': 'text', 'data-ac-only': '#' }, onSave: notes => patch({ notes }), md: true,
     }),
     docSection(it),
     section('i-comp', 'Composizione', [

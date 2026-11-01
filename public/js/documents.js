@@ -107,8 +107,7 @@ export function viewDocuments() {
       h('div.seg',
         // Come nel magazzino: il pulsante a pannelli è la vista per categoria (con gli articoli), l'altro per tipo.
         h('button', { class: !byCat && 'on', onclick: () => setGroup('kind'), title: 'Per tipo di documento' }, icon('file')),
-        h('button', { class: byCat && 'on', onclick: () => setGroup('item'), title: 'Per categoria del magazzino, con gli articoli' }, icon('cols'))),
-      h('a.btn.ghost', { href: '#/magazzino', title: 'Torna al magazzino' }, icon('box'), h('span.only-wide', 'Magazzino'))),
+        h('button', { class: byCat && 'on', onclick: () => setGroup('item'), title: 'Per categoria del magazzino, con gli articoli' }, icon('cols')))),
     h('div.toolbar.cats',
       kinds.filter(k => counts.get(k)).map(k => filterChip({
         on: ui.docKindF === k, label: k, n: counts.get(k), cls: `tint ${dkAttrs(k).class}`, style: dkAttrs(k).style,

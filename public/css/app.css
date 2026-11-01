@@ -1048,12 +1048,19 @@ button.cdot.pick:hover { box-shadow: 0 0 0 3px color-mix(in srgb, var(--text) 25
 
 /* ---------- stato degli articoli ---------- */
 .sdot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; }
+.sdot.s-evaluation { background: var(--mail); }
 .sdot.s-outdated { background: var(--today); }
 .sdot.s-discarded { background: var(--danger); }
 .st-discarded .code, .st-discarded .name { opacity: 0.55; }
 .st-discarded .name { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--muted) 60%, transparent); }
 .status-seg { margin-left: 8px; }
 .status-seg button { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; }
+/* Telefono: lo stato va su una riga sua, a tutta larghezza, e il codice resta leggibile. */
+@media (max-width: 699px) {
+  .head:has(.status-seg) { flex-wrap: wrap; row-gap: 8px; }
+  .status-seg { order: 10; flex: 1 0 100%; margin-left: 0; overflow-x: auto; }
+  .status-seg button { flex: 1 0 auto; justify-content: center; padding: 6px 5px; font-size: 12.5px; white-space: nowrap; }
+}
 .peek-status { display: flex; align-items: center; gap: 6px; margin: -4px 0 8px; font-size: 12px; color: var(--muted); }
 .item-row .sdot, .cat-item .sdot { align-self: center; }
 
@@ -1177,6 +1184,24 @@ a.ref:hover { border-color: var(--accent); }
   white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; min-height: calc(var(--rows, 1) * 1.5em + 16px);
 }
 .rich-view:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+/* Note in Markdown: blocchi veri, niente a capo conservati alla lettera. */
+.rich-view.md { white-space: normal; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md-p { margin: 0 0 8px; }
+.md-h1, .md-h2, .md-h3 { font-weight: 700; line-height: 1.3; margin: 12px 0 6px; }
+.md-h1 { font-size: 1.3em; }
+.md-h2 { font-size: 1.15em; }
+.md-h3 { font-size: 1em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; font-size: 0.85em; }
+.md-list { margin: 0 0 8px; padding-left: 22px; }
+.md-list li { margin: 2px 0; }
+.md-list li.md-sub { margin-left: 18px; }
+.md-list li.md-task { list-style: none; margin-left: -18px; }
+.md-box { color: var(--muted); }
+.md-q { margin: 0 0 8px; padding-left: 10px; border-left: 3px solid var(--line); color: var(--muted); }
+.md-code { font-family: var(--mono); font-size: 0.9em; background: var(--panel-2); padding: 1px 4px; border-radius: 4px; }
+.md-pre { margin: 0 0 8px; padding: 8px 10px; background: var(--panel-2); border-radius: 6px; font-family: var(--mono); font-size: 12.5px; white-space: pre; overflow-x: auto; }
+.md-hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
 .rich-view:focus-visible { outline: none; border-color: var(--accent); }
 .rich-ph { color: var(--muted); }
 .ref .ic + * { min-width: 0; }
@@ -1395,6 +1420,7 @@ dialog.fb textarea { width: 100%; min-height: 120px; resize: vertical; }
 .fchip.k-datasheet, .fchip.k-schema { --c: var(--code-ink); --cb: var(--code-bg); }
 .fchip.k-footprint { --c: var(--note); --cb: color-mix(in srgb, var(--note) 15%, transparent); }
 .fchip.k-mail { --c: var(--mail); --cb: color-mix(in srgb, var(--mail) 15%, transparent); }
+.fchip.s-evaluation { --c: var(--mail); --cb: color-mix(in srgb, var(--mail) 15%, transparent); }
 .fchip.s-outdated { --c: var(--today); --cb: color-mix(in srgb, var(--today) 15%, transparent); }
 .fchip.s-discarded { --c: var(--danger); --cb: var(--danger-soft); }
 .dnd-hint { margin: 0 0 10px; font-size: 13px; }

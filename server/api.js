@@ -875,7 +875,7 @@ function itemFields(b) {
   }
   if (f.url && !/^https?:\/\//i.test(f.url)) f.url = `https://${f.url}`;
   if (b.status !== undefined) {
-    if (!['', 'outdated', 'discarded'].includes(b.status)) fail(400, 'Stato non valido');
+    if (!['', 'evaluation', 'outdated', 'discarded'].includes(b.status)) fail(400, 'Stato non valido');
     f.status = b.status;
   }
   if (b.qty !== undefined) {

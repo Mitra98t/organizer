@@ -150,7 +150,7 @@ Campi: `name`, `tag` (quello di `@tag`), `status` (`open`, `paused`, `closed`), 
 
 ## Magazzino
 
-Campi di un articolo: `code` (unico; lettere, numeri e `. _ - /`), `name`, `category`, `firmware`, `location`, `qty` (intero o `null`), `url`, `notes`, `status` (`""`, `outdated`, `discarded`).
+Campi di un articolo: `code` (unico; lettere, numeri e `. _ - /`), `name`, `category`, `firmware`, `location`, `qty` (intero o `null`), `url`, `notes`, `status` (`""`, `evaluation` = in valutazione, `outdated`, `discarded`).
 
 | | |
 |---|---|
