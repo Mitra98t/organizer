@@ -197,8 +197,8 @@ function viewContact(id) {
       field('timeslot', 'Fascia oraria', { 'data-ac': 'cfield', 'data-ac-field': 'timeslot', autocomplete: 'off', placeholder: 'es. mattina, 14-18, Shenzhen (UTC+8)' }),
     ),
     richField({
-      fk: `cnotes-${c.id}`, cls: 'proj-notes', value: c.notes, placeholder: 'Note: orari, come preferisce essere contattato, riferimenti…',
-      attrs: { 'data-ac': 'text', 'data-ac-only': '#' }, onSave: notes => patch({ notes }),
+      fk: `cnotes-${c.id}`, cls: 'proj-notes', value: c.notes, placeholder: 'Note: orari, come preferisce essere contattato, riferimenti… (Markdown: # titolo, **grassetto**, - elenco)',
+      attrs: { 'data-ac': 'text', 'data-ac-only': '#' }, onSave: notes => patch({ notes }), md: true,
     }),
     h('div.toolbar',
       c.email && h('button.btn', { onclick: () => newMail(c) }, icon('mail'), 'Nuova mail'),

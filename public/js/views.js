@@ -1,5 +1,5 @@
 import {
-  h, icon, S, ui, RS, api, act, render, richText, dueInfo, dayDiff, fmtDay, fmtLongDay, fmtTime, fmtSize,
+  h, icon, S, ui, RS, api, act, render, richText, mdText, dueInfo, dayDiff, fmtDay, fmtLongDay, fmtTime, fmtSize,
   userName, toast, save, patchEntry, addEntry, isMine, localDay, autosize, stop, copy, hue, trashIt, contactNames, shareBox, sharedWithOf,
   popButton, popItem, popSep,
   updatePending, removePending,
@@ -319,8 +319,8 @@ function entryEditor(e) {
     title,
     fields,
     richField({
-      fk: `notes-${e.id}`, cls: 'ed-notes', rows: 1, value: e.notes, placeholder: 'Dettagli (facoltativo; #codice, [[ per collegare altro)…',
-      attrs: { 'data-ac': e.kind, 'data-ac-only': '#', 'data-ac-entry': e.id }, onSave: notes => patchEntry(e, { notes }),
+      fk: `notes-${e.id}`, cls: 'ed-notes', rows: 1, value: e.notes, placeholder: 'Dettagli (facoltativo; #codice, [[ per collegare altro, Markdown)…',
+      attrs: { 'data-ac': e.kind, 'data-ac-only': '#', 'data-ac-entry': e.id }, onSave: notes => patchEntry(e, { notes }), md: true,
     }),
     subs,
     log,
@@ -343,7 +343,7 @@ function archivedEntry(id) {
       h('div.arch-h', h('span.kpill', { class: `k-${e.kind}` }, KIND_PILL[e.kind]), h('b', richText(e.title))),
       h('p.muted', `${e.kind === 'mail' ? 'Mandata' : 'Fatta'} il ${fmtTime(e.done_at)}`, e.kind === 'mail' && e.contact ? [' a ', contactNames(e.contact)] : '',
         e.projects.length ? ' · ' : '', e.projects.map(p => projTag(p))),
-      e.notes && h('div.arch-notes', richText(e.notes)),
+      e.notes && (e.kind === 'mail' ? h('div.arch-notes', richText(e.notes)) : h('div.arch-notes.md', mdText(e.notes))),
       e.attachments.length > 0 && h('p.muted', icon('clip'), e.attachments.map(a => a.filename).join(', ')),
       h('div.toolbar', h('button.btn.sm', {
         onclick: () => act(async () => { await api('PATCH', `/entries/${id}`, { done: false }); archived.delete(id); }, 'Riaperta'),
@@ -692,8 +692,8 @@ export function viewProject(id) {
         },
       }, icon('trash'), 'Elimina')),
     richField({
-      fk: `pnotes-${p.id}`, cls: 'proj-notes', value: p.notes, placeholder: 'Appunti di progetto: repo, IP delle schede, toolchain, riferimenti…',
-      attrs: { 'data-ac': 'text', 'data-ac-only': '#' }, onSave: notes => patch({ notes }),
+      fk: `pnotes-${p.id}`, cls: 'proj-notes', value: p.notes, placeholder: 'Appunti di progetto: repo, IP delle schede, toolchain, riferimenti… (Markdown: # titolo, **grassetto**, - elenco)',
+      attrs: { 'data-ac': 'text', 'data-ac-only': '#' }, onSave: notes => patch({ notes }), md: true,
     }),
     section(`p${p.id}-subs`, 'Sottoprogetti', [
       kids.length > 0 && h('div.cards.subcards', kids.map(k => projectCard(k, stats, { compact: true }))),

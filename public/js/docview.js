@@ -7,7 +7,7 @@
 // il visualizzatore (canvas compresi) resta in memoria e viene solo riagganciato; si aggiornano i segnaposto.
 // Più visualizzatori possono essere aperti insieme (revisione affiancata, #/review?d=1,2,3).
 import { backlinksBox } from './views.js';
-import { h, icon, S, ui, api, act, render, richText, fmtTime, fmtSize, userName, toast, trashIt, autosize, itemAttrs, save, docFileUrl, dkAttrs, kindPicker, docName, renameDoc, can, roClass, isReadOnly, shareBox } from './core.js';
+import { h, icon, S, ui, api, act, render, richText, mdText, fmtTime, fmtSize, userName, toast, trashIt, autosize, itemAttrs, save, docFileUrl, dkAttrs, kindPicker, docName, renameDoc, can, roClass, isReadOnly, shareBox } from './core.js';
 import { today } from './parse.js';
 
 const PDFJS = new URL('../vendor/pdfjs/', import.meta.url).href;
@@ -1121,7 +1121,7 @@ function noteCard(d, n, num) {
       onkeydown: enterSave(save, () => { ui.docEdit = null; render(); }),
       onblur: ev => save(ev.target.value.trim() || n.text),
     })
-    : h('div.dnote-t', { ondblclick: () => { ui.docEdit = n.id; render(); } }, richText(n.text)),
+    : h('div.dnote-t.md', { ondblclick: () => { ui.docEdit = n.id; render(); } }, mdText(n.text)),
   h('div.dnote-a',
     h('button.chip', { onclick: () => act(() => api('PATCH', `/doc-notes/${n.id}`, { resolved: !n.resolved_at })) },
       icon('check'), n.resolved_at ? 'riapri' : 'risolta'),

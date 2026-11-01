@@ -3,6 +3,9 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.21.2 — 2026-11-01
+- **Markdown anche fuori dal magazzino**: dettagli di todo e diario (anche quelle fatte da più di 30 giorni), note di progetti e contatti e note sui documenti si leggono formattate, come le note degli articoli. Il testo delle mail resta semplice, perché parte così com'è.
+
 ## 0.21.1 — 2026-11-01
 - Le tabelle CSV con tante colonne si scorrono di lato invece di stringersi nella finestra (prima le celle andavano a capo lettera per lettera): ogni colonna è larga quanto il suo contenuto, fino a circa 420 px, e i testi lunghi vanno a capo fra le parole. Intestazione e numeri di riga restano fissi sul bordo.
 

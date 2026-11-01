@@ -957,6 +957,7 @@ body.idnd .cat-new { display: block; }
 .dnote-gen { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
 .dnote-gen .ic { width: 13px; height: 13px; }
 .dnote-t { font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+:is(.dnote-t, .arch-notes).md { white-space: normal; }
 .dnote-edit { font-size: 14px; }
 .dnote-a { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .dnote-a .chip { padding: 1px 8px; font-size: 12px; }
