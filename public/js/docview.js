@@ -98,7 +98,7 @@ export function docThumb(d, width = 300) {
 function getViewer(d) {
   if (viewers.has(d.id)) return viewers.get(d.id);
   const v = { id: d.id, kind: kindOf(d), zoom: 1, scroll: 0, pages: [], draft: null, status: 'loading' };
-  v.scroller = h(`div.dv-scroll${v.kind === 'model' ? '.model' : ''}`, { onscroll: () => { v.scroll = v.scroller.scrollTop; updatePageLabel(v); } });
+  v.scroller = h(`div.dv-scroll${v.kind === 'model' || v.kind === 'table' ? `.${v.kind}` : ''}`, { onscroll: () => { v.scroll = v.scroller.scrollTop; updatePageLabel(v); } });
   v.pagesEl = h('div.dv-pages');
   v.scroller.append(v.pagesEl);
   v.pageLabel = h('span.dv-pl');
@@ -304,15 +304,17 @@ function parseCsv(text, filename = '', limit = Infinity) {
   return rows;
 }
 
-// Prima riga come intestazione (resta in vista scorrendo), righe zebrate, numero di riga a sinistra.
+// Prima riga come intestazione (resta in vista scorrendo), righe zebrate, numero di riga a sinistra. La tabella è
+// larga quanto le sue colonne: con tante colonne si scorre di lato e il numero di riga resta in vista.
 function csvTable(rows) {
   const cols = Math.max(...rows.map(r => r.length));
   const pad = r => [...r, ...Array(cols - r.length).fill('')];
   const cells = [];
   const tr = (r, i, tag) => {
-    const tds = pad(r).map(x => h(tag, x));
-    cells.push(tds);
-    return h('tr', h(`${tag}.n`, i || ''), ...tds);
+    // Il testo sta in un div: è lui ad avere la larghezza massima (sulle celle di tabella non è affidabile).
+    const divs = pad(r).map(x => h('div.c', x));
+    cells.push(divs);
+    return h('tr', h(`${tag}.n`, i || ''), ...divs.map(d => h(tag, d)));
   };
   const [head, ...body] = rows;
   const table = h('table.dv-table', h('thead', tr(head, 0, 'th')), h('tbody', body.map((r, i) => tr(r, i + 1, 'td'))));

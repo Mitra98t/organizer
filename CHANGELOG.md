@@ -3,6 +3,9 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.21.1 — 2026-11-01
+- Le tabelle CSV con tante colonne si scorrono di lato invece di stringersi nella finestra (prima le celle andavano a capo lettera per lettera): ogni colonna è larga quanto il suo contenuto, fino a circa 420 px, e i testi lunghi vanno a capo fra le parole. Intestazione e numeri di riga restano fissi sul bordo.
+
 ## 0.21 — 2026-11-01
 - **Scarica tutti**: nella sezione Documenti di un articolo, con più file, un tasto li scarica tutti in un `.zip` (`CODICE-documenti.zip`) con i nomi dati nell'app.
 - **Visualizzatore di tabelle** per i file `.csv`, `.tsv` e `.scsv`: colonne in tabella, righe zebrate, intestazione fissa e numero di riga; separatore riconosciuto da solo, virgolette gestite, CSV di Excel (Windows-1252) con gli accenti giusti. ⌘F cerca anche nelle celle. Nella pagina Documenti l'anteprima al passaggio del mouse mostra le prime righe.
