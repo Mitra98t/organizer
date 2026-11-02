@@ -273,6 +273,21 @@ route('POST', '/api/mail/threads/:id/draft', ({ params, user }) => {
   return { id: tx(() => insertReply(user, t, { subject: re(t.subject), ...(last ? replyAddresses(last, true, user.id) : { contact: null, mail_cc: null }) })) };
 }, { area: 'mail' });
 
+const NEW_MAIL = 'Nuova mail';
+
+// "Nuova mail" nella pagina di un topic: una conversazione nuova nel topic, con una bozza vuota.
+route('POST', '/api/mail/topics/:id/draft', ({ params, user }) => {
+  const topic = getTopic(params.id, user);
+  return {
+    id: tx(() => {
+      const at = now();
+      const tid = newThread(user.id, NEW_MAIL, at, topic.id);
+      return insertId(db.prepare(`INSERT INTO entries (kind, title, thread_id, created_by, created_at, updated_at)
+        VALUES ('mail', ?, ?, ?, ?, ?)`).run(NEW_MAIL, tid, user.id, at, at));
+    }),
+  };
+}, { area: 'mail' });
+
 // ---------- all'avvio ----------
 // Le regole dei collegamenti automatici possono cambiare con le versioni (es. i codici di 2 caratteri): le
 // conversazioni attive si ricontrollano a ogni avvio. Quelle archiviate quando tornano attive.

@@ -304,6 +304,17 @@ test('thunderbird: thread, mandata, risposta, storia, collegamenti, archivio', a
   await tb('DELETE', `/mail/topics/${t2}/links/progetto/${proj.id}`);
   assert.equal((await tb('GET', '/sync').then(json)).topicLinks.length, 0);
 
+  // "Nuova mail" dalla pagina del topic: una conversazione nuova nel topic con una bozza vuota, che finché è sola
+  // dà alla conversazione il suo oggetto.
+  const { id: nm } = await tb('POST', `/mail/topics/${t2}/draft`).then(json);
+  it = await tb('GET', '/sync').then(json);
+  const draft = it.entries.find(e => e.id === nm);
+  const nth = it.mailThreads.find(x => x.id === draft.thread_id);
+  assert.deepEqual([draft.kind, draft.done_at, nth.topic_id, nth.subject], ['mail', null, t2, 'Nuova mail']);
+  await tb('PATCH', `/entries/${nm}`, { mail_subject: 'Preventivo staffe' });
+  assert.equal((await tb('GET', '/sync').then(json)).mailThreads.find(x => x.id === nth.id).subject, 'Preventivo staffe');
+  assert.equal((await tb('POST', '/mail/topics/999999/draft')).status, 404);
+
   // Collegamento automatico tolto a mano: non torna, nemmeno con un'altra mail che cita il codice.
   await tb('DELETE', `/mail/threads/${tid}/links/articolo/${sch.id}`);
   await tb('POST', '/mail/incoming', { message_id: '<r3@fornitore.it>', in_reply_to: '<r2@fornitore.it>', from: 'mario@fornitore.it', subject: 'Re: Offerta relè', body: 'SCH-042 di nuovo' });

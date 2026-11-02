@@ -570,7 +570,14 @@ export function viewTopic(id, q = {}) {
       h('span.muted.th-count', threads.length === 1 ? '1 conversazione' : `${threads.length} conversazioni${active < threads.length ? `, ${threads.length - active} archiviate` : ''}`),
       topicMenu(topic)),
     h('div.tp-cols',
-      h('nav.tp-tree', { 'aria-label': 'Conversazioni e mail' }, threads.map(x => threadTree(topic, x, sel))),
+      h('nav.tp-tree', { 'aria-label': 'Conversazioni e mail' }, threads.map(x => threadTree(topic, x, sel)),
+        // Una conversazione nuova in questo topic, con la bozza già aperta a destra.
+        can('mail', 'write') && h('button.btn.ghost.tp-new', {
+          onclick: () => act(async () => {
+            const r = await api('POST', `/mail/topics/${topic.id}/draft`);
+            ui.mailSelNext = { topic: topic.id, type: 'entry', id: r.id };
+          }),
+        }, icon('plus'), 'Nuova mail')),
       h('div.tp-mail', node ? mailView(topic, sel, data, cur) : h('p.muted', 'Nessuna mail.')),
       sideColumn(topic, cur, data)));
 }

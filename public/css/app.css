@@ -579,6 +579,7 @@ body.tdnd .topic-new { display: block; }
    dei collegamenti va sotto la mail, sempre a destra dell'albero (che così non le finisce sopra). */
 .tp-cols { display: grid; grid-template-columns: minmax(240px, 300px) minmax(0, 1fr) 360px; grid-template-areas: "tree mail side"; gap: 16px; align-items: start; }
 .tp-tree { grid-area: tree; }
+.tp-new { align-self: flex-start; }
 .tp-mail { grid-area: mail; }
 .tp-cols > .mail-side { grid-area: side; }
 .tp-cols > .mail-side .ms-b { font-size: 14px; }

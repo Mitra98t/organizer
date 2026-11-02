@@ -3,6 +3,10 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.21.3 — 2026-11-02
+- **Nuova mail dalla pagina del topic**: sotto l'elenco delle conversazioni, un tasto apre una conversazione nuova nello stesso topic con la bozza già pronta a destra.
+- Una mail scritta qui, finché la sua conversazione non ha altri messaggi, dà alla conversazione il suo oggetto (o il titolo) anche quando lo cambi dopo averla creata.
+
 ## 0.21.2 — 2026-11-01
 - **Markdown anche fuori dal magazzino**: dettagli di todo e diario (anche quelle fatte da più di 30 giorni), note di progetti e contatti e note sui documenti si leggono formattate, come le note degli articoli. Il testo delle mail resta semplice, perché parte così com'è.
 

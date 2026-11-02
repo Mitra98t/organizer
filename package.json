@@ -1,6 +1,6 @@
 {
   "name": "organizer",
-  "version": "0.21.2",
+  "version": "0.21.3",
   "private": true,
   "description": "Todo, mail, diario e magazzino sincronizzati per chi lavora con schede e firmware",
   "type": "module",

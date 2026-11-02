@@ -215,6 +215,7 @@ Una mail è una voce con `kind: "mail"`. Il server non spedisce niente: la mail 
 | `POST /api/mail/threads/:id/links` | `{kind, id}` con `kind` tra `articolo`, `doc`, `progetto`, `contatto`, `voce`: collega la conversazione |
 | `DELETE /api/mail/threads/:id/links/:kind/:id` | toglie un collegamento, anche automatico: resta nascosto e non torna |
 | `POST /api/mail/threads/:id/draft` | `{id}` di una nuova mail nella conversazione (a chi ha scritto per ultimo) |
+| `POST /api/mail/topics/:id/draft` | `{id}` di una mail vuota in una conversazione nuova del topic |
 | `POST /api/mail/messages/:id/reply` | `{all}` (rispondi a tutti) → `{id}` della nuova mail di risposta a quel messaggio, nel suo thread |
 | `POST /api/mail/attachments/save` | `{id, n, item_id, kind}`: chiede all'estensione di caricare l'allegato n del messaggio `id` come documento dell'articolo |
 

@@ -14,7 +14,7 @@ import {
 import { HttpError, fail, now, bool, str, sendJson, clientIp } from './util.js';
 import { rev, openStream, dropUser, mailExtOn, mailExtVersion } from './events.js';
 import { chatSync, readKey } from './chatdata.js';
-import { threadsSync, ensureEntryThread, autoLink, relinkItem } from './maildata.js';
+import { threadsSync, ensureEntryThread, autoLink, relinkItem, cleanSubject } from './maildata.js';
 import { notify, notificationsOf } from './notify.js';
 import { allows, assertCan, entryArea, readableKinds } from './perms.js';
 import { currentWorkspace } from './db.js';
@@ -608,6 +608,13 @@ export function updateEntry(e, b, user) {
   if ((f.kind || e.kind) === 'mail') {
     const m = { ...e, ...f };
     const tid = ensureEntryThread(m);
+    // Finché la conversazione è solo questa bozza, prende il suo oggetto (o il titolo).
+    if (f.title !== undefined || f.mail_subject !== undefined) {
+      const alone = !db.prepare('SELECT 1 FROM mail_messages WHERE thread_id = ?').get(tid)
+        && !db.prepare('SELECT 1 FROM entries WHERE thread_id = ? AND id != ? AND deleted_at IS NULL').get(tid, e.id);
+      const subject = cleanSubject(m.mail_subject || m.title).slice(0, 300);
+      if (alone && subject) db.prepare('UPDATE mail_threads SET subject = ? WHERE id = ?').run(subject, tid);
+    }
     if (f.kind || f.notes !== undefined || f.mail_subject !== undefined || f.title !== undefined) autoLink(tid, user.id, `${m.title} ${m.mail_subject || ''} ${m.notes || ''}`);
   }
   // Assegnata a qualcun altro (con ++persona o dal menu Assegnata): glielo si dice.
