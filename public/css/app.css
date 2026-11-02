@@ -894,6 +894,9 @@ body.idnd .cat-new { display: block; }
 
 /* ---------- documenti con note ---------- */
 .docview .head { flex-wrap: wrap; }
+/* Anteprima di un allegato ricevuto (mail.js): da chi e quale mail, accorciato. */
+.attview .att-from { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attview > .empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
 .dv-title { margin: 0; font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
 .dv { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 12px; align-items: start; }
 .dv.no-notes { grid-template-columns: minmax(0, 1fr); }

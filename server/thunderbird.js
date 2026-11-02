@@ -12,14 +12,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { db, tx, withWorkspace } from './db.js';
 import { acc, workspacesOf, workspaceById, permsIn, mailAddressesOf, defaultWorkspace } from './accounts.js';
-import { route, entryFor, updateEntry, addLog, insertId, syncEntryItems, docKind, CVIS_ANY } from './api.js';
+import { Readable } from 'node:stream';
+import { route, entryFor, updateEntry, addLog, insertId, syncEntryItems, docKind, saveUpload, CVIS_ANY } from './api.js';
 import { newThread, ensureEntryThread, touchThread, autoLink, findThread, dropEmptyTopics, ensureTopic, relinkThread } from './maildata.js';
 import { mailParts, sendFile } from './mail.js';
 import { allows } from './perms.js';
-import { bump, mailExtOn, openMailExtStream, notifyMailExt } from './events.js';
+import { bump, mailExtOn, mailExtVersion, openMailExtStream, notifyMailExt } from './events.js';
 import { zip } from './zip.js';
 import { notify } from './notify.js';
-import { fail, now, str, isHttps } from './util.js';
+import { HttpError, fail, now, str, isHttps, readBody } from './util.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUTBOX_HOURS = 2; // una richiesta non presa entro questo tempo si lascia perdere
@@ -163,6 +164,13 @@ route('GET', '/api/mail/search', ({ user, query }) => {
   return db.prepare(`SELECT id FROM mail_threads WHERE id IN (SELECT value FROM json_each(?)) ORDER BY last_at DESC LIMIT 30`)
     .all(JSON.stringify([...ids])).map(r => r.id);
 }, { area: 'mail', quiet: true });
+
+// Un messaggio da solo, per l'anteprima di un suo allegato (titolo della pagina e ritorno alla conversazione).
+route('GET', '/api/mail/messages/:id', ({ params, user }) => {
+  const m = db.prepare('SELECT * FROM mail_messages WHERE id = ?').get(+params.id) || fail(404, 'Messaggio non trovato');
+  const t = getThread(m.thread_id, user);
+  return { id: m.id, thread_id: t.id, topic_id: t.topic_id, subject: m.subject, from_addr: m.from_addr, date: m.date, attachments: parseMsg(m).attachments };
+}, { area: 'mail' });
 
 // Un messaggio letto o da leggere (aprirlo nell'albero lo legge).
 route('PATCH', '/api/mail/messages/:id', async ({ params, user, body }) => {
@@ -512,31 +520,105 @@ route('POST', '/api/mail/backfill/done', ({ user }) => {
   acc.prepare('UPDATE users SET mail_backfill_at = ? WHERE id = ?').run(now(), user.id);
 }, { ws: false, quiet: true });
 
-// ---------- allegati ricevuti → documenti del magazzino ----------
-// Il file sta in Thunderbird: Organizer chiede all'estensione di caricarlo come documento dell'articolo (con la
-// stessa API dei caricamenti, nel workspace attivo). Le richieste stanno in memoria: se il server riparte si
-// rifanno dall'app.
+// ---------- allegati ricevuti: anteprima e documenti del magazzino ----------
+// Il file sta in Thunderbird: Organizer chiede all'estensione di caricarlo, come documento dell'articolo (con la
+// stessa API dei caricamenti, nel workspace attivo) o per l'anteprima (preview: lo manda qui e il server lo tiene
+// un po' in memoria; riaprirlo o mandarlo in magazzino poco dopo non passa più da Thunderbird). Le richieste
+// stanno in memoria: se il server riparte si rifanno dall'app.
 const fetches = new Map(); // id → richiesta
 let fetchSeq = 0;
+const PREVIEW_EXT = '1.6'; // la prima versione dell'estensione che sa mandare un allegato per l'anteprima
+const PREVIEW_WAIT = 60e3;
+const PREVIEW_TTL = 30 * 60e3;
+const PREVIEW_MAX = 60 * 1048576;
+const PREVIEW_CACHE = 200 * 1048576;
+const previews = new Map(); // "workspace:messaggio:n" → { buf, type, at }, dal più vecchio
+const waiting = new Map(); // stessa chiave → Promise del file che l'estensione sta mandando
 
+function receivedAttachment(user, msgId, n) {
+  const src = db.prepare('SELECT * FROM mail_messages WHERE id = ?').get(+msgId) || fail(404, 'Messaggio non trovato');
+  getThread(src.thread_id, user);
+  const att = JSON.parse(src.attachments || '[]')[+n] || fail(404, 'Allegato inesistente');
+  if (!att.part) fail(400, 'Questo allegato non si può prendere: la mail è arrivata con una versione vecchia dell\'estensione');
+  return { src, att, key: `${user.workspace_id}:${src.id}:${+n}` };
+}
+
+function cachedPreview(key) {
+  for (const [k, f] of previews) if (Date.now() - f.at > PREVIEW_TTL) previews.delete(k);
+  return previews.get(key) || null;
+}
+
+function cachePreview(key, file) {
+  previews.delete(key);
+  previews.set(key, file);
+  let total = [...previews.values()].reduce((n, f) => n + f.buf.length, 0);
+  for (const [k, f] of previews) {
+    if (total <= PREVIEW_CACHE || k === key) break;
+    previews.delete(k);
+    total -= f.buf.length;
+  }
+}
+
+const newFetch = f => { const id = ++fetchSeq; fetches.set(id, { id, created: Date.now(), ...f }); return id; };
+
+// Il file di un allegato ricevuto, per vederlo: dalla memoria o chiesto a Thunderbird (si aspetta che arrivi).
+route('GET', '/api/mail/messages/:id/attachments/:n', async ({ res, params, user }) => {
+  const { src, att, key } = receivedAttachment(user, params.id, params.n);
+  let f = cachedPreview(key);
+  if (!f) {
+    if (!waiting.has(key)) {
+      if (!mailExtOn(user.id)) fail(409, 'Thunderbird non è collegato: il file è lì, aprilo e riprova');
+      if ((mailExtVersion(user.id) || '0').localeCompare(PREVIEW_EXT, undefined, { numeric: true }) < 0) {
+        fail(409, `Per l'anteprima serve l'estensione di Thunderbird ${PREVIEW_EXT}: aggiornala da Impostazioni → Mail`);
+      }
+      const p = new Promise((resolve, reject) => {
+        const id = newFetch({ user: user.id, ws: user.workspace_id, preview: true, message_id: src.message_id, part: att.part, name: att.name, type: att.type, key, resolve, reject });
+        setTimeout(() => { fetches.delete(id); reject(new HttpError(409, 'Thunderbird non ha mandato il file: riprova')); }, PREVIEW_WAIT);
+      });
+      p.catch(() => {}).finally(() => waiting.delete(key));
+      waiting.set(key, p);
+      notifyMailExt(user.id, 'fetch');
+    }
+    f = await waiting.get(key);
+  }
+  const name = att.name || 'allegato';
+  res.writeHead(200, {
+    'Content-Type': f.type,
+    'Content-Length': f.buf.length,
+    'Content-Disposition': `attachment; filename="${name.replace(/[^\x20-\x7e]|"/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "sandbox; default-src 'none'",
+    'Cache-Control': 'no-store',
+  });
+  res.end(f.buf);
+}, { area: 'mail', quiet: true });
+
+// "→ magazzino": se il file è già qui (anteprima appena vista) diventa subito un documento, se no lo carica Thunderbird.
 route('POST', '/api/mail/attachments/save', async ({ user, body }) => {
   const b = await body();
   const it = db.prepare('SELECT id, code FROM items WHERE id = ? AND deleted_at IS NULL').get(+b.item_id) || fail(404, 'Articolo non trovato');
-  const src = db.prepare('SELECT * FROM mail_messages WHERE id = ?').get(+b.id) || fail(404, 'Messaggio non trovato');
-  getThread(src.thread_id, user);
-  const att = JSON.parse(src.attachments || '[]')[+b.n];
-  if (!att?.part) fail(400, 'Questo allegato non si può prendere: la mail è arrivata con una versione vecchia dell\'estensione');
+  const { src, att, key } = receivedAttachment(user, b.id, b.n);
+  const cached = cachedPreview(key);
+  if (cached) {
+    const req = Object.assign(Readable.from([cached.buf]), { headers: { 'content-length': String(cached.buf.length), 'content-type': cached.type } });
+    const { stored, size, sha256, mime } = await saveUpload(req);
+    db.prepare(`INSERT INTO documents (item_id, kind, label, version, filename, mime, size, sha256, stored, created_by, created_at)
+      VALUES (?, ?, '', '', ?, ?, ?, ?, ?, ?, ?)`).run(it.id, docKind(b.kind), str(att.name, 255) || 'file', mime, size, sha256, stored, user.id, now());
+    bump(user.id, user.workspace_id);
+    return { code: it.code, saved: true };
+  }
   if (!mailExtOn(user.id)) fail(409, 'Thunderbird non è collegato: il file è lì, aprilo e riprova');
-  const id = ++fetchSeq;
-  fetches.set(id, { id, user: user.id, ws: user.workspace_id, item_id: it.id, kind: docKind(b.kind), message_id: src.message_id,
-    part: att.part, name: att.name, type: att.type, created: Date.now() });
+  newFetch({ user: user.id, ws: user.workspace_id, item_id: it.id, kind: docKind(b.kind), message_id: src.message_id, part: att.part, name: att.name, type: att.type });
   notifyMailExt(user.id, 'fetch');
   return { code: it.code };
 }, { area: 'documenti', quiet: true });
 
-route('GET', '/api/mail/fetches', ({ user }) => {
+// Le richieste per l'estensione. Quelle per l'anteprima solo alle versioni che le conoscono (mandano la versione).
+route('GET', '/api/mail/fetches', ({ req, user }) => {
   for (const [id, f] of fetches) if (Date.now() - f.created > 3600e3) fetches.delete(id);
-  return [...fetches.values()].filter(f => f.user === user.id && !f.claimed).map(({ user: _u, created: _c, ...f }) => f);
+  const previewOk = String(req.headers['x-organizer-ext'] || '0').localeCompare(PREVIEW_EXT, undefined, { numeric: true }) >= 0;
+  return [...fetches.values()].filter(f => f.user === user.id && !f.claimed && (previewOk || !f.preview))
+    .map(f => ({ id: f.id, ws: f.ws, preview: !!f.preview, item_id: f.item_id, kind: f.kind, message_id: f.message_id, part: f.part, name: f.name, type: f.type }));
 }, { ws: false });
 
 route('POST', '/api/mail/fetches/:id/claim', ({ params, user }) => {
@@ -546,7 +628,27 @@ route('POST', '/api/mail/fetches/:id/claim', ({ params, user }) => {
   f.claimed = true;
 }, { ws: false, quiet: true });
 
-route('POST', '/api/mail/fetches/:id/done', ({ params, user }) => {
+// Il file di un'anteprima, dall'estensione.
+route('POST', '/api/mail/fetches/:id/file', async ({ req, params, user }) => {
   const f = fetches.get(+params.id);
-  if (f?.user === user.id) fetches.delete(f.id);
+  if (!f?.preview || f.user !== user.id) fail(404, 'Richiesta non trovata');
+  fetches.delete(f.id);
+  try {
+    const buf = await readBody(req, PREVIEW_MAX);
+    const file = { buf, type: str(req.headers['content-type'], 100) || f.type || 'application/octet-stream', at: Date.now() };
+    cachePreview(f.key, file);
+    f.resolve(file);
+  } catch (e) {
+    f.reject(e.status === 413 ? new HttpError(413, `File troppo grande per l'anteprima (max ${PREVIEW_MAX >> 20} MB): mandalo in magazzino o aprilo in Thunderbird`) : e);
+    throw e;
+  }
+}, { ws: false, quiet: true });
+
+// Fatto (o non riuscito: error dice perché, e l'anteprima che aspettava lo mostra).
+route('POST', '/api/mail/fetches/:id/done', async ({ params, user, body }) => {
+  const f = fetches.get(+params.id);
+  if (f?.user !== user.id) return;
+  fetches.delete(f.id);
+  const b = await body().catch(() => ({}));
+  f.reject?.(new HttpError(409, b.error ? `Thunderbird: ${str(b.error, 300)}` : 'Thunderbird non ha mandato il file'));
 }, { ws: false, quiet: true });

@@ -10,6 +10,7 @@ import { viewDoc, viewReview, docCancelDraft, setDocFocus, docSearchKey } from '
 import { viewDocuments } from './documents.js';
 import { viewChat } from './chat.js';
 import { viewMail, viewTopic } from './topics.js';
+import { viewAttachment, attachmentBack } from './mail.js';
 import { tabbar, updateTabbar } from './tabbar.js';
 import { openPalette, initPalette } from './palette.js';
 import { tourTick } from './tour.js';
@@ -31,6 +32,7 @@ const VIEWS = {
   p: { fn: viewProject, title: 'Progetto', nav: 'progetti' },
   mail: { fn: viewMail, title: 'Mail', nav: 'mail' },
   t: { fn: viewTopic, title: 'Mail', nav: 'mail' },
+  allegato: { fn: viewAttachment, title: 'Allegato', nav: 'mail' },
   diario: { fn: viewDiary, title: 'Diario', nav: 'diario' },
   magazzino: { fn: viewItems, title: 'Magazzino', nav: 'magazzino' },
   i: { fn: viewItem, title: 'Articolo', nav: 'magazzino' },
@@ -59,7 +61,7 @@ const SIDE = [
 
 // Permessi: l'area che serve leggere per vedere ogni pagina (e la sua voce nel menu).
 const PAGE_AREA = {
-  agenda: () => can('voci') || can('mail'), diario: () => can('voci'), mail: () => can('mail'), t: () => can('mail'),
+  agenda: () => can('voci') || can('mail'), diario: () => can('voci'), mail: () => can('mail'), t: () => can('mail'), allegato: () => can('mail'),
   progetti: () => can('progetti'), p: () => can('progetti'),
   magazzino: () => can('magazzino'), i: () => can('magazzino'),
   documenti: () => can('documenti'), d: () => can('documenti'), review: () => can('documenti'),
@@ -355,7 +357,7 @@ function buildShell() {
 function updateStatus() {
   const pending = S.outbox.length;
   let cls; let title;
-  if (!S.online) { cls = 'off'; title = 'Offline'; }
+  if (!S.online) { cls = 'off'; title = navigator.onLine ? 'Server non raggiungibile' : 'Offline'; }
   else if (S.live) { cls = 'live'; title = 'Sincronizzato in tempo reale'; }
   else { cls = 'wait'; title = 'Riconnessione…'; }
   statusDot.className = `status ${cls}`;
@@ -466,10 +468,10 @@ function renderApp() {
         : S.noWorkspace ? viewNoWorkspace()
           : !S.data ? h('div.empty', 'Caricamento…')
             : pageAllowed(r.name) ? v.fn(r.id, r.query) : noAccess());
-    document.body.classList.toggle('doc-page', !!S.data && (r.name === 'd' || r.name === 'review'));
+    document.body.classList.toggle('doc-page', !!S.data && (r.name === 'd' || r.name === 'review' || r.name === 'allegato'));
     document.body.classList.toggle('chat-page', !!S.data && r.name === 'chat');
     // Pagine senza la barra rapida in alto (lì non c'è niente da aggiungere).
-    document.body.classList.toggle('no-quick', r.name === 'novita' || r.name === 't' || (!!S.data && !quickAllowed(quickContext())));
+    document.body.classList.toggle('no-quick', r.name === 'novita' || r.name === 't' || r.name === 'allegato' || (!!S.data && !quickAllowed(quickContext())));
   } catch (e) {
     console.error(e);
     viewEl.replaceChildren(h('div.empty', `Errore di visualizzazione: ${e.message}`));
@@ -562,7 +564,9 @@ const offlineBar = h('div.update-bar.offline-bar', { hidden: true, role: 'status
 function updateOfflineBar() {
   offlineBar.hidden = S.online;
   const n = S.outbox.length;
-  offlineText.textContent = `Sei offline: puoi leggere tutto e aggiungere todo in Agenda e note nel Diario${n ? ` (${n} in coda, partono appena torna la rete)` : ''}. Il resto si modifica quando torni online.`;
+  // Rete del dispositivo presente: è il server che non risponde (di solito sta ripartendo dopo un aggiornamento).
+  const why = navigator.onLine ? 'Il server non risponde (se si sta aggiornando torna da solo tra pochi secondi)' : 'Sei offline';
+  offlineText.textContent = `${why}: puoi leggere tutto e aggiungere todo in Agenda e note nel Diario${n ? ` (${n} in coda, partono appena torna la rete)` : ''}. Il resto si modifica quando torni online.`;
 }
 
 const updateBar = h('div.update-bar', { hidden: true, role: 'status' },
@@ -653,6 +657,7 @@ function goUp(field) {
     return render();
   }
   const r = route();
+  if (r.name === 'allegato') return attachmentBack();
   const doc = r.name === 'd' && S.data?.docById.get(+r.id);
   const up = { p: '#/progetti', i: '#/magazzino', cerca: '#/agenda', review: '#/documenti', t: '#/mail' }[r.name]
     || (r.name === 'contatti' && r.id ? '#/contatti' : null)

@@ -30,12 +30,14 @@ function loadPdfjs() {
 }
 
 // Link che puntano a un PDF: si caricano dal vivo attraverso il server (vedi server/remote.js).
+// Il file di un documento; per l'anteprima di un allegato (d.blob) è già qui (e la CSP non lascia leggere i blob:).
+const fileOf = d => (d.blob ? Promise.resolve(new Response(d.blob)) : fetch(docFileUrl(d), { credentials: 'same-origin' }));
 const isPdfLink = d => d.url && /\.pdf$/i.test((() => { try { return new URL(d.url).pathname; } catch { return ''; } })());
 
 const MODEL_EXT = /\.(stl|3mf|stp|step)$/i;
 const CAD_MAX = 40 * 1024 * 1024;
 
-function kindOf(d) {
+export function kindOf(d) {
   if (isPdfLink(d)) return 'pdf';
   if (d.url) return 'link';
   if (MODEL_EXT.test(d.filename || '')) return 'model';
@@ -80,7 +82,7 @@ export function docThumb(d, width = 300) {
   if (kind === 'pdf' && !d.url) return thumbs.get(key).then(src => src && h('img.peek-img.pdf', { src, alt: '' }));
   if (kind === 'text' && (d.size ?? 0) < TEXT_MAX) {
     if (!thumbs.has(key)) {
-      thumbs.set(key, fetch(docFileUrl(d), { credentials: 'same-origin' }).then(r => (r.ok ? r.text() : '')).catch(() => ''));
+      thumbs.set(key, fileOf(d).then(r => (r.ok ? r.text() : '')).catch(() => ''));
     }
     return thumbs.get(key).then(t => t && h('pre.peek-text', t.split('\n').slice(0, 14).join('\n')));
   }
@@ -97,7 +99,7 @@ export function docThumb(d, width = 300) {
 // ---------- visualizzatore (persistente) ----------
 function getViewer(d) {
   if (viewers.has(d.id)) return viewers.get(d.id);
-  const v = { id: d.id, kind: kindOf(d), zoom: 1, scroll: 0, pages: [], draft: null, status: 'loading' };
+  const v = { id: d.id, kind: kindOf(d), preview: !!d.src, zoom: 1, scroll: 0, pages: [], draft: null, status: 'loading' };
   v.scroller = h(`div.dv-scroll${v.kind === 'model' || v.kind === 'table' ? `.${v.kind}` : ''}`, { onscroll: () => { v.scroll = v.scroller.scrollTop; updatePageLabel(v); } });
   v.pagesEl = h('div.dv-pages');
   v.scroller.append(v.pagesEl);
@@ -113,7 +115,7 @@ function getViewer(d) {
         v.pageLabel,
       ],
       h('span.grow'),
-      h('span.muted.dv-hint', v.kind === 'model'
+      h('span.muted.dv-hint', v.preview ? '' : v.kind === 'model'
         ? 'Trascina per ruotare, tasto destro per spostare, rotella per lo zoom. Clicca sul modello per una nota in quel punto'
         : v.kind === 'pdf' ? 'Clicca per una nota in quel punto o seleziona del testo per una nota su quel testo; trascina un segnaposto per spostarlo'
           : pinnable(v) ? 'Clicca sul documento per aggiungere una nota in quel punto, trascina un segnaposto per spostarlo' : ''),
@@ -154,6 +156,8 @@ function destroyViewer(v) {
 
 // Documenti richiesti dalla pagina attuale: quelli non più mostrati si chiudono.
 function wantedDocs() {
+  const att = location.hash.match(/^#\/allegato\/(\d+)\?n=(\d+)/);
+  if (att) return [`att:${att[1]}:${att[2]}`];
   const single = location.hash.match(/^#\/d\/(\d+)/);
   if (single) return [+single[1]];
   const review = location.hash.match(/^#\/review\?d=([\d,]+)/);
@@ -179,7 +183,8 @@ async function openPdf(v, d) {
     const pdfjs = v.pdfjs = await loadPdfjs();
     // PDF da link: lo scarica il server; si legge prima la risposta per mostrare il motivo di un errore.
     let data;
-    if (d.url) {
+    if (d.blob) data = new Uint8Array(await d.blob.arrayBuffer()); // anteprima di un allegato: PDF.js non legge i blob:
+    else if (d.url) {
       v.pagesEl.replaceChildren(h('div.empty', 'Scarico il PDF dal link…'));
       const r = await fetch(`api/docs/${d.id}/remote`, { credentials: 'same-origin' });
       if (!r.ok) return fail(v, (await r.json().catch(() => null))?.error || `Errore ${r.status}`);
@@ -230,7 +235,7 @@ function openImage(v, d) {
 async function cadImage(d) {
   const [cad, text] = await Promise.all([
     import('./cad.js'),
-    fetch(docFileUrl(d), { credentials: 'same-origin' }).then(r => {
+    fileOf(d).then(r => {
       if (!r.ok) throw new Error(`errore ${r.status}`);
       return r.text();
     }),
@@ -257,7 +262,7 @@ async function openCad(v, d) {
 async function openText(v, d) {
   if (d.size > TEXT_MAX) return fail(v, `File di testo troppo grande per l'anteprima (${fmtSize(d.size)}): scaricalo.`);
   try {
-    const r = await fetch(docFileUrl(d), { credentials: 'same-origin' });
+    const r = await fileOf(d);
     if (!r.ok) throw new Error(`errore ${r.status}`);
     v.rawText = await r.text();
     v.pagesEl.replaceChildren(v.textEl = h('pre.dv-text', v.rawText));
@@ -270,7 +275,7 @@ async function openText(v, d) {
 // ---------- tabelle (CSV, TSV) ----------
 // Il file come testo: UTF-8, oppure Windows-1252 se non lo è (i CSV salvati da Excel).
 async function fetchText(d) {
-  const r = await fetch(docFileUrl(d), { credentials: 'same-origin' });
+  const r = await fileOf(d);
   if (!r.ok) throw new Error(`errore ${r.status}`);
   const buf = await r.arrayBuffer();
   let t;
@@ -347,7 +352,7 @@ async function openModel(v, d) {
   try {
     const [m3, buf] = await Promise.all([
       import('./model3d.js'),
-      fetch(docFileUrl(d), { credentials: 'same-origin' }).then(r => {
+      fileOf(d).then(r => {
         if (!r.ok) throw new Error(`errore ${r.status}`);
         return r.arrayBuffer();
       }),
@@ -1282,6 +1287,14 @@ function docBody(d, v) {
   });
   const shown = notesShown(v);
   return h('div.dv', { class: shown ? null : 'no-notes' }, preview, shown && notesPanel(d, v));
+}
+
+// Anteprima di un file che non è un documento (allegato ricevuto, vedi mail.js): solo da guardare, senza note.
+// d.id è la chiave dell'anteprima (come in wantedDocs), d.src il file già scaricato.
+export function previewBody(d) {
+  const v = getViewer(d);
+  queueMicrotask(() => { if (v.scroller.isConnected && Math.abs(v.scroller.scrollTop - v.scroll) > 1) v.scroller.scrollTop = v.scroll; });
+  return h('div.dv.no-notes.ro', v.el);
 }
 
 // ---------- revisione affiancata ----------

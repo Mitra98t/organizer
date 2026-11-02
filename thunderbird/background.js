@@ -28,7 +28,7 @@ async function loadConfig() {
 async function call(method, path, body) {
   const r = await fetch(`${cfg.server}/api${path}`, {
     method,
-    headers: { Authorization: `Bearer ${cfg.token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    headers: { Authorization: `Bearer ${cfg.token}`, 'X-Organizer-Ext': browser.runtime.getManifest().version, ...(body ? { 'Content-Type': 'application/json' } : {}) },
     body: body && JSON.stringify(body),
   });
   if (!r.ok) {
@@ -193,9 +193,10 @@ browser.compose.onAfterSend.addListener(async (tab, info) => {
   if (m && (req || cfg.inbox)) await pass(m, { direction: 'out' }).catch(e => console.warn('Organizer: mail mandata non passata', e));
 });
 
-// ---------- allegati → documenti del magazzino ----------
+// ---------- allegati → documenti del magazzino e anteprime ----------
 // Da Organizer si sceglie un allegato di una mail ricevuta e l'articolo: il file sta qui, lo carichiamo noi
 // come documento dell'articolo (stessa API dei caricamenti, nel workspace da cui è partita la richiesta).
+// Per l'anteprima (preview) il file va solo al server, che lo mostra e lo tiene per poco.
 function saveAttachments() {
   busy = (busy || Promise.resolve()).then(async () => {
     let list = [];
@@ -215,16 +216,20 @@ function saveAttachments() {
         const msg = found?.messages?.[0];
         if (!msg) throw new Error('mail non trovata in Thunderbird');
         const file = await browser.messages.getAttachmentFile(msg.id, f.part);
-        const r = await fetch(`${cfg.server}/api/items/${f.item_id}/docs?${new URLSearchParams({ name: f.name, kind: f.kind })}`, {
+        const url = f.preview ? `${cfg.server}/api/mail/fetches/${f.id}/file`
+          : `${cfg.server}/api/items/${f.item_id}/docs?${new URLSearchParams({ name: f.name, kind: f.kind })}`;
+        const r = await fetch(url, {
           method: 'POST',
           headers: { Authorization: `Bearer ${cfg.token}`, 'X-Workspace': String(f.ws), 'Content-Type': file.type || f.type || 'application/octet-stream' },
           body: file,
         });
         if (!r.ok) throw new Error((await r.json().catch(() => null))?.error || `errore ${r.status}`);
       } catch (e) {
-        notify(`Allegato "${f.name}" non salvato in Organizer: ${e.message}`);
+        // L'anteprima che non arriva lo dice in Organizer, dove la si aspetta.
+        if (f.preview) await call('POST', `/mail/fetches/${f.id}/done`, { error: e.message }).catch(() => {});
+        else notify(`Allegato "${f.name}" non salvato in Organizer: ${e.message}`);
       } finally {
-        call('POST', `/mail/fetches/${f.id}/done`).catch(() => {});
+        if (!f.preview) call('POST', `/mail/fetches/${f.id}/done`).catch(() => {});
       }
     }
   });

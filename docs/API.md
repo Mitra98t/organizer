@@ -217,7 +217,9 @@ Una mail è una voce con `kind: "mail"`. Il server non spedisce niente: la mail 
 | `POST /api/mail/threads/:id/draft` | `{id}` di una nuova mail nella conversazione (a chi ha scritto per ultimo) |
 | `POST /api/mail/topics/:id/draft` | `{id}` di una mail vuota in una conversazione nuova del topic |
 | `POST /api/mail/messages/:id/reply` | `{all}` (rispondi a tutti) → `{id}` della nuova mail di risposta a quel messaggio, nel suo thread |
-| `POST /api/mail/attachments/save` | `{id, n, item_id, kind}`: chiede all'estensione di caricare l'allegato n del messaggio `id` come documento dell'articolo |
+| `POST /api/mail/attachments/save` | `{id, n, item_id, kind}`: salva l'allegato n del messaggio `id` come documento dell'articolo; se è appena stato visto in anteprima lo salva subito (`saved: true`), altrimenti lo chiede all'estensione |
+| `GET /api/mail/messages/:id` | un messaggio ricevuto: `thread_id`, `topic_id`, oggetto, mittente, data, allegati |
+| `GET /api/mail/messages/:id/attachments/:n` | il file dell'allegato n, per l'anteprima: lo chiede all'estensione (1.6 o successiva) e aspetta fino a un minuto; poi resta in memoria per 30 minuti |
 
 Le mail sono personali: le voci `kind: "mail"` le vedono solo chi le ha create e l'assegnatario, anche per gli admin.
 
@@ -235,8 +237,9 @@ L'estensione di Thunderbird (cartella `thunderbird/`) usa queste, con un token; 
 | `GET /api/mail/backfill` | `{since}`: da quando caricare la posta al primo collegamento (l'ultimo mese), `null` se già fatto; le mail si mandano a `/api/mail/incoming` con `backfill: true` (già lette, senza notifiche) |
 | `POST /api/mail/backfill/done` | caricamento finito |
 | `POST /api/mail/identities` | `{addresses}`: i propri indirizzi, esclusi da "rispondi a tutti" |
-| `GET /api/mail/fetches` | allegati da caricare come documenti: `id`, `ws`, `item_id`, `kind`, `message_id`, `part`, `name`; si caricano con `POST /api/items/:id/docs` e l'header `X-Workspace` |
-| `POST /api/mail/fetches/:id/claim`, `/done` | presa in carico e fine (anche se non riuscita) |
+| `GET /api/mail/fetches` | allegati da caricare: `id`, `ws`, `preview`, `item_id`, `kind`, `message_id`, `part`, `name`; i documenti si caricano con `POST /api/items/:id/docs` e l'header `X-Workspace`, le anteprime (`preview`, solo con l'header `X-Organizer-Ext` 1.6 o successivo) con `POST /api/mail/fetches/:id/file` |
+| `POST /api/mail/fetches/:id/claim`, `/done` | presa in carico e fine (anche se non riuscita; `{error}` per dire all'anteprima perché) |
+| `POST /api/mail/fetches/:id/file` | il file di un'anteprima (corpo grezzo, max 60 MB) |
 | `GET /api/mail/thunderbird.xpi` | l'estensione, impostata per il server da cui si scarica |
 
 ## Contatti

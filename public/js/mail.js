@@ -4,10 +4,11 @@
 // Con l'estensione di Thunderbird collegata (server/thunderbird.js) "Manda" apre la mail lì, lo stato si
 // aggiorna da solo e i messaggi ricevuti e mandati finiscono nel loro thread.
 import {
-  h, icon, S, ui, api, act, toast, patchEntry, fmtSize, plainRefs, richField, contactStyle, contactNames, can, itemAttrs, docName,
+  h, icon, S, ui, api, act, toast, render, patchEntry, fmtSize, fmtTime, plainRefs, richField, contactStyle, contactNames, can, itemAttrs, docName,
 } from './core.js';
 import { backlinksBox } from './views.js';
 import { pickDoc, pickItem } from './pickers.js';
+import { kindOf, previewBody } from './docview.js';
 
 const subjectOf = e => plainRefs(e.mail_subject || e.title.replace(/(^|\s)#/g, '$1'));
 
@@ -50,7 +51,7 @@ async function send(e) {
     location.href = `organizer-mail://open?server=${encodeURIComponent(server)}&token=${token}`;
     toast('Mail aperta in Thunderbird', { action: { label: 'Segna inviata', fn: () => patchEntry(e, { done: true }) } });
   } catch (err) {
-    toast(err.offline ? 'Sei offline' : err.message, { err: true });
+    toast(err.message, { err: true });
   }
 }
 
@@ -190,21 +191,102 @@ export function mailSide(e) {
   ];
 }
 
-// ---------- allegati ricevuti → magazzino ----------
-// Con Thunderbird collegato, ogni allegato di una mail ricevuta può diventare un documento di un articolo: si
-// sceglie articolo e tipo in un modale, l'estensione prende il file da Thunderbird e lo carica.
+// ---------- allegati ricevuti: anteprima e magazzino ----------
+// Con Thunderbird collegato, ogni allegato di una mail ricevuta si può vedere senza salvarlo (Anteprima, per i
+// tipi che il visualizzatore dei documenti sa mostrare) e può diventare un documento di un articolo: si sceglie
+// articolo e tipo in un modale e il file arriva dall'anteprima appena vista o da Thunderbird.
+const canPreview = a => !!a.part && !['none', 'link'].includes(kindOf({ filename: a.name, mime: a.type }));
+const previewHash = (msgId, n) => `#/allegato/${msgId}?n=${n}`;
+
+function saveToItem(a, msgId, n) {
+  pickItem({
+    file: a,
+    onPick: (it, kind) => act(async () => {
+      const r = await api('POST', '/mail/attachments/save', { id: msgId, n, item_id: it.id, kind });
+      toast(r.saved ? `${a.name} salvato tra i documenti di ${it.code}` : `Chiesto a Thunderbird: ${a.name} comparirà tra i documenti di ${it.code}`);
+    }),
+  });
+}
+
 export function attList(list, msgId) {
   if (!list?.length) return null;
   const canSave = S.data.mailExt && can('documenti', 'write');
-  return h('div.att-in', list.map((a, n) => h('div.ms-att', icon('clip'), h('span', a.name ?? a), a.size && h('span.muted', fmtSize(a.size)),
-    canSave && a.part && h('button.chip', {
-      title: 'Salva come documento di un articolo del magazzino',
-      onclick: () => pickItem({
-        file: a,
-        onPick: (it, kind) => act(async () => {
-          await api('POST', '/mail/attachments/save', { id: msgId, n, item_id: it.id, kind });
-          toast(`Chiesto a Thunderbird: ${a.name} comparirà tra i documenti di ${it.code}`);
-        }),
-      }),
-    }, icon('box'), '→ magazzino'))));
+  return h('div.att-in', list.map((a, n) => {
+    const preview = canPreview(a);
+    // Dall'anteprima "indietro" torna qui, alla mail da cui si è aperta.
+    const open = { href: previewHash(msgId, n), onclick: () => { ui.attFrom = location.hash; } };
+    return h('div.ms-att', icon('clip'),
+      preview ? h('a', { ...open, title: 'Anteprima' }, a.name ?? a) : h('span', a.name ?? a),
+      a.size && h('span.muted', fmtSize(a.size)),
+      preview && h('a.chip', { ...open, title: 'Guarda il file senza salvarlo' }, icon('file'), 'anteprima'),
+      canSave && a.part && h('button.chip', { title: 'Salva come documento di un articolo del magazzino', onclick: () => saveToItem(a, msgId, n) },
+        icon('box'), '→ magazzino'));
+  }));
+}
+
+// La pagina dell'anteprima (#/allegato/messaggio?n=indice). Il file si scarica una volta (il server lo chiede a
+// Thunderbird, che può metterci qualche secondo) e resta in memoria finché la pagina è aperta.
+const attFiles = new Map(); // "att:messaggio:n" → { status, meta, att, url, error }
+
+async function loadAttachment(key, msgId, n) {
+  const st = { status: 'loading' };
+  attFiles.set(key, st);
+  try {
+    st.meta = await api('GET', `/mail/messages/${msgId}`);
+    st.att = st.meta.attachments[n];
+    if (!st.att) throw new Error('Allegato inesistente');
+    render();
+    const r = await fetch(`api/mail/messages/${msgId}/attachments/${n}`, { credentials: 'same-origin' })
+      .catch(() => { throw new Error('Connessione interrotta: riprova'); });
+    if (!r.ok) throw new Error((await r.json().catch(() => null))?.error || `Errore ${r.status}`);
+    const blob = await r.blob();
+    if (attFiles.get(key) !== st) return; // pagina già chiusa
+    Object.assign(st, { status: 'ready', blob, url: URL.createObjectURL(blob) });
+  } catch (e) {
+    Object.assign(st, { status: 'error', error: e.message });
+  }
+  render();
+}
+
+window.addEventListener('hashchange', () => {
+  for (const [key, st] of attFiles) {
+    const [, msgId, n] = key.split(':');
+    if (location.hash === previewHash(msgId, n)) continue;
+    if (st.url) URL.revokeObjectURL(st.url);
+    attFiles.delete(key);
+  }
+});
+
+// Indietro: alla mail da cui si è aperta l'anteprima (o alla sua conversazione, se si è arrivati da un link).
+export function attachmentBack() {
+  const st = [...attFiles.values()][0];
+  if (ui.attFrom) {
+    ui.attFrom = null;
+    history.back();
+  } else location.hash = st?.meta ? `#/t/${st.meta.topic_id}?th=${st.meta.thread_id}` : '#/mail';
+}
+
+export function viewAttachment(id, query = {}) {
+  const n = +query.n || 0;
+  const key = `att:${+id}:${n}`;
+  if (!attFiles.has(key)) loadAttachment(key, +id, n);
+  const st = attFiles.get(key);
+  const { meta, att } = st;
+  const d = st.status === 'ready' && { id: key, filename: att.name, mime: att.type || st.blob.type, size: st.blob.size, src: st.url, blob: st.blob };
+  const canSave = S.data.mailExt && can('documenti', 'write') && att?.part;
+  return h('div.view.docview.attview',
+    h('div.head',
+      h('button.icon-btn', { title: 'Torna alla mail (Esc)', onclick: attachmentBack }, icon('back')),
+      h('h2.dv-title', att?.name || 'Allegato'),
+      meta && h('span.muted.att-from', `da ${fromName(meta.from_addr)} · ${meta.subject || '(senza oggetto)'} · ${fmtTime(meta.date)}`),
+      h('span.grow'),
+      d && h('span.muted', fmtSize(d.size)),
+      canSave && h('button.btn.sm', { title: 'Salva come documento di un articolo del magazzino', onclick: () => saveToItem(att, +id, n) }, icon('box'), '→ magazzino'),
+      d && h('a.icon-btn', { href: d.src, download: att.name || 'allegato', title: 'Scarica' }, icon('download'))),
+    st.status === 'loading' ? h('div.empty', icon('wait'), h('p', 'Chiedo il file a Thunderbird…'))
+      : st.status === 'error' ? h('div.empty', h('p', st.error),
+        h('button.btn', { onclick: () => { attFiles.delete(key); render(); } }, 'Riprova'))
+        : kindOf(d) === 'none' ? h('div.empty', h('p', 'Anteprima non disponibile per questo tipo di file.'),
+          h('a.btn', { href: d.src, download: att.name || 'allegato' }, icon('download'), `Scarica ${att.name}`))
+          : previewBody(d));
 }

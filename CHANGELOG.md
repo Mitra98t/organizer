@@ -3,6 +3,10 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.22.0 — 2026-11-02
+- **Anteprima degli allegati ricevuti**: PDF, immagini, disegni DXF, modelli 3D, testi e tabelle CSV allegati a una mail si aprono con "anteprima" (o cliccando il nome) senza salvarli: il file arriva da Thunderbird in qualche secondo. Dall'anteprima "→ magazzino" li salva in un articolo subito, senza richiederli a Thunderbird; indietro (o Esc) torna alla mail da cui l'hai aperta. "→ magazzino" resta anche accanto a ogni allegato. Serve l'**estensione di Thunderbird 1.6**: scaricala di nuovo da Impostazioni → Mail e reinstallala (token e impostazioni restano).
+- **Meno "offline" per niente**: una richiesta interrotta (Safari ne perde qualcuna al risveglio del Mac o quando cambia rete) non mette più l'app offline se il server risponde; si riprova e basta. Quando il server sta ripartendo per un aggiornamento la barra lo dice ("il server non risponde") invece di "sei offline", e appena torna l'app riapre da sola il tempo reale (prima poteva restare su "riconnessione…" finché non la rimettevi in primo piano).
+
 ## 0.21.3 — 2026-11-02
 - **Nuova mail dalla pagina del topic**: sotto l'elenco delle conversazioni, un tasto apre una conversazione nuova nello stesso topic con la bozza già pronta a destra.
 - Una mail scritta qui, finché la sua conversazione non ha altri messaggi, dà alla conversazione il suo oggetto (o il titolo) anche quando lo cambi dopo averla creata.

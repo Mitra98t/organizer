@@ -234,7 +234,7 @@ test('thunderbird: thread, mandata, risposta, storia, collegamenti, archivio', a
   await tb('POST', '/mail/identities', { addresses: ['Fede <fede@organizer.test>'] });
   const news = { message_id: '<n1@cliente.it>', from: 'Anna Bianchi <anna@cliente.it>', to: 'fede@organizer.test, luca@cliente.it',
     cc: 'Ufficio <ufficio@cliente.it>', subject: 'Richiesta campioni', body: 'Ci servono 5 campioni @ 12V !urgente', inbox: true,
-    attachments: [{ name: 'relè.pdf', part: '1.2', size: 1234, type: 'application/pdf' }] };
+    attachments: [{ name: 'relè.pdf', part: '1.2', size: 1234, type: 'application/pdf' }, { name: 'foto.png', part: '1.3', size: 10, type: 'image/png' }] };
   const n1 = await tb('POST', '/mail/incoming', news).then(json);
   assert.ok(n1.thread && n1.thread !== tid);
   const nt = await tb('GET', `/mail/threads/${n1.thread}`).then(json);
@@ -253,6 +253,52 @@ test('thunderbird: thread, mandata, risposta, storia, collegamenti, archivio', a
   assert.equal(up.status, 200);
   await tb('POST', `/mail/fetches/${f.id}/done`);
   assert.deepEqual(await tb('GET', '/mail/fetches').then(json), []);
+
+  // Anteprima di un allegato ricevuto: serve l'estensione 1.6. Il server chiede il file, aspetta che arrivi e lo tiene.
+  const msg = nt.messages[0].id;
+  const meta = await tb('GET', `/mail/messages/${msg}`).then(json);
+  assert.deepEqual([meta.thread_id, meta.attachments.map(x => x.name)], [n1.thread, ['relè.pdf', 'foto.png']]);
+  const old15 = await tb('GET', `/mail/messages/${msg}/attachments/0`);
+  assert.deepEqual([old15.status, /1\.6/.test((await old15.json()).error)], [409, true]);
+  const ctrl16 = new AbortController();
+  const ext = { Authorization: `Bearer ${token}`, 'X-Organizer-Ext': '1.6' };
+  const stream16 = await fetch(`${url}/api/mail/stream`, { headers: ext, signal: ctrl16.signal });
+  const reader16 = stream16.body.pipeThrough(new TextDecoderStream()).getReader();
+  await reader16.read();
+  const extCall = (method, p, body) => fetch(`${url}/api${p}`, { method, headers: { ...ext, ...(body && !Buffer.isBuffer(body) ? { 'Content-Type': 'application/json' } : {}) },
+    body: Buffer.isBuffer(body) ? body : body && JSON.stringify(body) });
+  const pdf = Buffer.from('%PDF-1.4 anteprima');
+  const waiting = tb('GET', `/mail/messages/${msg}/attachments/0`);
+  let pf;
+  for (let i = 0; i < 50 && !pf; i++) {
+    await new Promise(res => setTimeout(res, 20));
+    [pf] = await extCall('GET', '/mail/fetches').then(json);
+  }
+  assert.deepEqual([pf.preview, pf.part, pf.message_id], [true, '1.2', 'n1@cliente.it']);
+  assert.deepEqual(await tb('GET', '/mail/fetches').then(json), []); // le estensioni vecchie non la vedono
+  assert.equal((await extCall('POST', `/mail/fetches/${pf.id}/claim`)).status, 204);
+  assert.equal((await extCall('POST', `/mail/fetches/${pf.id}/file`, pdf)).status, 204);
+  const got = await waiting;
+  assert.deepEqual([got.status, Buffer.from(await got.arrayBuffer()).equals(pdf)], [200, true]);
+  // Riaperta: dalla memoria, senza chiedere di nuovo a Thunderbird; "→ magazzino" la salva subito.
+  assert.equal((await tb('GET', `/mail/messages/${msg}/attachments/0`)).status, 200);
+  assert.deepEqual(await extCall('GET', '/mail/fetches').then(json), []);
+  assert.deepEqual(await tb('POST', '/mail/attachments/save', { id: msg, n: 0, item_id: sch.id, kind: 'datasheet' }).then(json), { code: 'SCH-042', saved: true });
+  const saved = (await tb('GET', '/sync').then(json)).docs.filter(d => d.item_id === sch.id && d.filename === 'relè.pdf');
+  assert.deepEqual(saved.map(d => d.size).sort((x, y) => x - y), [pdf.length - 4, pdf.length]);
+  // Thunderbird non trova il file: l'anteprima lo dice.
+  const missingPng = tb('GET', `/mail/messages/${msg}/attachments/1`);
+  let pf2;
+  for (let i = 0; i < 50 && !pf2; i++) {
+    await new Promise(res => setTimeout(res, 20));
+    [pf2] = await extCall('GET', '/mail/fetches').then(json);
+  }
+  await extCall('POST', `/mail/fetches/${pf2.id}/claim`);
+  await extCall('POST', `/mail/fetches/${pf2.id}/done`, { error: 'mail non trovata in Thunderbird' });
+  const miss = await missingPng;
+  assert.deepEqual([miss.status, (await miss.json()).error], [409, 'Thunderbird: mail non trovata in Thunderbird']);
+  assert.equal((await tb('GET', `/mail/messages/${msg}/attachments/5`)).status, 404);
+  ctrl16.abort();
 
   // Thread portato a mano da Thunderbird (anche vecchio, anche senza "tutta la posta"): dal più vecchio, tutto
   // nello stesso thread, già letto ma tra gli attivi; un thread archiviato con un messaggio già visto torna attivo.

@@ -207,8 +207,11 @@ export async function api(method, url, body) {
   try {
     r = await fetch(`api${url}`, init);
   } catch {
-    setOnline(false);
-    throw Object.assign(new Error('Sei offline'), { offline: true });
+    // Una richiesta interrotta non vuol dire offline (Safari ne perde qualcuna al risveglio o quando cambia
+    // rete): lo si è solo se nemmeno il server risponde. offline = la richiesta non è arrivata.
+    const up = await reachable();
+    setOnline(up);
+    throw Object.assign(new Error(up ? 'Connessione interrotta: riprova' : 'Sei offline'), { offline: true });
   }
   setOnline(true);
   const data = r.status === 204 ? null : await r.json().catch(() => null);
@@ -219,6 +222,9 @@ export async function api(method, url, body) {
   if (!r.ok) throw Object.assign(new Error(data?.error || `Errore ${r.status}`), { status: r.status });
   return data;
 }
+
+// Il server risponde? (Mentre riparte, per un aggiornamento, no: l'app è offline per qualche secondo.)
+const reachable = () => fetch('api/info', { cache: 'no-store' }).then(r => r.ok, () => false);
 
 function setOnline(v) {
   if (S.online !== v) {
@@ -412,14 +418,21 @@ export function connectLive() {
     S.live = false;
     renderStatus();
     // Il tempo reale è caduto: il server risponde ancora? Se no si è offline (pagine in sola lettura).
-    fetch('api/info', { cache: 'no-store' }).then(r => setOnline(r.ok), () => setOnline(false));
+    reachable().then(setOnline);
   };
 }
 export const liveClosed = () => !es || es.readyState === EventSource.CLOSED;
-// Senza tempo reale si riprova ogni 15 secondi se il server risponde (online/offline e coda da mandare).
+// Offline o senza tempo reale si riprova ogni 15 secondi se il server risponde: allora si torna online, parte la
+// coda e, se il tempo reale si era chiuso (il server che riparte risponde con un errore e il browser smette di
+// riprovare), lo si riapre.
 setInterval(() => {
-  if (S.live || !S.me) return;
-  fetch('api/info', { cache: 'no-store' }).then(r => { setOnline(r.ok); if (r.ok) flushOutbox(); }, () => setOnline(false));
+  if (!S.me || (S.live && S.online)) return;
+  reachable().then(ok => {
+    setOnline(ok);
+    if (!ok) return;
+    flushOutbox();
+    if (liveClosed()) connectLive();
+  });
 }, 15000);
 export function disconnectLive() {
   es?.close();
@@ -455,6 +468,7 @@ export async function addEntry(payload) {
   }
   S.outbox.push({ ...payload, kind, cid: newCid(), pid: -Date.now(), queued_at: new Date().toISOString(), done: null });
   saveOutbox();
+  if (S.online) setTimeout(flushOutbox, 3000); // solo una richiesta interrotta: si riprova subito
   toast(kind === 'note' ? 'Offline: nota in coda, parte appena torna la rete' : 'Offline: todo in coda, parte appena torna la rete');
   return true;
 }
@@ -509,7 +523,7 @@ export async function act(fn, okMsg) {
     sync();
     return r;
   } catch (e) {
-    toast(e.offline ? 'Sei offline: modifica non salvata' : e.message, { err: true });
+    toast(e.offline ? `${e.message}: modifica non salvata` : e.message, { err: true });
     sync();
   }
 }
@@ -660,8 +674,9 @@ kindMenu.addEventListener('keydown', ev => {
 
 // URL del file di un documento. L'impronta (sha256) nell'indirizzo evita che il browser mostri dalla cache
 // un file vecchio con lo stesso numero di documento (dopo un reset o il ripristino di un backup).
-export const docFileUrl = (d, { inline = false } = {}) =>
-  `api/docs/${d.id}/file?v=${(d.sha256 || '').slice(0, 12)}${inline ? '&inline=1' : ''}`;
+// src: un file che non è un documento (l'anteprima di un allegato ricevuto, già scaricato).
+export const docFileUrl = (d, { inline = false } = {}) => d.src
+  || `api/docs/${d.id}/file?v=${(d.sha256 || '').slice(0, 12)}${inline ? '&inline=1' : ''}`;
 
 // Colore scelto a mano se c'è, altrimenti quello automatico.
 export const projHue = p => p?.hue ?? hue(p?.tag ?? '');
