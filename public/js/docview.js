@@ -8,6 +8,7 @@
 // Più visualizzatori possono essere aperti insieme (revisione affiancata, #/review?d=1,2,3).
 import { backlinksBox } from './views.js';
 import { h, icon, S, ui, api, act, render, richText, mdText, fmtTime, fmtSize, userName, toast, trashIt, autosize, itemAttrs, save, docFileUrl, dkAttrs, kindPicker, docName, renameDoc, can, roClass, isReadOnly, shareBox } from './core.js';
+import { moveDoc } from './pickers.js';
 import { today } from './parse.js';
 
 const PDFJS = new URL('../vendor/pdfjs/', import.meta.url).href;
@@ -129,6 +130,7 @@ function getViewer(d) {
     }, icon('log'), 'Nota sul testo')));
   v.el.addEventListener('pointerdown', ev => { lastActive = v; v.pointer = ev.pointerType; });
   if (v.kind === 'pdf') v.pagesEl.addEventListener('pointerup', ev => textPointerUp(v, ev));
+  if (v.kind !== 'model' && pinnable(v)) pinchZoom(v);
   v.resize = new ResizeObserver(() => { clearTimeout(v.rt); v.rt = setTimeout(() => layout(v), 120); });
   v.resize.observe(v.scroller);
   viewers.set(d.id, v);
@@ -494,7 +496,7 @@ function layout(v) {
     p.wrap.style.setProperty('--total-scale-factor', p.cssW / p.w); // dimensione del testo selezionabile
     p.wrap.style.width = `${p.cssW}px`;
     p.wrap.style.height = `${Math.round(p.cssW * p.h / p.w)}px`;
-    if (p.visible) renderPage(v, p);
+    if (p.visible && !v.quickZoom) renderPage(v, p);
   }
   if (v.zoomLabel) v.zoomLabel.textContent = `${Math.round(v.zoom * 100)}%`;
   updatePageLabel(v);
@@ -528,11 +530,47 @@ function renderText(v, p) {
   p.textLayer.render().then(() => p.textEl.append(h('div.endOfContent'))).catch(e => { if (e?.name !== 'AbortException') console.warn(e); });
 }
 
+const clampZoom = (v, z) => Math.min(v.kind === 'cad' ? 12 : 4, Math.max(0.4, z)); // nei disegni si va nei dettagli
+
 function setZoom(v, z) {
   const ratio = v.scroller.scrollTop / Math.max(1, v.scroller.scrollHeight);
-  v.zoom = Math.min(v.kind === 'cad' ? 12 : 4, Math.max(0.4, z)); // nei disegni si va nei dettagli
+  v.zoom = clampZoom(v, z);
   layout(v);
   v.scroller.scrollTop = ratio * v.scroller.scrollHeight;
+}
+
+// Zoom con pinch (trackpad o dita) e ctrl/⌘ + rotella, attorno al punto sotto il puntatore. Durante il gesto le
+// pagine si allargano e basta (il disegno si stira); si ridisegnano nitide quando ci si ferma.
+function zoomAround(v, z, cx, cy) {
+  const s = v.scroller;
+  const r = s.getBoundingClientRect();
+  const x = cx - r.left;
+  const y = cy - r.top;
+  const fx = (s.scrollLeft + x) / Math.max(1, s.scrollWidth);
+  const fy = (s.scrollTop + y) / Math.max(1, s.scrollHeight);
+  v.zoom = clampZoom(v, z);
+  v.quickZoom = true;
+  layout(v);
+  v.quickZoom = false;
+  s.scrollLeft = fx * s.scrollWidth - x;
+  s.scrollTop = fy * s.scrollHeight - y;
+  clearTimeout(v.zoomTimer);
+  v.zoomTimer = setTimeout(() => layout(v), 150);
+}
+
+// Safari manda il pinch come gesture*, gli altri browser come rotella con ctrl: si tiene uno dei due alla volta.
+function pinchZoom(v) {
+  const s = v.scroller;
+  s.addEventListener('wheel', ev => {
+    if (!ev.ctrlKey && !ev.metaKey) return;
+    ev.preventDefault();
+    if (v.gesture) return;
+    const dy = Math.max(-50, Math.min(50, ev.deltaY * (ev.deltaMode === 1 ? 16 : 1)));
+    zoomAround(v, v.zoom * Math.exp(-dy * 0.006), ev.clientX, ev.clientY);
+  }, { passive: false });
+  s.addEventListener('gesturestart', ev => { ev.preventDefault(); v.gesture = v.zoom; });
+  s.addEventListener('gesturechange', ev => { ev.preventDefault(); zoomAround(v, v.gesture * ev.scale, ev.clientX, ev.clientY); });
+  s.addEventListener('gestureend', ev => { ev.preventDefault(); v.gesture = null; });
 }
 
 function updatePageLabel(v) {
@@ -1249,12 +1287,12 @@ export function docMeta(d) {
     }));
 }
 
-const fileButtons = d => (d.url
+const fileButtons = d => [h('button.icon-btn', { title: 'Sposta o copia in un altro articolo', onclick: () => moveDoc(d) }, icon('copy')), d.url
   ? h('a.icon-btn', { href: d.url, target: '_blank', rel: 'noopener noreferrer', title: `Apri il link originale: ${d.url}` }, icon('link'))
   : [
   h('a.icon-btn', { href: docFileUrl(d, { inline: true }), target: '_blank', rel: 'noopener', title: 'Apri il file originale' }, icon('link')),
   h('a.icon-btn', { href: docFileUrl(d), download: '', title: 'Scarica' }, icon('download')),
-]);
+]];
 
 const notesChip = (d, v) => h('button.chip', { class: notesShown(v) && 'on', onclick: () => toggleNotes(v), title: 'Mostra o nascondi le note' },
   icon('log'), `note ${notesOf(d.id).filter(visible).length}`);

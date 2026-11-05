@@ -69,6 +69,8 @@ export const ui = {
   mailAtt: false,
   mailProj: null,
   itemView: load('org.itemView', 'list'),
+  treeClosed: new Set(), // alberi del magazzino chiusi (chiave: il percorso degli id)
+  treeFocus: null, // "Vedi l'albero" da un articolo: solo i suoi alberi
   itemCat: null,
   projDeep: load('org.projDeep', true),
   docNote: null,

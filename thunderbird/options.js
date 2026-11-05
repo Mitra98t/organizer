@@ -1,4 +1,5 @@
-// Opzioni: indirizzo del server (già scritto se l'estensione è stata scaricata da Organizer) e token API.
+// Opzioni: indirizzo del server (già scritto se l'estensione è stata scaricata da Organizer), token API e il
+// workspace di Organizer in cui vanno le conversazioni nuove di ogni account di posta.
 /* global browser */
 const $ = id => document.getElementById(id);
 
@@ -9,6 +10,41 @@ async function init() {
   $('token').value = saved.token || '';
   $('inbox').checked = saved.inbox !== false;
   showStatus(saved.status);
+  showAccounts();
+}
+
+async function showAccounts() {
+  const { server, token, wsByAccount = {} } = await browser.storage.local.get(['server', 'token', 'wsByAccount']);
+  const box = $('accounts');
+  if (!server || !token) return;
+  let spaces;
+  try {
+    const r = await fetch(`${server}/api/mail/workspaces`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error(`errore ${r.status}`);
+    spaces = await r.json();
+  } catch (e) {
+    box.textContent = `Workspace non letti da Organizer (${e.message}).`;
+    return;
+  }
+  const accounts = (await browser.accounts.list(false)).filter(a => a.type !== 'none');
+  const def = spaces.find(w => w.default);
+  box.className = '';
+  box.replaceChildren(...accounts.map(a => {
+    const sel = document.createElement('select');
+    sel.append(new Option(`predefinito${def ? ` (${def.name})` : ''}`, ''), ...spaces.map(w => new Option(w.name, String(w.id))));
+    sel.value = String(wsByAccount[a.id] || '');
+    sel.addEventListener('change', async () => {
+      const cur = (await browser.storage.local.get('wsByAccount')).wsByAccount || {};
+      if (sel.value) cur[a.id] = +sel.value; else delete cur[a.id];
+      await browser.storage.local.set({ wsByAccount: cur });
+    });
+    const row = document.createElement('div');
+    row.className = 'acc';
+    const name = document.createElement('span');
+    name.textContent = a.name;
+    row.append(name, sel);
+    return row;
+  }));
 }
 
 function showStatus(s) {
@@ -35,6 +71,7 @@ $('save').addEventListener('click', async () => {
 
 browser.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.status) showStatus(changes.status.newValue);
+  if (area === 'local' && changes.status?.newValue?.state === 'on') showAccounts();
 });
 
 init();

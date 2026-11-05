@@ -1108,23 +1108,54 @@ route('GET', '/api/items/:id/docs.zip', ({ res, params }) => {
   res.end(body);
 }, { area: 'documenti' });
 
+// Come al caricamento: il firmware più recente con versione dà la versione all'articolo (se ne resta uno).
+function refreshFirmware(itemId) {
+  const latest = db.prepare(`SELECT version FROM documents WHERE item_id = ? AND kind = 'firmware' AND version != ''
+    AND deleted_at IS NULL ORDER BY created_at DESC, id DESC LIMIT 1`).get(itemId);
+  if (latest) db.prepare('UPDATE items SET firmware = ?, updated_at = ? WHERE id = ?').run(latest.version, now(), itemId);
+}
+
+const liveDoc = id => db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL').get(+id) || fail(404, 'Documento non trovato');
+const targetItem = id => db.prepare('SELECT id, code FROM items WHERE id = ? AND deleted_at IS NULL').get(+id) || fail(404, 'Articolo non trovato');
+
+// Nome, tipo, versione; item_id lo sposta in un altro articolo (con le sue note).
 route('PATCH', '/api/docs/:id', async ({ params, body }) => {
   const b = await body();
-  const d = db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL').get(+params.id) || fail(404, 'Documento non trovato');
+  const d = liveDoc(params.id);
   const f = {};
   if (b.label !== undefined) f.label = str(b.label, 200);
   if (b.version !== undefined) f.version = str(b.version, 60);
   if (b.kind !== undefined) f.kind = docKind(b.kind);
+  if (b.item_id !== undefined) f.item_id = targetItem(b.item_id).id;
   tx(() => {
     setFields('documents', d.id, f);
-    // Come al caricamento: il firmware più recente con versione dà la versione all'articolo.
-    const latest = db.prepare(`SELECT version FROM documents WHERE item_id = ? AND kind = 'firmware' AND version != ''
-      AND deleted_at IS NULL ORDER BY created_at DESC, id DESC LIMIT 1`).get(d.item_id);
-    // Vale anche se il documento smette di essere un firmware: torna la versione del firmware più recente rimasto.
-    if (((f.kind ?? d.kind) === 'firmware' || d.kind === 'firmware') && latest) {
-      db.prepare('UPDATE items SET firmware = ?, updated_at = ? WHERE id = ?').run(latest.version, now(), d.item_id);
+    // Vale anche se il documento smette di essere un firmware (o cambia articolo): torna la versione del firmware
+    // più recente rimasto.
+    if ((f.kind ?? d.kind) === 'firmware' || d.kind === 'firmware') {
+      refreshFirmware(d.item_id);
+      if (f.item_id && f.item_id !== d.item_id) refreshFirmware(f.item_id);
     }
   });
+}, { area: 'documenti' });
+
+// Una copia in un altro articolo (o nello stesso): un file suo, senza le note.
+route('POST', '/api/docs/:id/copy', async ({ params, user, body }) => {
+  const d = liveDoc(params.id);
+  const it = targetItem((await body()).item_id);
+  let stored = null;
+  if (d.stored) {
+    const src = path.join(UPLOAD_DIR, d.stored);
+    if (!fs.existsSync(src)) fail(404, 'File mancante sul server');
+    stored = crypto.randomBytes(16).toString('hex');
+    fs.copyFileSync(src, path.join(UPLOAD_DIR, stored));
+  }
+  const id = tx(() => {
+    const id = insertId(db.prepare(`INSERT INTO documents (item_id, kind, label, version, filename, mime, size, sha256, stored, url, created_by, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(it.id, d.kind, d.label, d.version, d.filename, d.mime, d.size, d.sha256, stored, d.url, user.id, now()));
+    if (d.kind === 'firmware') refreshFirmware(it.id);
+    return id;
+  });
+  return { id };
 }, { area: 'documenti' });
 
 // Nuovo tipo di documento: una parola (lettere, numeri, - _), minuscolo.

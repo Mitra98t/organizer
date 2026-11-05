@@ -1,9 +1,10 @@
 // Modali per scegliere dal magazzino, con una ricerca come nella pagina Documenti:
 //  - pickDoc: un documento (file) da allegare a una mail; si cerca per nome, codice (anche alternativo), nome
 //    dell'articolo, tipo e versione, e si filtra per tipo; i documenti stanno raggruppati sotto il loro articolo;
-//  - pickItem: l'articolo (e il tipo di documento) in cui salvare un allegato ricevuto.
+//  - pickItem: l'articolo (e il tipo di documento) in cui salvare un allegato ricevuto; con actions e senza tipo
+//    serve anche a spostare o copiare un documento in un altro articolo.
 // Il contenuto si ridisegna da solo mentre si scrive: il resto dell'app non si tocca.
-import { h, icon, S, docName, docKinds, dkAttrs, itemAttrs, fmtSize, filterChip, aliasCodes } from './core.js';
+import { h, icon, S, api, act, docName, docKinds, dkAttrs, itemAttrs, fmtSize, filterChip, aliasCodes } from './core.js';
 import { fuzzy } from './autocomplete.js';
 
 const lc = s => String(s ?? '').toLowerCase();
@@ -86,29 +87,49 @@ function guessKind(name) {
   return 'altro';
 }
 
-export function pickItem({ file, onPick }) {
+// actions: i pulsanti in fondo, { label(articolo), icon, fn(articolo, tipo) }; il primo vale anche col doppio clic.
+// kinds false: senza la scelta del tipo. exclude: un articolo da non proporre (quello dove il documento sta già).
+export function pickItem({ file, onPick, title, kinds: withKinds = true, exclude = null,
+  actions = [{ label: it => `Salva in ${it.code}`, icon: 'box', fn: onPick }] }) {
   const D = S.data;
-  const m = modal(`Salva "${file.name}" nel magazzino`, 'pk-items');
+  const m = modal(title || `Salva "${file.name}" nel magazzino`, 'pk-items');
   const state = { q: '', item: null, kind: docKinds().includes(guessKind(file.name)) ? guessKind(file.name) : 'altro' };
   const input = h('input.filter', { type: 'search', placeholder: 'Articolo: codice (anche alternativo), nome, categoria…', oninput: ev => { state.q = ev.target.value; draw(); } });
   const list = h('div.pk-list');
   const kinds = h('div.toolbar.cats');
-  const save = h('button.btn.primary', { type: 'button', onclick: () => { if (state.item) { m.close(); onPick(state.item, state.kind); } } });
-  m.body.append(input, list, h('div.pk-sub', 'Tipo di documento'), kinds, h('div.toolbar.pk-foot', save, h('button.btn.ghost', { type: 'button', onclick: m.close }, 'Annulla')));
+  const pick = a => { if (state.item) { m.close(); a.fn(state.item, state.kind); } };
+  const buttons = actions.map((a, i) => h(`button.btn${i ? '' : '.primary'}`, { type: 'button', onclick: () => pick(a) }));
+  m.body.append(input, list, ...(withKinds ? [h('div.pk-sub', 'Tipo di documento'), kinds] : []),
+    h('div.toolbar.pk-foot', buttons, h('button.btn.ghost', { type: 'button', onclick: m.close }, 'Annulla')));
 
   function draw() {
     const q = lc(state.q.trim());
-    const found = D.items.map(it => ({ it, r: score(q, [[it.code], ...aliasCodes(it).map(a => [a, 0.1]), [it.name, 0.5], [it.category, 1]]) }))
+    const found = D.items.filter(it => it.id !== exclude).map(it => ({ it, r: score(q, [[it.code], ...aliasCodes(it).map(a => [a, 0.1]), [it.name, 0.5], [it.category, 1]]) }))
       .filter(x => x.r != null).sort((a, b) => a.r - b.r || a.it.code.localeCompare(b.it.code)).slice(0, LIMIT);
     list.replaceChildren(...(!found.length ? [h('p.muted.pk-empty', 'Nessun articolo trovato.')] : []),
       ...found.map(({ it }) => h('button.pk-row', {
         type: 'button', class: state.item?.id === it.id ? 'on' : null,
-        onclick: () => { state.item = it; draw(); }, ondblclick: () => { m.close(); onPick(it, state.kind); },
+        onclick: () => { state.item = it; draw(); }, ondblclick: () => { state.item = it; pick(actions[0]); },
       }, h('span.code', itemAttrs(it), it.code), h('span.pk-name', it.name || ''), h('span.grow'), it.category && h('span.muted', it.category))));
     kinds.replaceChildren(...docKinds().map(k => kindChip(k, state.kind === k, () => { state.kind = k; draw(); })));
-    save.replaceChildren(icon('box'), state.item ? `Salva in ${state.item.code}` : 'Scegli un articolo');
-    save.disabled = !state.item;
+    actions.forEach((a, i) => {
+      buttons[i].replaceChildren(icon(a.icon), state.item ? a.label(state.item) : i ? '' : 'Scegli un articolo');
+      buttons[i].disabled = !state.item;
+      buttons[i].hidden = i > 0 && !state.item;
+    });
   }
   draw();
   input.focus();
+}
+
+// Sposta (con le note) o copia (un file suo, senza note) un documento in un altro articolo.
+export function moveDoc(d) {
+  const name = docName(d);
+  pickItem({
+    file: { name }, title: `Sposta o copia "${name}"`, kinds: false, exclude: d.item_id,
+    actions: [
+      { label: it => `Sposta in ${it.code}`, icon: 'box', fn: it => act(() => api('PATCH', `/docs/${d.id}`, { item_id: it.id }), `${name} spostato in ${it.code}`) },
+      { label: it => `Copia in ${it.code}`, icon: 'copy', fn: it => act(() => api('POST', `/docs/${d.id}/copy`, { item_id: it.id }), `${name} copiato in ${it.code}`) },
+    ],
+  });
 }

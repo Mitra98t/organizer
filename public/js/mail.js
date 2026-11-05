@@ -35,6 +35,10 @@ async function saveVisible(e) {
 async function send(e) {
   try {
     await saveVisible(e);
+    if (ui.richEdit === `body-${e.id}`) {
+      ui.richEdit = null;
+      render();
+    }
     if (S.data.mailExt) {
       await api('POST', `/entries/${e.id}/compose`);
       toast('Aperta in Thunderbird: quando la invii, qui diventa "mandata" da sola');
@@ -82,7 +86,9 @@ export function mailComposer(e) {
       onSave: notes => patchEntry(e, { notes }),
     }),
     h('div.mail-actions',
-      h('button.btn.primary', { onclick: () => send(e) }, icon('send'), S.data.mailExt || ui.mailHelper ? 'Manda con Thunderbird' : 'Manda'),
+      // mousedown senza effetto: il testo resta in modifica e non si ridisegna (spostando il tasto) prima del clic;
+      // send legge i campi così come sono.
+      h('button.btn.primary', { onmousedown: ev => ev.preventDefault(), onclick: () => send(e) }, icon('send'), S.data.mailExt || ui.mailHelper ? 'Manda con Thunderbird' : 'Manda'),
       h('a.btn.sm.ghost', { href: mailto(e), title: 'Apre l\'app mail predefinita, senza allegati' }, 'App mail'),
       h('a.btn.sm.ghost', { href: `api/entries/${e.id}/eml`, download: '', title: 'File .eml con allegati' }, icon('download'), '.eml')));
 

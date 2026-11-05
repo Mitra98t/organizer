@@ -129,11 +129,26 @@ function threadMenu(t) {
   ], { class: 'tc-menu', title: 'Rinomina, sposta, elimina', 'aria-label': 'Rinomina, sposta, elimina' });
 }
 
-const topicMenu = topic => popButton(`topic:${topic.id}`, '⋯', close => [
-  popItem([icon('edit'), 'Rinomina'], () => { close(); rename('Nome del topic:', topicTitle(topic), title => patchTopic(topic, { title })); }),
-  popSep(),
-  popItem([icon('trash'), 'Elimina il topic'], () => { close(); deleteTopic(topic); }),
-], { class: 'tc-menu', title: 'Rinomina, elimina', 'aria-label': 'Rinomina, elimina' });
+const topicMenu = topic => {
+  const D = S.data;
+  const spaces = D.workspaces.filter(w => w.id !== D.workspace?.id && !w.tour);
+  return popButton(`topic:${topic.id}`, '⋯', close => [
+    popItem([icon('edit'), 'Rinomina'], () => { close(); rename('Nome del topic:', topicTitle(topic), title => patchTopic(topic, { title })); }),
+    spaces.length > 0 && popSep('Sposta nel workspace'),
+    spaces.map(w => popItem(w.name, () => { close(); moveTopicTo(topic, w); })),
+    popSep(),
+    popItem([icon('trash'), 'Elimina il topic'], () => { close(); deleteTopic(topic); }),
+  ], { class: 'tc-menu', title: 'Rinomina, sposta, elimina', 'aria-label': 'Rinomina, sposta, elimina' });
+};
+
+// Il topic intero in un altro workspace (con conversazioni e mail scritte qui): i collegamenti di qui si perdono.
+function moveTopicTo(topic, w) {
+  if (!confirm(`Spostare "${topicTitle(topic)}" nel workspace ${w.name}?\n\nI collegamenti ad articoli, progetti e contatti di questo workspace si perdono; quelli automatici si rifanno con il magazzino di ${w.name}.`)) return;
+  act(async () => {
+    await api('POST', `/mail/topics/${topic.id}/move`, { ws: w.id });
+    location.hash = '#/mail';
+  }, `Topic spostato in ${w.name}`);
+}
 
 // ---------- pagina Mail ----------
 const MAIL_STATES = [['star', '★ Con stella'], ['unread', 'Da leggere'], ['draft', 'Da mandare'], ['wait', 'In attesa di risposta']];
@@ -419,14 +434,18 @@ function mailView(topic, sel, data, x) {
     h('div.tm-body', body || (m ? '(nessun testo)' : 'Caricamento…')),
     more && h('details', h('summary.muted', 'messaggio completo'), h('div.tm-body', m.body.trim())),
     m?.attachments?.length > 0 && h('div.tm-att', h('div.ms-h', 'Allegati'), attList(m.attachments, m.id)),
-    can('mail', 'write') && h('div.tm-actions',
-      replied && h('span.muted', 'C\'è già una bozza di risposta: '),
-      [false, true].map(all => h('button.btn.sm', {
+    h('div.tm-actions',
+      can('mail', 'write') && replied && h('span.muted', 'C\'è già una bozza di risposta: '),
+      can('mail', 'write') && [false, true].map(all => h('button.btn.sm', {
         onclick: () => act(async () => {
           const r = await api('POST', `/mail/messages/${brief.id}/reply`, { all });
           ui.mailSelNext = { topic: topic.id, type: 'entry', id: r.id };
         }),
-      }, icon('send'), all ? 'Rispondi a tutti' : 'Rispondi'))));
+      }, icon('send'), all ? 'Rispondi a tutti' : 'Rispondi')),
+      S.data.mailExt && h('button.btn.sm.ghost', {
+        title: 'Apre questo messaggio in Thunderbird, in una scheda',
+        onclick: () => act(() => api('POST', `/mail/messages/${brief.id}/open`), 'Aperta in Thunderbird'),
+      }, icon('mail'), 'Apri in Thunderbird')));
 }
 
 // Collegamenti della conversazione: scelti qui, trovati nei messaggi (codici e progetti) o citati nelle mail

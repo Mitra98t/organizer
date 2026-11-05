@@ -352,6 +352,12 @@ function buildShell() {
       tabbar({ allowed: k => !S.data || pageAllowed(k), action: k => { if (k === 'feedback') openFeedback(); } })),
     h('div#toasts'));
   shellBuilt = true;
+  // La barra rapida si ferma subito sotto l'intestazione, alta quanto è davvero (cambia con caratteri, zoom e
+  // notch): con un'altezza fissa restava una fessura da cui si vedeva la pagina scorrere.
+  const top = root.querySelector('.top');
+  const topH = () => document.documentElement.style.setProperty('--top-h', `${top.getBoundingClientRect().height}px`);
+  topH();
+  new ResizeObserver(topH).observe(top);
 }
 
 function updateStatus() {

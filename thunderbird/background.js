@@ -8,10 +8,12 @@
 //  - dal tasto destro su una mail (anche vecchia, in qualunque cartella), "Porta il thread in Organizer" passa
 //    tutta la conversazione: i messaggi prima e tutte le risposte dopo, tra i thread attivi;
 //  - al primo collegamento di una persona (lo dice il server) carica l'ultimo mese da tutte le cartelle, tranne
-//    spam, cestino e bozze: in Organizer si vedono tutte le conversazioni recenti, da archiviare.
+//    spam, cestino e bozze: in Organizer si vedono tutte le conversazioni recenti, da archiviare;
+//  - le conversazioni nuove vanno nel workspace scelto per il loro account di posta (opzioni), se no nel predefinito;
+//  - "Apri in Thunderbird" in Organizer apre qui il messaggio, in una scheda.
 /* global browser */
 
-let cfg = { server: '', token: '', inbox: true };
+let cfg = { server: '', token: '', inbox: true, wsByAccount: {} };
 let watch = new Set(); // Message-ID delle conversazioni seguite
 const composing = new Map(); // finestra di composizione → richiesta di Organizer
 let stream = null; // AbortController della connessione aperta
@@ -20,9 +22,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const status = (state, text = '') => browser.storage.local.set({ status: { state, text, at: Date.now() } });
 
 async function loadConfig() {
-  const saved = await browser.storage.local.get(['server', 'token', 'inbox']);
+  const saved = await browser.storage.local.get(['server', 'token', 'inbox', 'wsByAccount']);
   const preset = await fetch(browser.runtime.getURL('config.json')).then(r => r.json()).catch(() => ({}));
-  cfg = { server: String(saved.server || preset.server || '').replace(/\/+$/, ''), token: String(saved.token || ''), inbox: saved.inbox !== false };
+  cfg = { server: String(saved.server || preset.server || '').replace(/\/+$/, ''), token: String(saved.token || ''), inbox: saved.inbox !== false,
+    wsByAccount: saved.wsByAccount || {} };
 }
 
 async function call(method, path, body) {
@@ -75,6 +78,7 @@ async function connect() {
           if (/^event: outbox$/m.test(ev)) openPending();
           if (/^event: watch$/m.test(ev)) refreshWatch();
           if (/^event: fetch$/m.test(ev)) saveAttachments();
+          if (/^event: open$/m.test(ev)) openMessages();
         }
       }
       status('error', 'Connessione chiusa, riprovo…');
@@ -236,6 +240,28 @@ function saveAttachments() {
   return busy;
 }
 
+// ---------- "Apri in Thunderbird" ----------
+// Il messaggio scelto in Organizer si apre qui in una scheda, e la finestra viene davanti.
+async function openMessages() {
+  let list = [];
+  try {
+    list = await call('GET', '/mail/opens');
+  } catch (e) {
+    return console.warn('Organizer: mail da aprire non lette', e);
+  }
+  for (const mid of list) {
+    try {
+      const found = await browser.messages.query({ headerMessageId: mid });
+      const msg = found?.messages?.[0];
+      if (!msg) throw new Error('non è in nessuna cartella di Thunderbird');
+      const tab = await browser.messageDisplay.open({ messageId: msg.id, location: 'tab' });
+      if (tab?.windowId != null) await browser.windows.update(tab.windowId, { focused: true }).catch(() => {});
+    } catch (e) {
+      notify(`Mail non aperta: ${e.message}`);
+    }
+  }
+}
+
 // ---------- risposte in arrivo ----------
 const ids = s => [...String(s || '').matchAll(/<([^>]+)>/g)].map(x => x[1]);
 
@@ -270,7 +296,7 @@ async function pass(header, extra = {}, full = null) {
     message_id: header.headerMessageId, in_reply_to: ids(h('in-reply-to'))[0] || null, references: refs,
     from: header.author, to: (header.recipients || []).join(', '), cc: (header.ccList || []).join(', '),
     subject: header.subject, date: new Date(header.date).toISOString(),
-    body: (await textOf(header.id, full)).slice(0, 100000), inbox: cfg.inbox, direction: 'in', ...extra,
+    body: (await textOf(header.id, full)).slice(0, 100000), inbox: cfg.inbox, direction: 'in', ws: cfg.wsByAccount[header.folder?.accountId] || null, ...extra,
     attachments: attachments.map(a => ({ name: a.name, part: a.partName, size: a.size, type: a.contentType })),
   });
   if (r?.matched) watch.add(header.headerMessageId);
@@ -446,6 +472,7 @@ async function backfill() {
 
 // ---------- avvio ----------
 browser.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.wsByAccount) cfg.wsByAccount = changes.wsByAccount.newValue || {};
   if (area === 'local' && (changes.server || changes.token || changes.inbox)) connect();
 });
 connect();

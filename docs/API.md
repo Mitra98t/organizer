@@ -184,7 +184,8 @@ Parametri: `kind`, `name` (nome del file), `version`, `label` (nome mostrato). U
 | `GET /api/docs/:id/file` | scarica; il nome nel `Content-Disposition` è `label` più l'estensione originale (`?inline=1` per vederlo nel browser) |
 | `GET /api/items/:id/docs.zip` | tutti i file dell'articolo in un `.zip` (`CODICE-documenti.zip`), con i nomi come nel download singolo; due nomi uguali diventano `nome (2).ext`; 404 se l'articolo non ha file |
 | `GET /api/docs/:id/remote` | il PDF di un link esterno, scaricato dal server (solo indirizzi pubblici, max 60 MB) |
-| `PATCH /api/docs/:id` `{label?, kind?, version?}` | rinomina, cambia tipo o versione |
+| `PATCH /api/docs/:id` `{label?, kind?, version?, item_id?}` | rinomina, cambia tipo o versione; `item_id` lo sposta in un altro articolo (con le note) |
+| `POST /api/docs/:id/copy` `{item_id}` | copia in un altro articolo: file nuovo, senza note → `{id}` |
 | `DELETE /api/docs/:id` | nel cestino |
 | `POST /api/docs/:id/notes` `{text, page?, x?, y?, z?, quote?, marks?}` | nota: senza `page` è generale, con `page`/`x`/`y` (0..1) è un segnaposto (`z` nei modelli 3D); `quote` e `marks` (`[[pagina, x, y, w, h], …]` in 0..1, max 300) per una nota su un pezzo di testo di un PDF |
 | `PATCH /api/doc-notes/:id` `{text?, resolved?, page?, x?, y?, z?}` · `DELETE /api/doc-notes/:id` | modifica, risolve, sposta; nel cestino |
@@ -208,6 +209,8 @@ Una mail è una voce con `kind: "mail"`. Il server non spedisce niente: la mail 
 | `PATCH /api/mail/topics/:id` | `{title, starred, hue}` |
 | `POST /api/mail/topics/:id/links` | `{kind, id}`: collega il topic intero (in `/api/sync`: `topicLinks`); `DELETE /api/mail/topics/:id/links/:kind/:id` lo scollega |
 | `POST /api/mail/topics/:id/merge` | `{into}`: tutte le conversazioni passano nell'altro topic |
+| `POST /api/mail/topics/:id/move` | `{ws}`: il topic va in un altro workspace dell'utente (dove può scrivere mail), con conversazioni, messaggi e mail scritte in Organizer; i collegamenti manuali si perdono, quelli automatici si ricalcolano → `{ws, name, topic}` |
+| `POST /api/mail/messages/:id/open` | chiede all'estensione (1.7) di aprire il messaggio in Thunderbird |
 | `DELETE /api/mail/topics/:id` | ogni conversazione del topic nel cestino |
 | `PATCH /api/mail/messages/:id` | `{read}` |
 | `GET /api/mail/search?q=` | id delle conversazioni (le proprie, le più recenti, fino a 30) in cui ogni parola si trova in oggetto, testo, indirizzi o nome in rubrica dei partecipanti |
@@ -233,7 +236,9 @@ L'estensione di Thunderbird (cartella `thunderbird/`) usa queste, con un token; 
 | `GET /api/mail/outbox/:ws/:id/file/:n` | allegato n |
 | `POST /api/mail/sent` | `{ws, outbox_id, message_id, from, to, cc, subject, date}`: mandata, in attesa di risposta (il messaggio entra nel thread) |
 | `GET /api/mail/watch` | Message-ID dei messaggi nei thread della persona |
-| `POST /api/mail/incoming` | `{message_id, in_reply_to, references, from, to, cc, subject, date, body, attachments, direction, inbox, history, import, backfill, thread}` → `{matched, thread, missing}`. Entra nella conversazione a cui risponde (riferimenti, poi `thread`, poi stesso oggetto e una persona in comune entro 60 giorni); se non ce n'è una, con `inbox`, `import`, `backfill` o `history` ne apre una nuova in un topic suo. `direction: "out"` per una mail mandata da Thunderbird. `missing`: Message-ID dei messaggi precedenti che il thread non ha; l'estensione li ripassa con `history: true` e `thread` (entrano già letti, senza riattivare il thread). `import: true` per un thread portato a mano: entra già letto ma tra gli attivi, anche senza `inbox` e anche se il messaggio era in un thread nel cestino |
+| `POST /api/mail/incoming` | `{message_id, in_reply_to, references, from, to, cc, subject, date, body, attachments, direction, inbox, history, import, backfill, thread, ws}` → `{matched, thread, missing}`. Entra nella conversazione a cui risponde (riferimenti, poi `thread`, poi stesso oggetto e una persona in comune entro 60 giorni); se non ce n'è una, con `inbox`, `import`, `backfill` o `history` ne apre una nuova in un topic suo, nel workspace `ws` (quello dell'account di posta) o in quello predefinito. `direction: "out"` per una mail mandata da Thunderbird. `missing`: Message-ID dei messaggi precedenti che il thread non ha; l'estensione li ripassa con `history: true` e `thread` (entrano già letti, senza riattivare il thread). `import: true` per un thread portato a mano: entra già letto ma tra gli attivi, anche senza `inbox` e anche se il messaggio era in un thread nel cestino |
+| `GET /api/mail/workspaces` | i workspace in cui può andare la posta: `id`, `name`, `default` (per le opzioni dell'estensione) |
+| `GET /api/mail/opens` | i Message-ID da aprire in Thunderbird (evento `open` sul flusso); leggerli li toglie |
 | `GET /api/mail/backfill` | `{since}`: da quando caricare la posta al primo collegamento (l'ultimo mese), `null` se già fatto; le mail si mandano a `/api/mail/incoming` con `backfill: true` (già lette, senza notifiche) |
 | `POST /api/mail/backfill/done` | caricamento finito |
 | `POST /api/mail/identities` | `{addresses}`: i propri indirizzi, esclusi da "rispondi a tutti" |

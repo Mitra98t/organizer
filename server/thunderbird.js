@@ -7,10 +7,11 @@
 // Le mail stanno in thread personali (maildata.js): ricevute, mandate e scritte in Organizer. Quando arriva o
 // parte una risposta a mail che Organizer non ha, il server le chiede all'estensione (missing) per completare
 // il thread. Le chiamate dell'estensione valgono per tutti i workspace dell'utente: il server cerca in ognuno.
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { db, tx, withWorkspace } from './db.js';
+import { db, tx, withWorkspace, UPLOAD_DIR } from './db.js';
 import { acc, workspacesOf, workspaceById, permsIn, mailAddressesOf, defaultWorkspace } from './accounts.js';
 import { Readable } from 'node:stream';
 import { route, entryFor, updateEntry, addLog, insertId, syncEntryItems, docKind, saveUpload, CVIS_ANY } from './api.js';
@@ -140,6 +141,67 @@ route('POST', '/api/mail/topics/:id/merge', async ({ params, user, body }) => {
     db.prepare('INSERT OR IGNORE INTO mail_topic_links (topic_id, kind, target_id) SELECT ?, kind, target_id FROM mail_topic_links WHERE topic_id = ?').run(into.id, from.id);
     dropEmptyTopics(user.id);
   });
+}, { area: 'mail' });
+
+// Spostare un topic in un altro workspace dell'utente (dove può scrivere mail): conversazioni, messaggi e mail
+// scritte in Organizer, con allegati e registro. Ogni workspace ha il suo database: le righe si copiano di là
+// (id nuovi) e poi si tolgono di qua. I collegamenti (articoli, progetti, contatti…) erano di questo workspace: si
+// lasciano e quelli automatici si ricalcolano con il magazzino di là. Un allegato preso dal magazzino diventa un
+// file suo. Le conversazioni nel cestino restano qui.
+const omit = (row, ...keys) => Object.fromEntries(Object.entries(row).filter(([k]) => !keys.includes(k)));
+function insertRow(table, row) {
+  const cols = Object.keys(row);
+  return insertId(db.prepare(`INSERT INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(...cols.map(c => row[c])));
+}
+const inIds = ids => `(${ids.map(Number).join(', ') || 'NULL'})`;
+
+route('POST', '/api/mail/topics/:id/move', async ({ params, user, body }) => {
+  const b = await body();
+  const topic = getTopic(params.id, user);
+  if (+b.ws === user.workspace_id) fail(400, 'Il topic è già in questo workspace');
+  const dest = mailWorkspaces(user, 'write').find(x => x.ws.id === +b.ws) || fail(404, 'Workspace non trovato, o lì non puoi scrivere mail');
+  const threads = db.prepare('SELECT * FROM mail_threads WHERE topic_id = ? AND deleted_at IS NULL ORDER BY id').all(topic.id);
+  const tids = threads.map(t => t.id);
+  const msgs = db.prepare(`SELECT * FROM mail_messages WHERE thread_id IN ${inIds(tids)} ORDER BY id`).all();
+  const ents = db.prepare(`SELECT * FROM entries WHERE thread_id IN ${inIds(tids)} ORDER BY id`).all();
+  const eids = ents.map(e => e.id);
+  const atts = db.prepare(`SELECT a.*, d.stored AS doc_stored FROM mail_attachments a LEFT JOIN documents d ON d.id = a.doc_id
+    WHERE a.entry_id IN ${inIds(eids)} ORDER BY a.id`).all();
+  const logs = db.prepare(`SELECT * FROM entry_log WHERE entry_id IN ${inIds(eids)} ORDER BY id`).all();
+
+  const moved = withWorkspace(dest.ws, () => tx(() => {
+    // Le persone di là (chi ha scritto un registro o caricato un allegato e non è di quel workspace: nessuno).
+    const known = id => (id != null && db.prepare('SELECT 1 FROM users WHERE id = ?').get(id) ? id : null);
+    const topicId = insertRow('mail_topics', omit(topic, 'id'));
+    const tmap = new Map(threads.map(t => [t.id, insertRow('mail_threads', { ...omit(t, 'id'), topic_id: topicId })]));
+    const emap = new Map(ents.map(e => [e.id, insertRow('entries', {
+      ...omit(e, 'id', 'project_id', 'parent_id', 'assignee_id', 'mail_thread', 'reply_to'), thread_id: tmap.get(e.thread_id),
+      created_by: known(e.created_by), deleted_by: known(e.deleted_by),
+    })]));
+    const mmap = new Map(msgs.map(m => [m.id, insertRow('mail_messages', { ...omit(m, 'id'), thread_id: tmap.get(m.thread_id), entry_id: emap.get(m.entry_id) ?? null })]));
+    for (const e of ents) if (e.reply_to) db.prepare('UPDATE entries SET reply_to = ? WHERE id = ?').run(mmap.get(e.reply_to) ?? null, emap.get(e.id));
+    for (const a of atts) {
+      let stored = a.stored;
+      if (a.doc_id && a.doc_stored && fs.existsSync(path.join(UPLOAD_DIR, a.doc_stored))) {
+        stored = crypto.randomBytes(16).toString('hex');
+        fs.copyFileSync(path.join(UPLOAD_DIR, a.doc_stored), path.join(UPLOAD_DIR, stored));
+      }
+      if (stored) insertRow('mail_attachments', { ...omit(a, 'id', 'doc_id', 'doc_stored'), entry_id: emap.get(a.entry_id), stored, created_by: known(a.created_by) });
+    }
+    for (const l of logs) insertRow('entry_log', { ...omit(l, 'id'), entry_id: emap.get(l.entry_id), user_id: known(l.user_id) });
+    for (const id of tmap.values()) relinkThread(id);
+    for (const id of emap.values()) syncEntryItems(id, dest.u);
+    return topicId;
+  }));
+
+  tx(() => {
+    db.prepare(`DELETE FROM mail_outbox WHERE entry_id IN ${inIds(eids)}`).run();
+    db.prepare(`DELETE FROM entries WHERE id IN ${inIds(eids)}`).run();
+    db.prepare(`DELETE FROM mail_threads WHERE id IN ${inIds(tids)}`).run();
+    dropEmptyTopics(user.id);
+  });
+  bump(user.id, dest.ws.id);
+  return { ws: dest.ws.id, name: dest.ws.name, topic: moved };
 }, { area: 'mail' });
 
 // Ricerca nella posta della persona (per "[[" e per il filtro): le conversazioni in cui ogni parola si trova in
@@ -348,6 +410,33 @@ route('POST', '/api/mail/identities', async ({ user, body }) => {
 // ---------- dall'estensione ----------
 route('GET', '/api/mail/stream', ({ req, res, user }) => openMailExtStream(req, res, user), { ws: false });
 
+// I workspace in cui può andare la posta (opzioni dell'estensione: un workspace per ogni account di posta).
+route('GET', '/api/mail/workspaces', ({ user }) => {
+  const def = defaultWorkspace(user.id);
+  return mailWorkspaces(user, 'write').map(({ ws }) => ({ id: ws.id, name: ws.name, default: ws.id === def }));
+}, { ws: false });
+
+// "Apri in Thunderbird": l'estensione apre il messaggio in una scheda (dalla 1.7). Le richieste stanno in memoria.
+const OPEN_EXT = '1.7';
+const opens = new Map(); // id utente → Message-ID da aprire
+
+route('POST', '/api/mail/messages/:id/open', ({ params, user }) => {
+  const m = db.prepare('SELECT * FROM mail_messages WHERE id = ?').get(+params.id) || fail(404, 'Messaggio non trovato');
+  getThread(m.thread_id, user);
+  if (!mailExtOn(user.id)) fail(409, 'Thunderbird non è collegato: aprilo e riprova');
+  if ((mailExtVersion(user.id) || '0').localeCompare(OPEN_EXT, undefined, { numeric: true }) < 0) {
+    fail(409, `Per aprire le mail in Thunderbird serve l'estensione ${OPEN_EXT}: aggiornala da Impostazioni → Mail`);
+  }
+  opens.set(user.id, [...(opens.get(user.id) || []), m.message_id].slice(-10));
+  notifyMailExt(user.id, 'open');
+}, { area: 'mail', level: 'read', quiet: true });
+
+route('GET', '/api/mail/opens', ({ user }) => {
+  const list = opens.get(user.id) || [];
+  opens.delete(user.id);
+  return list;
+}, { ws: false });
+
 // Il pacchetto dell'estensione, già configurato per questo server (indirizzo e permesso di collegarsi qui).
 route('GET', '/api/mail/thunderbird.xpi', ({ req, res }) => {
   const origin = `${isHttps(req) ? 'https' : 'http'}://${req.headers.host}`;
@@ -440,7 +529,8 @@ route('GET', '/api/mail/watch', ({ user }) => {
 // una conversazione (history), una conversazione portata a mano (import) o il primo caricamento dell'ultimo
 // mese (backfill). Va nella conversazione giusta, in qualunque workspace (vedi findThread: riferimenti, poi il
 // thread indicato dall'estensione, poi oggetto e persone); se non ce n'è una ne apre una nuova (nel suo topic)
-// nel workspace della posta (quello predefinito), ma solo con inbox (tutta la posta), import, backfill o
+// nel workspace dell'account di posta (ws, dalle opzioni dell'estensione) o in quello predefinito, ma solo con
+// inbox (tutta la posta), import, backfill o
 // history. Le vecchie, portate a mano e caricate entrano già lette e senza notifiche; import riporta la
 // conversazione tra le attive. Risponde con i Message-ID citati che Organizer non ha: l'estensione li cerca in
 // Thunderbird e li manda con history: true.
@@ -474,7 +564,9 @@ route('POST', '/api/mail/incoming', async ({ user, body }) => {
   hit ||= each(ws => { const t = findThread(user.id, { subject: b.subject, people, date }); return t && { ws, thread: t }; });
   if (!hit && !b.inbox && !quiet) return { matched: false, missing: [] };
   if (!hit) {
-    const ws = spaces.find(x => x.ws.id === defaultWorkspace(user.id))?.ws || spaces[0]?.ws || fail(409, 'Nessun workspace in cui mettere la posta');
+    // Il workspace dell'account di posta (scelto nelle opzioni dell'estensione), altrimenti quello predefinito.
+    const ws = spaces.find(x => x.ws.id === +b.ws)?.ws || spaces.find(x => x.ws.id === defaultWorkspace(user.id))?.ws || spaces[0]?.ws
+      || fail(409, 'Nessun workspace in cui mettere la posta');
     hit = { ws, thread: withWorkspace(ws, () => newThread(user.id, b.subject, date)) };
   }
   const fromName = (String(b.from || '').replace(/<[^>]*>/, '').replace(/"/g, '').trim() || emailOf(b.from) || 'qualcuno');

@@ -3,6 +3,16 @@
 Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
 Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
 
+## 0.23.0 — 2026-11-05
+- **Alberi del magazzino**: nel Magazzino una terza vista disegna a grafo cosa compone cosa. Ogni articolo che ne contiene altri ha i suoi componenti a destra, collegati da linee, fino in fondo; il numero sulla scheda chiude o riapre un ramo; un articolo usato in più posti compare sotto ognuno. Il filtro tiene gli alberi che contengono gli articoli trovati (evidenziati); "Vedi l'albero" nella scheda di un articolo mostra solo i suoi.
+- **Spostare e copiare documenti** tra articoli: l'icona accanto al nome (nella scheda e nel visualizzatore) apre la ricerca dell'articolo con "Sposta in…" (il documento con le sue note) e "Copia in…" (un file nuovo, senza note). Il firmware con versione aggiorna anche l'articolo di destinazione. Dalla CLI: `org doc mv ID… CODICE` e `org doc cp ID… CODICE`.
+- **Zoom dei PDF con pinch e ctrl/⌘ + rotella**, attorno al punto sotto il puntatore (anche immagini e DXF). Mentre si ingrandisce le pagine si allargano subito e si ridisegnano nitide quando ti fermi.
+- **Mail e workspace**: nelle opzioni dell'estensione di Thunderbird scegli per ogni account di posta in quale workspace vanno le sue conversazioni nuove (senza scelta, il predefinito). Un topic già in Organizer si sposta in un altro workspace dal suo menu ⋯, con le conversazioni e le mail scritte qui; i collegamenti a cose del workspace di prima si perdono, quelli automatici si rifanno con il magazzino di là.
+- **Apri in Thunderbird** sotto ogni messaggio: lo apre in Thunderbird, in una scheda.
+- Per le ultime due serve l'**estensione di Thunderbird 1.7**: scaricala di nuovo da Impostazioni → Mail e reinstallala (token e impostazioni restano).
+- **Manda al primo clic**: prima, con il testo della mail in modifica, il primo clic chiudeva solo il campo (che ridisegnandosi spostava il tasto) e serviva un secondo clic.
+- La barra rapida resta attaccata all'intestazione mentre la pagina scorre: non c'è più la fessura da cui si vedeva il contenuto passare dietro.
+
 ## 0.22.0 — 2026-11-02
 - **Anteprima degli allegati ricevuti**: PDF, immagini, disegni DXF, modelli 3D, testi e tabelle CSV allegati a una mail si aprono con "anteprima" (o cliccando il nome) senza salvarli: il file arriva da Thunderbird in qualche secondo. Dall'anteprima "→ magazzino" li salva in un articolo subito, senza richiederli a Thunderbird; indietro (o Esc) torna alla mail da cui l'hai aperta. "→ magazzino" resta anche accanto a ogni allegato. Serve l'**estensione di Thunderbird 1.6**: scaricala di nuovo da Impostazioni → Mail e reinstallala (token e impostazioni restano).
 - **Meno "offline" per niente**: una richiesta interrotta (Safari ne perde qualcuna al risveglio del Mac o quando cambia rete) non mette più l'app offline se il server risponde; si riprova e basta. Quando il server sta ripartendo per un aggiornamento la barra lo dice ("il server non risponde") invece di "sei offline", e appena torna l'app riapre da sola il tempo reale (prima poteva restare su "riconnessione…" finché non la rimettevi in primo piano).

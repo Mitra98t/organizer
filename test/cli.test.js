@@ -935,3 +935,69 @@ test('esporta e importa i propri dati: magazzino con i file, voci, collegamenti,
   // Un file che non è un'esportazione: rifiutato.
   assert.match((await imp(Buffer.from('ciao'))).error, /esportazione/);
 });
+
+test('documenti spostati e copiati, topic in un altro workspace, workspace per account, Apri in Thunderbird', async () => {
+  const { token } = config();
+  const json = r => (r.status === 204 ? null : r.json());
+  const as = wsId => (method, p, body, extra = {}) => fetch(`${url}/api${p}`, {
+    method, headers: { Authorization: `Bearer ${token}`, 'X-Workspace': String(wsId), 'Content-Type': 'application/json', ...extra }, body: body && JSON.stringify(body),
+  });
+  const { workspaces } = await call('GET', '/sync', { token }).then(json);
+  const home = workspaces.find(w => w.name !== 'Altrove' && !w.tour).id;
+  const other = workspaces.find(w => w.name === 'Altrove').id;
+  const H = as(home);
+  const O = as(other);
+
+  // Documenti: copia (file suo, anche il firmware dell'articolo) e spostamento in un altro articolo.
+  const { id: a } = await H('POST', '/items', { code: 'MV-1', name: 'sorgente' }).then(json);
+  const { id: b } = await H('POST', '/items', { code: 'MV-2', name: 'destinazione' }).then(json);
+  const up = await fetch(`${url}/api/items/${a}/docs?${new URLSearchParams({ name: 'fw.bin', kind: 'firmware', version: '2.0' })}`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'X-Workspace': String(home), 'Content-Type': 'application/octet-stream' }, body: Buffer.from('firmware 2.0'),
+  }).then(json);
+  const cp = await H('POST', `/docs/${up.id}/copy`, { item_id: b }).then(json);
+  assert.ok(cp.id && cp.id !== up.id);
+  assert.equal(await H('GET', `/docs/${cp.id}/file`).then(r => r.text()), 'firmware 2.0');
+  assert.equal((await H('PATCH', `/docs/${up.id}`, { item_id: b })).status, 204);
+  let s = await H('GET', '/sync').then(json);
+  assert.deepEqual(s.docs.filter(d => d.item_id === b).map(d => d.filename), ['fw.bin', 'fw.bin']);
+  assert.equal(s.items.find(i => i.id === b).firmware, '2.0');
+  assert.equal((await H('PATCH', `/docs/${up.id}`, { item_id: 999999 })).status, 404);
+
+  // Workspace per account: l'estensione elenca dove può andare la posta e una conversazione nuova va lì.
+  assert.deepEqual((await H('GET', '/mail/workspaces').then(json)).map(w => w.id).sort(), [home, other].sort());
+  const r1 = await H('POST', '/mail/incoming', { message_id: '<ws1@cliente.it>', from: 'anna@cliente.it', subject: 'Per Altrove', body: 'ciao', inbox: true, ws: other }).then(json);
+  assert.ok((await O('GET', '/sync').then(json)).mailThreads.some(t => t.id === r1.thread && t.subject === 'Per Altrove'));
+  assert.ok(!(await H('GET', '/sync').then(json)).mailThreads.some(t => t.subject === 'Per Altrove'));
+
+  // Un topic in un altro workspace: conversazioni, messaggi e la bozza scritta qui; le risposte poi arrivano là.
+  const r2 = await H('POST', '/mail/incoming', { message_id: '<sp1@fornitore.it>', from: 'mario@fornitore.it', subject: 'Spostami', body: 'riguarda MV-1', inbox: true, ws: home }).then(json);
+  s = await H('GET', '/sync').then(json);
+  const topic = s.mailThreads.find(t => t.id === r2.thread).topic_id;
+  const { id: draft } = await H('POST', `/mail/topics/${topic}/draft`).then(json);
+  await H('PATCH', `/entries/${draft}`, { notes: 'risposta da finire' });
+  assert.equal((await H('POST', `/mail/topics/${topic}/move`, { ws: home })).status, 400);
+  const mv = await H('POST', `/mail/topics/${topic}/move`, { ws: other }).then(json);
+  assert.equal(mv.ws, other);
+  s = await H('GET', '/sync').then(json);
+  assert.ok(!s.mailTopics.some(t => t.id === topic && t.title === 'Spostami') && !s.entries.some(e => e.id === draft));
+  const o = await O('GET', '/sync').then(json);
+  const moved = o.mailThreads.filter(t => t.topic_id === mv.topic);
+  assert.deepEqual(moved.map(t => t.subject).sort(), ['Nuova mail', 'Spostami']);
+  assert.ok(o.entries.some(e => e.kind === 'mail' && e.notes === 'risposta da finire' && moved.some(t => t.id === e.thread_id)));
+  const spost = moved.find(t => t.subject === 'Spostami');
+  const reply = await H('POST', '/mail/incoming', { message_id: '<sp2@fornitore.it>', in_reply_to: '<sp1@fornitore.it>', from: 'mario@fornitore.it', subject: 'Re: Spostami', body: 'ancora' }).then(json);
+  assert.equal(reply.thread, spost.id);
+
+  // Apri in Thunderbird: serve l'estensione 1.7; il Message-ID arriva all'estensione una volta.
+  const msg = (await O('GET', `/mail/threads/${spost.id}`).then(json)).messages[0];
+  assert.equal((await O('POST', `/mail/messages/${msg.id}/open`)).status, 409);
+  const ctrl = new AbortController();
+  const stream = await fetch(`${url}/api/mail/stream`, { headers: { Authorization: `Bearer ${token}`, 'X-Organizer-Ext': '1.7' }, signal: ctrl.signal });
+  const reader = stream.body.pipeThrough(new TextDecoderStream()).getReader();
+  await reader.read();
+  assert.equal((await O('POST', `/mail/messages/${msg.id}/open`)).status, 204);
+  assert.match((await reader.read()).value, /event: open/);
+  assert.deepEqual(await call('GET', '/mail/opens', { token }).then(json), ['sp1@fornitore.it']);
+  assert.deepEqual(await call('GET', '/mail/opens', { token }).then(json), []);
+  ctrl.abort();
+});

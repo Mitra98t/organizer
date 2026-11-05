@@ -129,7 +129,7 @@ code, .mono { font-family: var(--mono); font-size: 0.92em; }
 .status.wait { background: var(--today); }
 .status.off { background: var(--danger); }
 
-.quick { padding: 0 16px 8px; position: sticky; top: calc(56px + env(safe-area-inset-top)); z-index: 19; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.quick { padding: 0 16px 8px; position: sticky; top: calc(var(--top-h, calc(56px + env(safe-area-inset-top))) - 1px); z-index: 19; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 .qrow {
   display: flex; align-items: center; gap: 8px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
@@ -209,7 +209,6 @@ code, .mono { font-family: var(--mono); font-size: 0.92em; }
   .tabs, .only-mobile { display: none !important; }
   .main { padding-bottom: 40px; }
   .top { padding-top: 16px; }
-  .quick { top: 64px; }
   .vtitle { font-size: 22px; }
 }
 
@@ -893,6 +892,54 @@ body.idnd .cat-new { display: block; }
 }
 
 /* ---------- documenti con note ---------- */
+/* Alberi del magazzino a grafo: ogni articolo è una scheda, i componenti stanno a destra collegati da linee con
+   gli angoli arrotondati. Ogni albero è un riquadro a sé che scorre di lato se è largo. */
+.trees { display: flex; flex-direction: column; gap: 14px; }
+.g-tree {
+  --g-gap: 26px; --g-line: color-mix(in srgb, var(--muted) 45%, transparent);
+  overflow-x: auto; padding: 18px 20px; border-radius: 14px; border: 1px solid var(--line);
+  background: radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--muted) 22%, transparent) 1px, transparent 0) 0 0 / 18px 18px, var(--panel);
+}
+.g-tree ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; justify-content: center; }
+.g-tree li { display: flex; align-items: center; position: relative; padding: 5px 0; }
+/* Dal genitore parte una linea verso la colonna dei figli… */
+.g-tree li > ul { position: relative; padding-left: var(--g-gap); }
+.g-tree li > ul::before { content: ''; position: absolute; left: 0; top: 50%; width: var(--g-gap); border-top: 1.5px solid var(--g-line); }
+/* …e ogni figlio si aggancia alla barra verticale: dritto in mezzo, curvo al primo e all'ultimo. */
+.g-tree ul ul > li { padding-left: var(--g-gap); }
+.g-tree ul ul > li::before, .g-tree ul ul > li::after { content: ''; position: absolute; left: 0; width: var(--g-gap); }
+.g-tree ul ul > li::before { top: 50%; border-top: 1.5px solid var(--g-line); }
+.g-tree ul ul > li::after { top: 0; bottom: 0; border-left: 1.5px solid var(--g-line); width: 0; }
+.g-tree ul ul > li:first-child::before { top: 50%; bottom: 0; border-left: 1.5px solid var(--g-line); border-top-left-radius: 12px; }
+.g-tree ul ul > li:first-child::after { display: none; }
+.g-tree ul ul > li:last-child::before { top: 0; height: 50%; border-top: 0; border-bottom: 1.5px solid var(--g-line); border-left: 1.5px solid var(--g-line); border-bottom-left-radius: 12px; }
+.g-tree ul ul > li:last-child::after { display: none; }
+.g-tree ul ul > li:only-child::before { top: 50%; height: 0; border: 0; border-top: 1.5px solid var(--g-line); border-radius: 0; }
+
+.g-node {
+  position: relative; z-index: 1; display: flex; align-items: center; gap: 6px; flex: none;
+  background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: 10px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 12%), 0 4px 14px -8px rgb(0 0 0 / 35%); transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.g-node.cat { border-left-color: hsl(var(--h) 60% 52%); }
+.g-node:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); box-shadow: 0 2px 4px rgb(0 0 0 / 14%), 0 10px 22px -10px rgb(0 0 0 / 45%); }
+.g-node.cat:hover { border-left-color: hsl(var(--h) 60% 52%); }
+.g-node.root { padding: 2px 0; background: color-mix(in srgb, var(--accent) 8%, var(--panel-2)); }
+.g-node.root .code { font-size: 15px; }
+.g-node.hit { outline: 2px solid var(--accent); outline-offset: 2px; background: var(--accent-soft); }
+.g-node.loop { border-style: dashed; opacity: 0.75; }
+.g-main { display: flex; flex-direction: column; gap: 1px; padding: 7px 4px 7px 11px; color: inherit; min-width: 0; }
+.g-top { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+.g-top .code { font-weight: 600; }
+.g-top .fw { font-size: 11.5px; color: var(--muted); padding: 0 5px; border-radius: 5px; background: var(--panel); }
+.g-name { font-size: 12px; color: var(--muted); max-width: 230px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g-node:not(:has(.g-toggle)) .g-main { padding-right: 12px; }
+.g-toggle {
+  flex: none; margin-right: 8px; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--muted); font-size: 11.5px; font-weight: 600;
+}
+.g-toggle:hover { color: var(--text); border-color: var(--muted); }
+.g-toggle.closed { background: var(--accent-soft); color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 .docview .head { flex-wrap: wrap; }
 /* Anteprima di un allegato ricevuto (mail.js): da chi e quale mail, accorciato. */
 .attview .att-from { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

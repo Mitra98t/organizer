@@ -17,6 +17,7 @@ import { THEMES, BASE_THEMES, currentTheme, setTheme } from './themes.js';
 import { APP_ICONS, currentIcon, setIcon, applyIcon, themeIcon } from './appicons.js';
 import { AREAS, LEVELS, CAPS, WRITE_NEEDS, READ_NEEDS, PRIVACY_NOTE, fullAccess, setLevel, isRestricted } from './perms.js';
 import { draggable } from './dnd.js';
+import { moveDoc } from './pickers.js';
 import { startTour, deleteTour, tourState } from './tour.js';
 
 const KIND_LABEL = { todo: 'Todo', mail: 'Mail', note: 'Nota' };
@@ -915,7 +916,8 @@ export function viewItems() {
       }),
       h('div.seg',
         h('button', { class: ui.itemView === 'list' && 'on', onclick: () => setView('list'), title: 'Elenco' }, icon('log')),
-        h('button', { class: ui.itemView === 'groups' && 'on', onclick: () => setView('groups'), title: 'Per categoria' }, icon('cols')))),
+        h('button', { class: ui.itemView === 'groups' && 'on', onclick: () => setView('groups'), title: 'Per categoria' }, icon('cols')),
+        h('button', { class: ui.itemView === 'tree' && 'on', onclick: () => setView('tree'), title: 'Alberi: cosa compone cosa' }, icon('hash')))),
     cats.size > 1 && h('div.toolbar.cats',
       [...cats].sort(([a], [b]) => (!a) - (!b) || a.localeCompare(b)).map(([c, n]) => filterChip({
         on: ui.itemCat === c, label: c || NO_CAT, n, cls: c ? 'tint by-hue' : 'tint', style: catStyle(c),
@@ -953,7 +955,60 @@ export function viewItems() {
           openCountOf(i.id) > 0 && h('span.badge', openCountOf(i.id))), () => peekContent(i)))))))
         // Visibile solo durante il trascinamento: rilasciando qui si crea una categoria nuova.
         .concat(h('section.cat-col.cat-new', { 'data-cat': '', 'data-new': '' }, h('div.cat-h', icon('plus'), 'Nuova categoria'))))
-      : h('div.items', items.map(itemRow)));
+      : ui.itemView === 'tree' ? itemTrees(items)
+        : h('div.items', items.map(itemRow)));
+}
+
+// ---------- alberi ----------
+// Cosa compone cosa (Composizione nella scheda dell'articolo). In cima gli articoli che ne contengono altri e non
+// stanno dentro nessuno; sotto, i loro componenti, fino in fondo. Un articolo usato in più posti compare sotto
+// ognuno; un giro (A dentro B dentro A) si ferma. Con un filtro restano gli alberi che contengono un articolo
+// che lo passa (evidenziato); "albero" nella scheda mostra solo quelli dell'articolo.
+function itemTrees(items) {
+  const D = S.data;
+  const byCode = (a, b) => a.code.localeCompare(b.code, undefined, { numeric: true });
+  const kids = id => (D.childItems.get(id) || []).map(l => D.itemById.get(l.child_id)).filter(Boolean).sort(byCode);
+  const focus = D.itemById.get(ui.treeFocus);
+  if (!focus) ui.treeFocus = null;
+  const filtered = !!(ui.itemFilter.trim() || ui.itemCat != null || ui.itemStatusF);
+  const hit = new Set(focus ? [focus.id] : filtered ? items.map(i => i.id) : []);
+  // Radici: chi contiene qualcosa e non sta dentro nessuno; poi, per i giri, il primo articolo non ancora raggiunto.
+  const reached = new Set();
+  const reach = id => { if (reached.has(id)) return; reached.add(id); for (const c of kids(id)) reach(c.id); };
+  const roots = D.items.filter(i => D.childItems.has(i.id) && !(D.parentItems.get(i.id) || []).some(l => D.itemById.has(l.parent_id))).sort(byCode);
+  roots.forEach(r => reach(r.id));
+  for (const i of D.items.slice().sort(byCode)) if (D.childItems.has(i.id) && !reached.has(i.id)) { roots.push(i); reach(i.id); }
+  const contains = (id, seen = new Set()) => hit.has(id) || (!seen.has(id) && kids(id).some(c => contains(c.id, new Set(seen).add(id))));
+  const shown = hit.size || filtered ? roots.filter(r => contains(r.id)) : roots;
+
+  // Un nodo: scheda dell'articolo (colore della categoria a sinistra) e, a destra, i suoi componenti collegati da
+  // linee. Il tondo col numero chiude e riapre il ramo.
+  const node = (it, path, key, root = false) => {
+    const loop = path.has(it.id);
+    const ch = loop ? [] : kids(it.id);
+    const closed = ui.treeClosed.has(key);
+    const card = h('div.g-node', {
+      class: [root && 'root', it.category && 'cat', hit.has(it.id) && 'hit', loop && 'loop', it.status && `st-${it.status}`].filter(Boolean).join(' '),
+      style: catStyle(it.category),
+    },
+    h('a.g-main', { href: `#/i/${it.id}`, title: [it.code, it.name, it.category].filter(Boolean).join(' · ') },
+      h('span.g-top', statusDot(it), h('span.code', itemAttrs(it), it.code), it.firmware && h('span.fw', it.firmware)),
+      it.name && h('span.g-name', it.name),
+      loop && h('span.g-name', '↻ già più a sinistra')),
+    ch.length > 0 && h('button.g-toggle', {
+      class: closed ? 'closed' : null, title: closed ? `Mostra i ${ch.length} componenti` : 'Nascondi i componenti',
+      onclick: () => { if (closed) ui.treeClosed.delete(key); else ui.treeClosed.add(key); render(); },
+    }, closed ? `+${ch.length}` : String(ch.length)));
+    const next = new Set(path).add(it.id);
+    return h('li', card, ch.length > 0 && !closed && h('ul', ch.map(c => node(c, next, `${key}>${c.id}`))));
+  };
+
+  return h('div.trees',
+    focus && h('div.toolbar', filterChip({ on: true, label: [h('span.code', itemAttrs(focus), focus.code), ' solo i suoi alberi', icon('x')],
+      onclick: () => { ui.treeFocus = null; render(); } })),
+    !roots.length ? empty(h('p', 'Nessun articolo ne contiene altri.'), h('p', 'I componenti si aggiungono nella scheda dell\'articolo, sezione Composizione.'))
+      : !shown.length ? empty(h('p', 'Nessun albero contiene articoli che corrispondono al filtro.'))
+        : shown.map(r => h('section.g-tree', h('ul.g-root', node(r, new Set(), String(r.id), true)))));
 }
 
 async function uploadDocs(it, files) {
@@ -993,7 +1048,8 @@ function docSection(it) {
       h('div.doc-main',
         h('span.doc-name',
           peekable(h('a', { href: `#/d/${d.id}` }, docName(d)), () => docPeek(d), 'peek-doc'),
-          h('button.icon-btn.sm', { title: 'Rinomina', onclick: () => renameDoc(d) }, icon('edit'))),
+          h('button.icon-btn.sm', { title: 'Rinomina', onclick: () => renameDoc(d) }, icon('edit')),
+          h('button.icon-btn.sm', { title: 'Sposta o copia in un altro articolo', onclick: () => moveDoc(d) }, icon('copy'))),
         h('div.meta',
           d.label && d.filename && h('span', d.filename),
           d.size != null && h('span', fmtSize(d.size)),
@@ -1094,6 +1150,10 @@ export function viewItem(id) {
           onkeydown: enterAdd(code => act(() => api('POST', `/items/${it.id}/children`, { code }))),
         })),
       parents.length > 0 && h('div.comp', h('span.muted', 'Usato in'), h('div.item-chips', parents.map(itemChip))),
+      (children.length > 0 || parents.length > 0) && h('a.btn.sm.ghost', {
+        href: '#/magazzino', title: 'Gli alberi di cui fa parte, nel magazzino',
+        onclick: () => { ui.itemView = 'tree'; save('org.itemView', 'tree'); ui.treeFocus = it.id; },
+      }, icon('hash'), 'Vedi l\'albero'),
     ], { count: children.length + parents.length }),
     section('i-proj', 'Progetti', [
       h('div.comp',
@@ -1399,8 +1459,8 @@ function settingsPane(sec, D) {
     case 'notifiche': return notificationsPane(D);
     case 'mail': return [card('set-mail', 'Collegare Thunderbird', [
       h('p', 'Con l\'estensione Organizer per Thunderbird, "Manda" apre la mail in Thunderbird con gli allegati (anche se premi dal telefono: si apre sul computer). Quando la invii diventa "mandata" da sola. Le mail ricevute e mandate si raccolgono in thread (pagina Mail): se una risposta arriva su una conversazione vecchia, Organizer si fa passare da Thunderbird anche i messaggi precedenti.'),
-      h('p.muted', 'Hai già l\'estensione? La versione 1.6 serve per l\'anteprima degli allegati ricevuti (la 1.5 per la posta a topic: al primo collegamento carica l\'ultimo mese da tutte le cartelle, e in Thunderbird il tasto destro su una mail offre "Porta il thread in Organizer"). Scaricala di nuovo e reinstallala (token e impostazioni restano).'),
-      D.mailExt && D.mailExtVersion != null && (D.mailExtVersion || '0').localeCompare('1.6', undefined, { numeric: true }) < 0 && h('p.warn', icon('help'), `Thunderbird è collegato con un'estensione vecchia${D.mailExtVersion ? ` (${D.mailExtVersion})` : ''}: aggiornala (serve per l'anteprima degli allegati).`),
+      h('p.muted', 'Hai già l\'estensione? La versione 1.7 serve per "Apri in Thunderbird" e per scegliere il workspace di ogni account di posta (nelle opzioni dell\'estensione), la 1.6 per l\'anteprima degli allegati ricevuti (la 1.5 per la posta a topic: al primo collegamento carica l\'ultimo mese da tutte le cartelle, e in Thunderbird il tasto destro su una mail offre "Porta il thread in Organizer"). Scaricala di nuovo e reinstallala (token e impostazioni restano).'),
+      D.mailExt && D.mailExtVersion != null && (D.mailExtVersion || '0').localeCompare('1.7', undefined, { numeric: true }) < 0 && h('p.warn', icon('help'), `Thunderbird è collegato con un'estensione vecchia${D.mailExtVersion ? ` (${D.mailExtVersion})` : ''}: aggiornala (serve per l'anteprima degli allegati, "Apri in Thunderbird" e il workspace di ogni account).`),
       h('p', D.mailExt ? h('span.chip.on', icon('check'), `Thunderbird collegato${D.mailExtVersion ? ` (estensione ${D.mailExtVersion})` : ''}`) : h('span.chip', 'Thunderbird non collegato')),
       h('ol.steps',
         h('li', h('a.btn.sm', { href: 'api/mail/thunderbird.xpi', download: '' }, icon('download'), 'Scarica l\'estensione'), ' già impostata per questo indirizzo.'),

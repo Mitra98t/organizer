@@ -1,4 +1,5 @@
-// Documenti del magazzino: caricare file (anche più di uno), link esterni, scaricare, aprire, rinominare.
+// Documenti del magazzino: caricare file (anche più di uno), link esterni, scaricare, aprire, rinominare,
+// spostare o copiare in un altro articolo.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -215,6 +216,34 @@ export default {
       const label = name.join(' ') || fail('Quale nome?');
       await ctx.api().patch(`/docs/${d.id}`, { label });
       console.log(`${c.green('✓')} ${c.dim(d.id)} ${docName(d)} → ${label}`);
+    },
+  },
+
+  mv: {
+    usage: 'doc mv ID… CODICE',
+    summary: 'sposta documenti in un altro articolo (con le loro note)',
+    async run(ctx, refs) {
+      if (refs.length < 2) fail('Uso: org doc mv ID… CODICE');
+      const it = itemRef(await ctx.data(), refs.pop());
+      for (const ref of refs) {
+        const d = await docRef(ctx, ref);
+        await ctx.api().patch(`/docs/${d.id}`, { item_id: it.id });
+        console.log(`${c.green('→')} ${c.dim(d.id)} ${docName(d)} ${c.dim('in')} ${it.code}`);
+      }
+    },
+  },
+
+  cp: {
+    usage: 'doc cp ID… CODICE',
+    summary: 'copia documenti in un altro articolo (file nuovo, senza le note)',
+    async run(ctx, refs) {
+      if (refs.length < 2) fail('Uso: org doc cp ID… CODICE');
+      const it = itemRef(await ctx.data(), refs.pop());
+      for (const ref of refs) {
+        const d = await docRef(ctx, ref);
+        const { id } = await ctx.api().post(`/docs/${d.id}/copy`, { item_id: it.id });
+        console.log(`${c.green('+')} ${c.dim(id)} ${docName(d)} ${c.dim(`in ${it.code} (copia di ${d.id})`)}`);
+      }
     },
   },
 

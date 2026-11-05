@@ -13,6 +13,10 @@
     #status { margin-top: 16px; padding: 8px 10px; border-radius: 6px; background: #eee; }
     #status.on { background: #dff3e4; }
     #status.error { background: #fbe3e1; }
+    #accounts { margin-top: 6px; }
+    .acc { display: flex; gap: 10px; align-items: center; margin: 6px 0; }
+    .acc span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .acc select { flex: 1; padding: 4px 6px; font: inherit; }
   </style>
 </head>
 <body>
@@ -27,6 +31,9 @@
   <p class="muted">Così in Organizer (Mail → In arrivo) vedi le mail ricevute e rispondi da lì. Le vedi solo tu. Spento, a Organizer arrivano solo le risposte alle mail mandate da Organizer.</p>
   <button id="save">Salva e collega</button>
   <div id="status"></div>
+  <label>Workspace di ogni account</label>
+  <p class="muted">Le conversazioni nuove di un account finiscono nel suo workspace di Organizer. Quelle già in Organizer restano dove sono (un topic si sposta dalla sua pagina, menu ⋯).</p>
+  <div id="accounts" class="muted">Collega prima Organizer.</div>
   <script src="options.js"></script>
 </body>
 </html>
