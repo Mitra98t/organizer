@@ -1,78 +1,75 @@
-# Accesso da fuori casa (e trasloco sul Raspberry)
+# Access from outside (and moving to a Raspberry Pi)
 
-Obiettivo: raggiungere Organizer da ovunque con il tuo dominio (es. `https://organizer.tuodominio.it`), con HTTPS valido e **nessuna porta aperta**: né sul router, né in rete locale.
+Goal: reach Organizer from anywhere with your own domain (e.g. `https://organizer.example.com`), with valid HTTPS and **no open ports**: neither on the router nor on the local network.
 
-Come funziona: l'app ascolta solo sul computer che la ospita (`127.0.0.1:8080`). Accanto gira `cloudflared` (servizio `tunnel` del `docker-compose.yml`), che apre una connessione **in uscita** verso Cloudflare; le richieste per il tuo dominio arrivano a Cloudflare e passano da quella connessione. Da internet non si vede il tuo indirizzo e non c'è niente in ascolto da raggiungere. Il certificato HTTPS lo gestisce Cloudflare.
+How it works: the app listens only on the computer that hosts it (`127.0.0.1:8080`). Next to it runs `cloudflared` (the `tunnel` service in `docker-compose.yml`), which opens an **outgoing** connection to Cloudflare; requests for your domain reach Cloudflare and go through that connection. From the internet your address is not visible and there is nothing listening to reach. Cloudflare manages the HTTPS certificate.
 
-Vale uguale oggi sul Mac e domani sul Raspberry: cambia solo dove gira Docker.
+It works the same on a Mac today and on a Raspberry Pi tomorrow: only the place where Docker runs changes.
 
-## 1. Il dominio su Cloudflare (una volta)
+## 1. The domain on Cloudflare (once)
 
-1. Crea un account gratuito su cloudflare.com.
-2. **Add a domain** → il tuo dominio → piano **Free**.
-3. Cloudflare ti mostra due nameserver: impostali nel pannello del registrar dove hai comprato il dominio (al posto di quelli attuali). Se il dominio ha già record (sito, mail), Cloudflare li importa: controlla che ci siano tutti prima di cambiare i nameserver.
-4. Aspetta che Cloudflare dica che il dominio è **attivo** (di solito minuti, a volte qualche ora).
+1. Create a free account on cloudflare.com.
+2. **Add a domain** → your domain → **Free** plan.
+3. Cloudflare shows you two nameservers: set them in the dashboard of the registrar where you bought the domain (instead of the current ones). If the domain already has records (website, mail), Cloudflare imports them: check they are all there before changing the nameservers.
+4. Wait until Cloudflare says the domain is **active** (usually minutes, sometimes a few hours).
 
-## 2. Il tunnel
+## 2. The tunnel
 
-1. Pannello Cloudflare → **Zero Trust** → **Networks** → **Tunnels** → **Create a tunnel** → tipo **Cloudflared** → nome, es. `organizer`.
-2. Nella pagina di installazione scegli **Docker**: nel comando che ti mostra c'è `--token …`. Copia solo il token (la stringa lunga dopo `--token`).
-3. Nella cartella del progetto, sul computer che ospita l'app, crea (o apri) il file `.env` e aggiungi una riga:
+1. Cloudflare dashboard → **Zero Trust** → **Networks** → **Tunnels** → **Create a tunnel** → type **Cloudflared** → a name, e.g. `organizer`.
+2. On the installation page pick **Docker**: the command it shows contains `--token …`. Copy only the token (the long string after `--token`).
+3. In the project folder, on the computer that hosts the app, create (or open) the `.env` file and add a line:
 
    ```
-   TUNNEL_TOKEN=il-token-copiato
+   TUNNEL_TOKEN=the-copied-token
    ```
 
-   `.env` è escluso da git: il token non finisce nel repository. Il token dà a chi lo ha la possibilità di far girare il tuo tunnel: tienilo come una password.
-4. Avvia il tunnel:
+   `.env` is excluded from git: the token does not end up in the repository. The token lets whoever has it run your tunnel: keep it like a password.
+4. Start the tunnel:
 
    ```bash
    make tunnel
    ```
 
-   Nel log devono comparire righe "Registered tunnel connection". Nel pannello il tunnel diventa **Healthy**.
-5. Sempre nel tunnel → **Public Hostname** → **Add a public hostname**:
-   - Subdomain: `organizer` (o quello che preferisci); Domain: il tuo dominio
+   Lines saying "Registered tunnel connection" must show up in the log. In the dashboard the tunnel becomes **Healthy**.
+5. Still in the tunnel → **Public Hostname** → **Add a public hostname**:
+   - Subdomain: `organizer` (or whatever you prefer); Domain: your domain
    - Service: **HTTP**, URL: `app:8080`
 
-   (`app` è il nome del container dell'app nella rete di Docker: il tunnel la raggiunge da dentro.)
-6. Apri `https://organizer.tuodominio.it`: è Organizer, con il lucchetto.
+   (`app` is the name of the app's container in the Docker network: the tunnel reaches it from inside.)
+6. Open `https://organizer.example.com`: it is Organizer, with the padlock.
 
-7. **Cache del browser**: Cloudflare → il tuo dominio → *Caching* → *Configuration* → **Browser Cache TTL** → *Respect Existing Headers*. Altrimenti Cloudflare dice al browser di tenere JS e CSS 4 ore e dopo un aggiornamento la prima apertura userebbe il codice vecchio (l'app installata si ricontrolla comunque da sola).
+7. **Browser cache**: Cloudflare → your domain → *Caching* → *Configuration* → **Browser Cache TTL** → *Respect Existing Headers*. Otherwise Cloudflare tells the browser to keep JS and CSS for 4 hours, and after an update the first opening would use the old code (the installed app checks again by itself anyway).
 
-Comandi utili: `make tunnel-status` (stato e log), `make tunnel-off` (spegne l'accesso da fuori), `make info`.
+Useful commands: `make tunnel-status` (status and log), `make tunnel-off` (turns off access from outside), `make info`.
 
-## 3. Dopo
+## 3. Afterwards
 
-- **Telefono**: apri l'indirizzo nuovo, accedi e installa l'app (iPhone: Safari → Condividi → "Aggiungi alla schermata Home"; Android: Chrome → "Installa app"). Se avevi installato quella con l'indirizzo di Tailscale, eliminala e reinstalla questa.
-- **CLI**: `org login https://organizer.tuodominio.it`.
-- **Helper Thunderbird**: funziona da solo con l'indirizzo da cui apri l'app.
-- **Tailscale**: quando il nuovo indirizzo funziona, smetti di pubblicare l'app su Tailscale con `tailscale serve reset` (o dall'app di Tailscale), poi puoi disinstallarlo.
-- **In casa**: anche dal telefono in Wi-Fi usi l'indirizzo con il dominio. L'app non è più raggiungibile su `http://IP-DEL-MAC:8080`; se ti serve, `APP_BIND=0.0.0.0` in `.env` e `make up` la riapre in rete locale (è una porta aperta in LAN).
+- **Phone**: open the new address, sign in and install the app (iPhone: Safari → Share → "Add to Home Screen"; Android: Chrome → "Install app"). If you had installed it from another address (e.g. a Tailscale one), remove it and install this one.
+- **CLI**: `org login https://organizer.example.com`.
+- **Thunderbird**: the extension downloaded from the new address is already set up for it; the old helper works by itself with the address you open the app from.
+- **At home**: from the phone on Wi-Fi you use the domain address too. The app is no longer reachable at `http://COMPUTER-IP:8080`; if you need it, `APP_BIND=0.0.0.0` in `.env` and `make up` open it on the local network again (it is an open port on the LAN).
 
-## Il Mac come server, per ora
+## A Mac as the server
 
-- L'app è raggiungibile solo quando il Mac è acceso e **non in stop**: Impostazioni di Sistema → Batteria / Energia → impedisci lo stop automatico (con alimentatore collegato), oppure lascia aperto `caffeinate -s` in un terminale.
-- Docker Desktop deve partire da solo: Impostazioni di Docker → *Start Docker Desktop when you sign in*. Tunnel e app ripartono da soli con Docker.
-- Limite di Cloudflare (piano Free): un singolo caricamento passa fino a 100 MB. File più grandi si caricano dal Mac stesso su `http://localhost:8080`.
+- The app is reachable only while the Mac is on and **not asleep**: System Settings → Battery / Energy → prevent automatic sleep (with the power adapter connected), or keep `caffeinate -s` open in a terminal.
+- Docker Desktop must start by itself: Docker settings → *Start Docker Desktop when you sign in*. Tunnel and app restart by themselves with Docker.
+- Cloudflare limit (Free plan): a single upload goes through up to 100 MB. Bigger files can be uploaded from the host itself at `http://localhost:8080`.
 
-## Sicurezza: cosa protegge cosa
+## Security: what protects what
 
-- **Nessuna porta aperta**: il tunnel è in uscita; l'app ascolta solo su `127.0.0.1`.
-- **HTTPS** sempre, con certificato di Cloudflare; il browser ricorda di usare solo HTTPS (HSTS).
-- **Accesso all'app**: utente e password (scrypt), registrazione solo con invito, limite di 10 tentativi sbagliati ogni 15 minuti per indirizzo e utente (dietro il tunnel conta l'indirizzo vero, da `CF-Connecting-IP`). Sessioni con cookie `HttpOnly`, `Secure`, `SameSite=Lax`; token API revocabili; permessi per area.
-- **In più (facoltativo)**: Cloudflare **Access** (Zero Trust → Access → Applications) mette davanti all'app un secondo accesso (codice via email, Google…). Attenzione: blocca anche la CLI, i bot e l'helper di Thunderbird, che usano le API senza passare da quella pagina; se lo attivi, crea una regola che lasci passare `/api/` o usa i service token di Cloudflare per quei programmi.
-- **Prima di esporre un'installazione nuova** (es. il Raspberry): porta prima i dati (sezione sotto). Su un'installazione vuota la pagina di primo avvio crea l'admin per chi arriva per primo.
+- **No open ports**: the tunnel is outgoing; the app listens only on `127.0.0.1`.
+- **HTTPS** always, with Cloudflare's certificate; the browser remembers to use only HTTPS (HSTS).
+- **Access to the app**: user and password (scrypt), sign-up only with an invite, a limit of 10 wrong attempts every 15 minutes per address and user (behind the tunnel the real address counts, from `CF-Connecting-IP`). Sessions with `HttpOnly`, `Secure`, `SameSite=Lax` cookies; revocable API tokens; permissions per area.
+- **Extra (optional)**: Cloudflare **Access** (Zero Trust → Access → Applications) puts a second sign-in in front of the app (code by email, Google…). Careful: it also blocks the CLI, bots and the Thunderbird extension, which use the API without going through that page; if you turn it on, create a rule that lets `/api/` through or use Cloudflare service tokens for those programs.
+- **Before exposing a new installation** (e.g. the Raspberry Pi): bring the data over first (section below). On an empty installation the first-start page creates the admin for whoever arrives first.
 
 ## Backup
 
-Il disco del computer che ospita l'app è l'unica copia dei dati: fai `make backup` regolarmente (crea `backups/organizer-….tgz` con database e file) e copia quegli archivi altrove (un altro disco, un cloud).
+The disk of the computer that hosts the app is the only copy of the data: run `make backup` regularly (it creates `backups/organizer-….tgz` with the database and the files) and copy those archives somewhere else (another disk, a cloud).
 
-## Più avanti: trasloco sul Raspberry
+## Later: moving to a Raspberry Pi
 
-1. Raspberry Pi 4/5 (4 GB bastano), alimentatore ufficiale, disco esterno (meglio SSD), cavo di rete. Raspberry Pi OS Lite 64 bit scritto con Raspberry Pi Imager, SSH attivo.
-2. Sul Raspberry: Docker, il disco montato all'avvio (es. `/mnt/organizer`) con i dati dell'app lì sopra, il progetto da GitHub.
-3. Trasloco: `make backup` sul Mac → copia dell'archivio sul Raspberry → `make restore FILE=…` lì → prova in locale.
-4. Stesso `.env` con lo stesso `TUNNEL_TOKEN` sul Raspberry, `make tunnel` lì e `make tunnel-off` sul Mac: il dominio passa al Raspberry senza toccare Cloudflare.
-
-Lo script di preparazione del Raspberry si aggiunge quando c'è l'hardware.
+1. Raspberry Pi 4/5 (4 GB are enough), official power supply, external disk (better an SSD), network cable. Raspberry Pi OS Lite 64-bit written with Raspberry Pi Imager, SSH on.
+2. On the Raspberry Pi: Docker, the disk mounted at boot (e.g. `/mnt/organizer`) with the app's data on it, the project from GitHub.
+3. The move: `make backup` on the old host → copy the archive to the Raspberry Pi → `make restore FILE=…` there → try it locally.
+4. The same `.env` with the same `TUNNEL_TOKEN` on the Raspberry Pi, `make tunnel` there and `make tunnel-off` on the old host: the domain moves to the Raspberry Pi without touching Cloudflare.

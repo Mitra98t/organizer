@@ -1,29 +1,30 @@
-// Posta a topic (vedi le migrazioni v19-v21 in db.js): dati e aiuti usati da /api/sync, dalla creazione delle
-// voci e dal ponte con Thunderbird. Tutto è personale (owner_id): nessun altro vede la posta di una persona.
-//  - un topic raccoglie una o più conversazioni (mail_threads); di base ogni conversazione ha il suo;
-//  - una conversazione è l'albero dei suoi messaggi (in_reply_to, refs) più le mail scritte in Organizer;
-//  - archiviata è la conversazione; un topic è archiviato quando lo sono tutte le sue.
-// PVIS_ANY viene da api.js (che importa questo file): si usa solo dentro le funzioni, mai al caricamento.
+// Mail by topic (see migrations v19-v21 in db.js): data and helpers used by /api/sync, by entry creation and by the
+// bridge with Thunderbird. Everything is personal (owner_id): nobody else sees a person's mail.
+//  - a topic gathers one or more conversations (mail_threads); by default each conversation has its own;
+//  - a conversation is the tree of its messages (in_reply_to, refs) plus the mails written in Organizer;
+//  - archiving applies to the conversation; a topic is archived when all of its conversations are.
+// PVIS_ANY comes from api.js (which imports this file): it is used only inside functions, never at load time.
 import { db } from './db.js';
 import { PVIS_ANY } from './api.js';
 import { now } from './util.js';
+import { tr } from './i18n.js';
 
-// "Re: R: Fwd: I: oggetto" → "oggetto": il titolo del thread.
+// "Re: R: Fwd: I: subject" → "subject": the thread's title.
 export const cleanSubject = s => String(s || '').replace(/^\s*((re|r|fw|fwd|i|aw|sv)\s*(\[\d+\])?\s*:\s*)+/i, '').trim();
 
 export function newTopic(ownerId, title, at = now()) {
   return Number(db.prepare('INSERT INTO mail_topics (owner_id, title, created_at) VALUES (?, ?, ?)')
-    .run(ownerId, cleanSubject(title).slice(0, 300) || '(senza oggetto)', at).lastInsertRowid);
+    .run(ownerId, cleanSubject(title).slice(0, 300) || tr('(no subject)'), at).lastInsertRowid);
 }
 
-// Una conversazione nuova, nel topic dato o in uno tutto suo.
+// A new conversation, in the given topic or in one of its own.
 export function newThread(ownerId, subject, at = now(), topicId = null) {
   const topic = topicId || newTopic(ownerId, subject, at);
   return Number(db.prepare('INSERT INTO mail_threads (owner_id, topic_id, subject, last_at, created_at) VALUES (?, ?, ?, ?, ?)')
-    .run(ownerId, topic, cleanSubject(subject).slice(0, 300) || '(senza oggetto)', at, now()).lastInsertRowid);
+    .run(ownerId, topic, cleanSubject(subject).slice(0, 300) || tr('(no subject)'), at, now()).lastInsertRowid);
 }
 
-// Ogni mail scritta in Organizer sta in un thread: se non ce l'ha ancora (appena creata) gliene si dà uno.
+// Every mail written in Organizer is in a thread: if it does not have one yet (just created) it gets one.
 export function ensureEntryThread(e) {
   if (e.kind !== 'mail' || e.thread_id) return e.thread_id;
   const id = newThread(e.created_by, e.mail_subject || e.title);
@@ -31,7 +32,7 @@ export function ensureEntryThread(e) {
   return id;
 }
 
-// Un thread senza topic (il suo è sparito mentre il thread era nel cestino) ne riceve uno nuovo.
+// A thread without a topic (its own disappeared while the thread was in the trash) gets a new one.
 export function ensureTopic(threadId) {
   const t = db.prepare('SELECT id, owner_id, subject, topic_id FROM mail_threads WHERE id = ?').get(threadId);
   if (t && !t.topic_id) db.prepare('UPDATE mail_threads SET topic_id = ? WHERE id = ?').run(newTopic(t.owner_id, t.subject), t.id);
@@ -45,31 +46,31 @@ export function touchThread(threadId, date, { reactivate = true } = {}) {
   if (reactivate && was?.archived_at) relinkThread(threadId); // torna attiva: si ricontrolla tutta
 }
 
-// Topic rimasti senza conversazioni (spostate altrove o eliminate): spariscono.
+// Topics left without conversations (moved elsewhere or deleted): they disappear.
 export function dropEmptyTopics(ownerId) {
   db.prepare(`DELETE FROM mail_topics WHERE owner_id = ? AND id NOT IN
     (SELECT topic_id FROM mail_threads WHERE topic_id IS NOT NULL AND deleted_at IS NULL)`).run(ownerId);
 }
 
-// Codici di magazzino (principali e alternativi, anche senza #) e progetti (il tag, con o senza @) scritti in
-// oggetto e testo diventano collegamenti automatici. Quelli tolti a mano restano nascosti (hidden): non tornano.
-// I codici con dei numeri si riconoscono anche scritti alla buona: senza trattini, punti o barre e senza gli zeri
-// davanti ai numeri ("sch44", "SCH.044" → SCH-44); quelli di sole lettere solo come sono.
+// Inventory codes (main and alternative, also without #) and projects (the tag, with or without @) written in
+// subject and text become automatic links. Those removed by hand stay hidden: they do not come back.
+// Codes with digits are also recognised when written loosely: without dashes, dots or slashes and without leading
+// zeros in numbers ("sch44", "SCH.044" → SCH-44); letter-only codes only as they are.
 const bare = s => String(s || '').toUpperCase().replace(/[-_./]+/g, '').replace(/(^|\D)0+(?=\d)/g, '$1');
 
-// Dato un testo, dice se un codice (o un tag) ci compare: intero, o alla buona per i codici con numeri.
-// Codici di 2 caratteri: solo una lettera e una cifra (Q5, R1); le sigle di sole lettere o cifre (OK, 12) no.
+// Given a text, tells whether a code (or a tag) appears in it: whole, or loosely for codes with digits.
+// Two-character codes: only a letter and a digit (Q5, R1); acronyms of only letters or digits (OK, 12) are not.
 const shortCode = w => w.length === 2 && /[A-Z]/.test(w) && /\d/.test(w);
 
 function matcher(text) {
   const t = ` ${String(text || '')} `.toUpperCase();
-  // Le "parole" del testo (lettere e cifre, anche unite da - _ . /), nella forma alla buona.
+  // The text's "words" (letters and digits, also joined by - _ . /), in their loose form.
   const words = new Set((String(text || '').match(/[A-Za-z0-9]+(?:[-_./][A-Za-z0-9]+)*/g) || []).map(bare));
   return (code, loose = true) => {
     const word = String(code || '').toUpperCase();
     if (word.length < 3 && !shortCode(word)) return false;
     for (let at = t.indexOf(word); at >= 0; at = t.indexOf(word, at + 1)) {
-      if (!/[A-Z0-9]/.test(t[at - 1]) && !/[A-Z0-9]/.test(t[at + word.length])) return true; // non dentro una parola più lunga
+      if (!/[A-Z0-9]/.test(t[at - 1]) && !/[A-Z0-9]/.test(t[at + word.length])) return true; // not inside a longer word
     }
     const b = bare(word);
     return loose && /\d/.test(word) && (b.length >= 3 || shortCode(b)) && words.has(b);
@@ -89,7 +90,7 @@ export function autoLink(threadId, uid, text) {
   }
 }
 
-// Tutto il testo di una conversazione: oggetti e testi dei messaggi, mail scritte in Organizer.
+// All the text of a conversation: subjects and texts of the messages, mails written in Organizer.
 function threadText(threadId) {
   return [
     ...db.prepare('SELECT subject, body FROM mail_messages WHERE thread_id = ?').all(threadId).flatMap(m => [m.subject, m.body]),
@@ -97,15 +98,15 @@ function threadText(threadId) {
   ].join('\n');
 }
 
-// Collegamento automatico a un articolo che il testo non cita più (codice cambiato o tolto): via. Quelli scelti a
-// mano (auto = 0) e quelli tolti a mano (hidden, devono restare nascosti) non si toccano.
+// Automatic link to an item the text no longer mentions (code changed or removed): gone. Those picked by hand
+// (auto = 0) and those removed by hand (hidden, they must stay hidden) are not touched.
 const unlinkAuto = (threadId, itemId) => db.prepare(`DELETE FROM mail_thread_links
   WHERE thread_id = ? AND kind = 'articolo' AND target_id = ? AND auto = 1 AND hidden = 0`).run(threadId, itemId);
 const codesOf = itemId => db.prepare(`SELECT code FROM items WHERE id = $id AND deleted_at IS NULL
   UNION SELECT code FROM item_aliases WHERE item_id = $id`).all({ id: itemId }).map(r => r.code);
 
-// Una conversazione da ricontrollare per intero (es. torna attiva dopo l'archivio): i collegamenti nuovi si
-// aggiungono, quelli automatici a codici che non cita più si tolgono.
+// A conversation to re-check entirely (e.g. active again after the archive): new links are added, automatic ones
+// to codes it no longer mentions are removed.
 export function relinkThread(threadId) {
   const t = db.prepare('SELECT owner_id FROM mail_threads WHERE id = ? AND deleted_at IS NULL').get(threadId);
   if (!t) return;
@@ -118,9 +119,9 @@ export function relinkThread(threadId) {
   }
 }
 
-// Un articolo con i codici cambiati (nuovo, codice cambiato, alternativo aggiunto o tolto): nelle conversazioni
-// attive si collega dove è citato e si scollega (se il collegamento era automatico) dove non lo è più. Quelle
-// archiviate si ricontrollano quando tornano attive.
+// An item whose codes changed (new, code changed, alternative added or removed): in the active conversations it is
+// linked where it is mentioned and unlinked (if the link was automatic) where it no longer is. Archived ones are
+// re-checked when they become active again.
 export function relinkItem(itemId) {
   const codes = codesOf(itemId);
   for (const { id } of db.prepare('SELECT id FROM mail_threads WHERE archived_at IS NULL AND deleted_at IS NULL').all()) {
@@ -130,10 +131,10 @@ export function relinkItem(itemId) {
   }
 }
 
-// La conversazione di un messaggio che Organizer non ha ancora:
-//  1. quella di un messaggio citato (References, In-Reply-To), il più recente;
-//  2. altrimenti stesso oggetto (senza Re:, R:, Fwd:…) e almeno una persona in comune, entro 60 giorni: molti
-//     client non mandano i riferimenti. people: gli indirizzi del messaggio, senza i nostri.
+// The conversation of a message Organizer does not have yet:
+//  1. that of a quoted message (References, In-Reply-To), the most recent one;
+//  2. otherwise same subject (without Re:, R:, Fwd:…) and at least one person in common, within 60 days: many
+//     clients do not send the references. people: the message's addresses, without ours.
 const DAY = 864e5;
 export function findThread(uid, { refs = [], subject = '', people = [], date = now() }) {
   if (refs.length) {
@@ -159,9 +160,9 @@ export function findThread(uid, { refs = [], subject = '', people = [], date = n
   return null;
 }
 
-// Per /api/sync: topic, conversazioni, messaggi (senza il testo intero) e collegamenti della persona. I
-// collegamenti: scelti a mano, trovati nei messaggi, citati nelle mail scritte in Organizer (entry_links,
-// articoli, progetti); meno quelli tolti a mano.
+// For /api/sync: the person's topics, conversations, messages (without the full text) and links. The links:
+// picked by hand, found in the messages, mentioned in the mails written in Organizer (entry_links, items,
+// projects); minus those removed by hand.
 export function threadsSync(uid) {
   const own = 'SELECT id FROM mail_threads WHERE owner_id = $uid AND deleted_at IS NULL';
   return {

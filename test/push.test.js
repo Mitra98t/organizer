@@ -1,5 +1,5 @@
-// Notifiche push: il messaggio cifrato per il dispositivo (RFC 8291) e la firma VAPID, verso un finto servizio
-// push locale che li controlla come farebbe quello vero.
+// Push notifications: the message encrypted for the device (RFC 8291) and the VAPID signature, sent to a fake local
+// push service that checks them as the real one would.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -11,7 +11,7 @@ import crypto from 'node:crypto';
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'organizer-push-'));
 const { sendPush, vapidPublic, decryptForTest } = await import('../server/push.js');
 
-test('push: cifratura aes128gcm e firma VAPID', async () => {
+test('push: aes128gcm encryption and VAPID signature', async () => {
   const ua = crypto.createECDH('prime256v1');
   const uaPublic = ua.generateKeys();
   const auth = crypto.randomBytes(16);
@@ -23,13 +23,13 @@ test('push: cifratura aes128gcm e firma VAPID', async () => {
   });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const endpoint = `http://127.0.0.1:${server.address().port}/push/abc`;
-  const status = await sendPush({ endpoint, p256dh: uaPublic.toString('base64url'), auth: auth.toString('base64url') }, { title: 'Ciao', body: 'è arrivata una mail' });
+  const status = await sendPush({ endpoint, p256dh: uaPublic.toString('base64url'), auth: auth.toString('base64url') }, { title: 'Hello', body: 'a mail arrived' });
   server.close();
   assert.equal(status, 201);
   assert.equal(got.headers['content-encoding'], 'aes128gcm');
-  assert.deepEqual(JSON.parse(decryptForTest(got.body, ua.getPrivateKey(), uaPublic, auth)), { title: 'Ciao', body: 'è arrivata una mail' });
+  assert.deepEqual(JSON.parse(decryptForTest(got.body, ua.getPrivateKey(), uaPublic, auth)), { title: 'Hello', body: 'a mail arrived' });
 
-  // VAPID: JWT ES256 firmato con la chiave di cui "k" è la parte pubblica, per l'origine del servizio push.
+  // VAPID: ES256 JWT signed with the key whose public part is "k", for the push service's origin.
   const [, jwt, k] = got.headers.authorization.match(/^vapid t=([^,]+), k=(.+)$/);
   assert.equal(k, vapidPublic);
   const [h, c, sig] = jwt.split('.');

@@ -1,20 +1,20 @@
-// Anteprima dei disegni DXF: il file si legge con dxf-parser e diventa un'immagine SVG (sfondo bianco, come su
-// carta), che il visualizzatore mostra come le altre immagini: zoom, note nei punti, segnaposto.
-// Si disegnano linee, polilinee (con gli archi dei bulge), cerchi, archi, ellissi, spline, testi, blocchi
-// (INSERT, anche a griglia), quote (il loro blocco), solidi e punti; i layer spenti o congelati no. Lo spazio
-// carta si salta: si vede lo spazio modello. Si carica solo quando si apre un DXF.
+// DXF drawing preview: the file is read with dxf-parser and becomes an SVG image (white background, like paper),
+// which the viewer shows like any other image: zoom, notes on points, pins.
+// Drawn: lines, polylines (with bulge arcs), circles, arcs, ellipses, splines, texts, blocks (INSERT, grids too),
+// dimensions (their block), solids and points; layers that are off or frozen are not. Paper space is skipped: model
+// space is shown. Loaded only when a DXF is opened.
 
 let parser = null;
 async function loadParser() {
   if (!parser) {
-    await import('../vendor/dxf-parser/dxf-parser.js'); // UMD: si registra come self.DxfParser
+    await import('../vendor/dxf-parser/dxf-parser.js'); // UMD: registers itself as self.DxfParser
     const P = self.DxfParser?.default || self.DxfParser;
     parser = new P();
   }
   return parser;
 }
 
-// Matrici 2D [a, b, c, d, e, f]: x' = a x + c y + e, y' = b x + d y + f.
+// 2D matrices [a, b, c, d, e, f]: x' = a x + c y + e, y' = b x + d y + f.
 const I = [1, 0, 0, 1, 0, 0];
 const mul = (m, n) => [m[0] * n[0] + m[2] * n[1], m[1] * n[0] + m[3] * n[1], m[0] * n[2] + m[2] * n[3], m[1] * n[2] + m[3] * n[3],
   m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5]];
@@ -23,7 +23,7 @@ const scaleOf = m => Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2])) || 1;
 const angleOf = m => Math.atan2(m[1], m[0]);
 
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-// Su carta bianca i colori chiari (giallo, verde e ciano puri) non si leggono: si scuriscono.
+// On white paper light colours (pure yellow, green and cyan) cannot be read: they are darkened.
 const hex = c => {
   let r = (c >> 16) & 255;
   let g = (c >> 8) & 255;
@@ -34,7 +34,7 @@ const hex = c => {
 };
 const n = x => (Math.round(x * 1000) / 1000).toString();
 
-// Testo MTEXT senza i codici di formattazione ({\fArial|b0;…}, \P a capo, \~ spazio…) e i %%c, %%d, %%p.
+// MTEXT text without formatting codes ({\fArial|b0;…}, \P new line, \~ space…) and %%c, %%d, %%p.
 function plainText(s) {
   return String(s || '')
     .replace(/\\P/g, '\n').replace(/\\~/g, ' ')
@@ -44,14 +44,14 @@ function plainText(s) {
     .replace(/%%[cC]/g, 'Ø').replace(/%%[dD]/g, '°').replace(/%%[pP]/g, '±').replace(/%%%/g, '%');
 }
 
-// Punti di un arco (angoli in radianti, senso antiorario), uno ogni ~5 gradi.
+// Points of an arc (angles in radians, counter-clockwise), one every ~5 degrees.
 function arcPoints(cx, cy, r, a0, a1) {
   while (a1 <= a0) a1 += 2 * Math.PI;
   const steps = Math.max(4, Math.ceil((a1 - a0) / (Math.PI / 36)));
   return Array.from({ length: steps + 1 }, (_, i) => { const a = a0 + ((a1 - a0) * i) / steps; return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) }; });
 }
 
-// Tratto di polilinea con bulge (tan(angolo/4)): l'arco tra due vertici.
+// Polyline segment with bulge (tan(angle/4)): the arc between two vertices.
 function bulgePoints(p, q, bulge) {
   const theta = 4 * Math.atan(bulge);
   const d = Math.hypot(q.x - p.x, q.y - p.y);
@@ -68,7 +68,7 @@ function bulgePoints(p, q, bulge) {
   return pts.slice(1);
 }
 
-// B-spline (de Boor) campionata; senza nodi validi si uniscono i punti.
+// Sampled B-spline (de Boor); without valid knots the points are joined.
 function splinePoints(e) {
   const ctrl = e.controlPoints || [];
   const k = e.degreeOfSplineCurve || 3;
@@ -99,8 +99,8 @@ function splinePoints(e) {
 const HALIGN = ['start', 'middle', 'end', 'start', 'middle', 'start'];
 const MTEXT_ANCHOR = ['start', 'middle', 'end'];
 
-// dxf (già letto) → { svg, width, height }: width e height sono la misura "naturale" dell'immagine (lato lungo
-// 1600), il disegno sta nel viewBox.
+// dxf (already read) → { svg, width, height }: width and height are the image's "natural" size (long side 1600),
+// the drawing is in the viewBox.
 export function dxfToSvg(dxf) {
   const layers = dxf.tables?.layer?.layers || {};
   const blocks = dxf.blocks || {};
@@ -116,7 +116,7 @@ export function dxfToSvg(dxf) {
     if (y < minY) minY = y;
     if (y > maxY) maxY = y;
   };
-  // Colore: dell'entità, o del layer (anche per "dal blocco", semplificando); il bianco/nero (7) è nero su carta.
+  // Colour: the entity's, or the layer's (also for "by block", simplifying); white/black (7) is black on paper.
   const colorOf = (e, inherited) => {
     const idx = e.colorIndex;
     if (idx === 7) return '#000000';
@@ -150,7 +150,7 @@ export function dxfToSvg(dxf) {
   };
 
   const draw = (list, m, depth, inherited) => {
-    if (depth > 12) return; // blocchi annidati all'infinito
+    if (depth > 12) return; // endlessly nested blocks
     for (const e of list || []) {
       if (e.inPaperSpace || hiddenLayer(e)) continue;
       const color = colorOf(e, inherited);
@@ -195,7 +195,7 @@ export function dxfToSvg(dxf) {
         case 'SOLID':
         case '3DFACE': {
           const p = (e.points || e.vertices || []).filter(Boolean);
-          // SOLID: il terzo e il quarto punto sono invertiti rispetto all'ordine del contorno.
+          // SOLID: the third and fourth points are swapped compared to the outline order.
           const ring = e.type === 'SOLID' && p.length === 4 ? [p[0], p[1], p[3], p[2]] : p;
           poly(ring, m, color, true, e.type === 'SOLID');
           break;
@@ -252,8 +252,8 @@ export function dxfToSvg(dxf) {
     }
   };
   draw(dxf.entities, I, 0, null);
-  if (!Number.isFinite(minX)) throw new Error('nessun elemento da disegnare nello spazio modello');
-  // Un margine del 2%; un disegno fatto di una sola linea orizzontale ha comunque un po' di altezza.
+  if (!Number.isFinite(minX)) throw new Error('nothing to draw in model space');
+  // A 2% margin; a drawing made of a single horizontal line still gets some height.
   let w = maxX - minX;
   let hgt = maxY - minY;
   const pad = Math.max(w, hgt) * 0.02 || 1;
@@ -263,7 +263,7 @@ export function dxfToSvg(dxf) {
   const y0 = (minY + maxY) / 2 - hgt / 2;
   const width = w >= hgt ? 1600 : Math.round((1600 * w) / hgt);
   const height = w >= hgt ? Math.round((1600 * hgt) / w) : 1600;
-  // y del DXF verso l'alto, dell'SVG verso il basso: il disegno si ribalta (i testi si raddrizzano da soli).
+  // DXF y goes up, SVG y goes down: the drawing is flipped (texts straighten themselves).
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${n(x0)} ${n(-(y0 + hgt))} ${n(w)} ${n(hgt)}">`
     + `<rect x="${n(x0)}" y="${n(-(y0 + hgt))}" width="${n(w)}" height="${n(hgt)}" fill="#fff"/>`
     + `<g transform="scale(1 -1)" fill="none" stroke-width="1" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round" font-family="Helvetica, Arial, sans-serif">`
@@ -271,7 +271,7 @@ export function dxfToSvg(dxf) {
   return { svg, width, height };
 }
 
-// Testo del file → URL di un'immagine SVG (da rilasciare con URL.revokeObjectURL quando non serve più).
+// File text → URL of an SVG image (to release with URL.revokeObjectURL when no longer needed).
 export async function dxfImage(text) {
   const p = await loadParser();
   const dxf = p.parseSync(text);

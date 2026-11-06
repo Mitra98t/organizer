@@ -1,9 +1,9 @@
-// Icone dell'app disegnate al volo (le descrizioni sono in public/js/appicons.js): SVG per la scheda del browser e
-// PNG (180 per iPhone/iPad, 192 e 512 per l'installazione, 512 "maskable" per Android, che la ritaglia a forma
-// sua). Nessuna dipendenza: i PNG si rasterizzano qui con le distanze dalle forme (bordi sfumati) e si
-// codificano a mano. Una volta disegnate restano in memoria.
+// App icons drawn on the fly (the descriptions are in public/js/appicons.js): SVG for the browser tab and PNG
+// (180 for iPhone/iPad, 192 and 512 for installation, 512 "maskable" for Android, which crops it to its own shape).
+// No dependencies: the PNGs are rasterised here from distances to the shapes (soft edges) and encoded by hand.
+// Once drawn they stay in memory.
 //   GET /icons/app/ID.svg · /icons/app/ID-180.png · -192.png · -512.png · -512-maskable.png
-//   GET /manifest.webmanifest?icon=ID  → il manifest con quelle icone
+//   GET /manifest.webmanifest?icon=ID  → the manifest with those icons
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { iconById } from '../public/js/appicons.js';
@@ -46,7 +46,7 @@ function png(size, pixel) {
   ]);
 }
 
-// ---------- forme (coordinate 0..1) ----------
+// ---------- shapes (coordinates 0..1) ----------
 const rgb = c => c.replace('#', '').match(/../g).map(x => parseInt(x, 16));
 const clamp = v => Math.max(0, Math.min(1, v));
 const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
@@ -61,7 +61,7 @@ function roundBoxDist(px, py, cx, cy, half, r) {
 }
 const polyDist = (x, y, pts) => Math.min(...pts.slice(1).map((p, i) => segDist(x, y, pts[i][0], pts[i][1], p[0], p[1])));
 
-// Le stesse forme dell'SVG (che usa 0..100).
+// The same shapes as the SVG (which uses 0..100).
 const CHECK = [[0.37, 0.51], [0.46, 0.6], [0.66, 0.38]];
 const BIG_CHECK = [[0.3, 0.52], [0.44, 0.66], [0.71, 0.36]];
 
@@ -70,7 +70,7 @@ function pixelOf(icon, maskable) {
   const bg2 = icon.bg2 ? rgb(icon.bg2) : null;
   const mark = rgb(icon.mark);
   const box = icon.box ? rgb(icon.box) : null;
-  // Le icone "maskable" Android tagliano i bordi: il disegno si stringe verso il centro (zona sicura).
+  // Android "maskable" icons crop the edges: the drawing shrinks towards the centre (safe zone).
   const k = maskable ? 0.78 : 1;
   return (x0, y0, px0) => {
     let c = bg2 ? mix(bg, bg2, y0) : bg;
@@ -112,7 +112,7 @@ const cache = new Map();
 const SIZES = new Set([180, 192, 512]);
 const ICON_RE = /^\/icons\/app\/([a-z0-9-]+?)(?:-(\d+)(-maskable)?)?\.(svg|png)$/;
 
-// Risponde se il percorso è un'icona o il manifest con un'icona scelta; altrimenti false.
+// Answers if the path is an icon or the manifest with a chosen icon; otherwise false.
 export function serveAppIcon(res, url, publicDir) {
   if (url.pathname === '/manifest.webmanifest' && url.searchParams.has('icon')) {
     const icon = iconById(url.searchParams.get('icon'));

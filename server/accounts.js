@@ -1,5 +1,5 @@
-// Account e workspace: utenti con password, sessioni, workspace, appartenenze (admin o membro) e inviti.
-// Tutto in accounts.db; i dati di ogni workspace stanno nel suo file (vedi db.js).
+// Accounts and workspaces: users with passwords, sessions, workspaces, memberships (admin or member) and invites.
+// All in accounts.db; each workspace's data lives in its own file (see db.js).
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -52,7 +52,7 @@ const MIGRATIONS = [
     used_at TEXT
   );
   `,
-  // Token per la CLI e per i programmi esterni (bot, script): si mandano come "Authorization: Bearer ...".
+  // Tokens for the CLI and external programs (bots, scripts): sent as "Authorization: Bearer ...".
   `
   CREATE TABLE api_tokens (
     id INTEGER PRIMARY KEY,
@@ -65,13 +65,13 @@ const MIGRATIONS = [
   );
   CREATE INDEX api_tokens_user ON api_tokens(user_id);
   `,
-  // Permessi per area dei membri (JSON, vedi public/js/perms.js); NULL = accesso pieno.
+  // Members' permissions per area (JSON, see public/js/perms.js); NULL = full access.
   `
   ALTER TABLE memberships ADD COLUMN perms TEXT;
   `,
-  // Posta in arrivo passata dall'estensione di Thunderbird (server/thunderbird.js): è personale, la vede solo
-  // chi la riceve, in qualunque workspace. thread_ws/thread_entry: la mail di Organizer a cui appartiene.
-  // mail_addresses: gli indirizzi delle identità di Thunderbird (per "rispondi a tutti" senza sé stessi).
+  // Inbox passed on by the Thunderbird extension (server/thunderbird.js): personal, only whoever receives it sees
+  // it, in any workspace. thread_ws/thread_entry: the Organizer mail it belongs to.
+  // mail_addresses: the addresses of the Thunderbird identities (for "reply all" without oneself).
   `
   CREATE TABLE mail_inbox (
     id INTEGER PRIMARY KEY,
@@ -94,7 +94,7 @@ const MIGRATIONS = [
   CREATE INDEX mail_inbox_user ON mail_inbox(user_id, date);
   ALTER TABLE users ADD COLUMN mail_addresses TEXT NOT NULL DEFAULT '[]';
   `,
-  // Feedback sull'app (errori, idee) con screenshot: li rivede chi gestisce l'istanza (server/feedback.js).
+  // Feedback about the app (bugs, ideas) with screenshots: reviewed by whoever runs the instance (server/feedback.js).
   `
   CREATE TABLE feedback (
     id INTEGER PRIMARY KEY,
@@ -118,8 +118,8 @@ const MIGRATIONS = [
     created_at TEXT NOT NULL
   );
   `,
-  // Notifiche (server/notify.js): citazioni, mail arrivate, messaggi nei canali. Sono della persona, in ogni
-  // workspace (workspace_id dice dove porta l'url). push_subs: i dispositivi a cui mandarle anche ad app chiusa.
+  // Notifications (server/notify.js): mentions, incoming mail, channel messages. They belong to the person, in every
+  // workspace (workspace_id says where the url leads). push_subs: the devices to send them to with the app closed.
   `
   CREATE TABLE notifications (
     id INTEGER PRIMARY KEY,
@@ -145,21 +145,26 @@ const MIGRATIONS = [
     created_at TEXT NOT NULL
   );
   `,
-  // Giro di Organizer (server/tour.js): onboarded_at = l'invito è già stato visto (chi c'era già non lo
-  // riceve); tour_of = il workspace di prova di quella persona.
+  // Organizer tour (server/tour.js): onboarded_at = the invitation has been seen (existing users do not get it);
+  // tour_of = that person's demo workspace.
   `
   ALTER TABLE users ADD COLUMN onboarded_at TEXT;
   UPDATE users SET onboarded_at = created_at;
   ALTER TABLE workspaces ADD COLUMN tour_of INTEGER REFERENCES users ON DELETE CASCADE;
   `,
-  // Posta a topic: mail_backfill_at = l'estensione di Thunderbird ha già caricato l'ultimo mese (NULL = da
-  // fare al prossimo collegamento, anche per chi c'era già: la posta riparte da zero).
+  // Mail by topic: mail_backfill_at = the Thunderbird extension has loaded the last month (NULL = to do at the next
+  // connection, also for existing users: mail starts over).
   `
   ALTER TABLE users ADD COLUMN mail_backfill_at TEXT;
   `,
-  // Contatti "da salvare" da non proporre: indirizzi interi o pezzi (noreply, @amazon.it, un nome), per persona.
+  // "To save" contacts not to suggest: whole addresses or parts (noreply, @shop.example, a name), per person.
   `
   ALTER TABLE users ADD COLUMN mail_ignore TEXT NOT NULL DEFAULT '[]';
+  `,
+  // Interface language of the person (en, it): sent by the app with every request, used for what is written to
+  // them later (notifications).
+  `
+  ALTER TABLE users ADD COLUMN lang TEXT NOT NULL DEFAULT 'en';
   `,
 ];
 
@@ -190,9 +195,9 @@ export function atx(fn) {
   }
 }
 
-// ---------- installazione precedente (un solo workspace) ----------
-// Al primo avvio con i workspace: organizer.db diventa il workspace 1 e i suoi utenti diventano account,
-// con ruolo admin per chi era admin. Le password escono dal file dei dati.
+// ---------- older installation (a single workspace) ----------
+// On the first start with workspaces: organizer.db becomes workspace 1 and its users become accounts, with the
+// admin role for whoever was admin. Passwords leave the data file.
 function importLegacy() {
   if (acc.prepare('SELECT COUNT(*) AS n FROM workspaces').get().n) return;
   if (!fs.existsSync(path.join(DATA_DIR, 'organizer.db'))) return;
@@ -200,9 +205,9 @@ function importLegacy() {
   const users = data.prepare("SELECT id, username, name, pass, is_admin, created_at FROM users WHERE pass != ''").all();
   if (!users.length) return;
   const t = now();
-  const name = process.env.WORKSPACE_NAME || 'Principale';
+  const name = process.env.WORKSPACE_NAME || 'Main';
   atx(() => {
-    // Prima gli utenti: il workspace fa riferimento a chi l'ha creato.
+    // Users first: the workspace refers to whoever created it.
     for (const u of users) {
       acc.prepare('INSERT INTO users (id, username, name, pass, last_workspace_id, created_at) VALUES (?, ?, ?, ?, 1, ?)')
         .run(u.id, u.username, u.name, u.pass, u.created_at);
@@ -223,15 +228,16 @@ function importLegacy() {
     }
   });
   data.exec("UPDATE users SET pass = ''; DELETE FROM sessions; DELETE FROM invites;");
-  console.log(`Workspace: installazione esistente importata come "${name}" (${users.length} utenti)`);
+  console.log(`Workspace: existing installation imported as "${name}" (${users.length} users)`);
 }
 importLegacy();
 
-// ---------- workspace e membri ----------
+// ---------- workspaces and members ----------
 export const userCount = () => acc.prepare('SELECT COUNT(*) AS n FROM users').get().n;
-export const getAccount = id => acc.prepare('SELECT id, username, name, last_workspace_id FROM users WHERE id = ?').get(+id);
+export const getAccount = id => acc.prepare('SELECT id, username, name, last_workspace_id, lang FROM users WHERE id = ?').get(+id);
+export const langOfUser = id => acc.prepare('SELECT lang FROM users WHERE id = ?').get(+id)?.lang || 'en';
 export const workspaceById = id => acc.prepare('SELECT * FROM workspaces WHERE id = ? AND deleted_at IS NULL').get(+id);
-// Permessi di un membro nel workspace: null = accesso pieno (admin, o nessuna restrizione impostata).
+// A member's permissions in the workspace: null = full access (admin, or no restriction set).
 export function permsIn(wsId, userId) {
   const m = acc.prepare('SELECT role, perms FROM memberships WHERE workspace_id = ? AND user_id = ?').get(wsId, userId);
   if (!m || m.role === 'admin' || !m.perms) return null;
@@ -259,17 +265,17 @@ export function membersOf(wsId) {
     WHERE m.workspace_id = ? ORDER BY u.name COLLATE NOCASE`).all(wsId);
 }
 
-// Copia del membro nella tabella users del workspace (serve alle chiavi esterne e ai nomi).
+// Copy of the member in the workspace's users table (for foreign keys and names).
 export function syncMirror(ws, userId) {
   const u = getAccount(userId);
   const role = roleIn(ws.id, userId);
   const data = openDataDb(ws.file);
-  // Chi entra nel workspace trova la chat già letta: i messaggi di prima non contano come nuovi.
+  // Whoever joins the workspace finds the chat already read: earlier messages do not count as new.
   data.prepare(`INSERT INTO users (id, username, name, pass, is_admin, member, created_at, chat_read_id)
     VALUES ($id, $username, $name, '', $admin, $member, $t, (SELECT IFNULL(MAX(id), 0) FROM chat_messages))
     ON CONFLICT(id) DO UPDATE SET username = $username, name = $name, is_admin = $admin, member = $member`)
     .run({ id: u.id, username: u.username, name: u.name, admin: role === 'admin' ? 1 : 0, member: role ? 1 : 0, t: now() });
-  // Anche per canale: chi entra trova letti i canali di tutti (gli altri quando ci viene aggiunto, vedi chat.js).
+  // Per channel too: whoever joins finds the everyone-channels read (the others when added to them, see chat.js).
   if (role) {
     data.prepare(`INSERT OR IGNORE INTO chat_reads (channel_id, user_id, read_id)
       SELECT c.id, ?, IFNULL((SELECT MAX(m.id) FROM chat_messages m WHERE m.channel_id = c.id), 0) FROM chat_channels c WHERE c.everyone = 1`).run(u.id);
@@ -285,7 +291,7 @@ export function addMember(ws, userId, role) {
 export function createWorkspace(name, userId) {
   const t = now();
   const ws = atx(() => {
-    // Il primo workspace usa organizer.db, gli altri ws-<id>.db.
+    // The first workspace uses organizer.db, the others ws-<id>.db.
     const first = !acc.prepare('SELECT COUNT(*) AS n FROM workspaces').get().n;
     const id = Number(acc.prepare('INSERT INTO workspaces (name, file, created_by, created_at) VALUES (?, ?, ?, ?)')
       .run(name, `tmp-${crypto.randomUUID()}`, userId, t).lastInsertRowid);
@@ -303,13 +309,13 @@ export function adminCount(wsId) {
 }
 
 export function removeMember(ws, userId) {
-  if (roleIn(ws.id, userId) === 'admin' && adminCount(ws.id) === 1) fail(400, 'È l\'unico admin del workspace: prima nomina un altro admin');
+  if (roleIn(ws.id, userId) === 'admin' && adminCount(ws.id) === 1) fail(400, 'They are the only admin of the workspace: make someone else admin first');
   acc.prepare('DELETE FROM memberships WHERE workspace_id = ? AND user_id = ?').run(ws.id, userId);
   acc.prepare('UPDATE sessions SET workspace_id = NULL WHERE user_id = ? AND workspace_id = ?').run(userId, ws.id);
   syncMirror(ws, userId);
 }
 
-// ---------- sessioni ----------
+// ---------- sessions ----------
 const sha = t => crypto.createHash('sha256').update(t).digest('hex');
 
 export function createSession(userId, wsId) {
@@ -324,7 +330,7 @@ export function destroySession(token) {
 }
 
 export function setSessionWorkspace(token, userId, wsId) {
-  // Con un token API non c'è sessione: cambia solo il workspace predefinito dell'account.
+  // With an API token there is no session: only the account's default workspace changes.
   if (token) acc.prepare('UPDATE sessions SET workspace_id = ? WHERE token_hash = ?').run(wsId, sha(token));
   acc.prepare('UPDATE users SET last_workspace_id = ? WHERE id = ?').run(wsId, userId);
 }
@@ -335,7 +341,7 @@ export function defaultWorkspace(userId) {
   return workspacesOf(userId)[0]?.id ?? null;
 }
 
-// Dal cookie: account, workspace attivo (se ne ha uno valido) e ruolo in quel workspace.
+// From the cookie: account, active workspace (if it has a valid one) and role in that workspace.
 export function resolveAuth(token) {
   if (!token) return null;
   const s = acc.prepare('SELECT user_id, workspace_id FROM sessions WHERE token_hash = ?').get(sha(token));
@@ -350,8 +356,8 @@ export function resolveAuth(token) {
   return { account, ws, role: ws ? roleIn(ws.id, account.id) : null, perms: ws ? permsIn(ws.id, account.id) : null };
 }
 
-// ---------- token API ----------
-// Il token si vede una volta sola, alla creazione; nel database resta l'hash e le ultime 4 lettere (per riconoscerlo).
+// ---------- API tokens ----------
+// The token is shown only once, when created; the database keeps its hash and last 4 characters (to recognise it).
 export function createApiToken(userId, name) {
   const token = `org_${crypto.randomBytes(32).toString('base64url')}`;
   const id = Number(acc.prepare('INSERT INTO api_tokens (user_id, name, token_hash, hint, created_at) VALUES (?, ?, ?, ?, ?)')
@@ -365,38 +371,38 @@ export const apiTokensOf = userId =>
 export const revokeApiTokens = (userId, id = null) =>
   acc.prepare('DELETE FROM api_tokens WHERE user_id = ? AND (? IS NULL OR id = ?)').run(userId, id, id).changes;
 
-// Come resolveAuth, ma per un token API. Il workspace si sceglie a ogni richiesta (header X-Workspace),
-// altrimenti è quello predefinito dell'account. Token sconosciuto → null.
+// Like resolveAuth, but for an API token. The workspace is chosen with each request (X-Workspace header), otherwise
+// it is the account's default one. Unknown token → null.
 export function resolveApiToken(token, wsHeader) {
   const t = acc.prepare('SELECT id, user_id, last_used_at FROM api_tokens WHERE token_hash = ?').get(sha(token));
   if (!t) return null;
-  // "Ultimo uso" con la precisione di un minuto: non serve scrivere a ogni richiesta.
+  // "Last used" to the minute: no need to write on every request.
   if (!t.last_used_at || Date.now() - Date.parse(t.last_used_at) > 60e3) acc.prepare('UPDATE api_tokens SET last_used_at = ? WHERE id = ?').run(now(), t.id);
   const account = getAccount(t.user_id);
   let wsId = defaultWorkspace(account.id);
   if (wsHeader) {
     wsId = +wsHeader;
-    if (!workspaceById(wsId) || !roleIn(wsId, account.id)) fail(403, `Non fai parte del workspace ${wsHeader}`);
+    if (!workspaceById(wsId) || !roleIn(wsId, account.id)) fail(403, 'You are not in workspace {ws}', { ws: wsHeader });
   }
   const ws = wsId ? workspaceById(wsId) : null;
   return { account, ws, role: ws ? roleIn(ws.id, account.id) : null, perms: ws ? permsIn(ws.id, account.id) : null, apiToken: t.id };
 }
 
-// Contatti "da salvare" che la persona non vuole vedere: indirizzi interi o pezzi di indirizzo o nome.
+// "To save" contacts the person does not want to see: whole addresses or parts of an address or name.
 export const mailIgnoreOf = userId => JSON.parse(acc.prepare('SELECT mail_ignore FROM users WHERE id = ?').get(userId)?.mail_ignore || '[]');
-// Indirizzi delle identità di Thunderbird dell'utente (li manda l'estensione): sono i "miei" indirizzi.
+// The user's Thunderbird identity addresses (sent by the extension): they are "my" addresses.
 export const mailAddressesOf = userId => JSON.parse(acc.prepare('SELECT mail_addresses FROM users WHERE id = ?').get(userId)?.mail_addresses || '[]');
 
-// Chi gestisce l'istanza (per i feedback): gli admin del primo workspace, quello creato all'installazione.
+// Who runs the instance (for feedback): the admins of the first workspace, the one created at installation.
 export function isOwner(userId) {
   const first = acc.prepare('SELECT id FROM workspaces ORDER BY id LIMIT 1').get();
   return !!first && roleIn(first.id, userId) === 'admin';
 }
 
-// Per /api/sync: chi gestisce l'istanza vede la pagina Feedback con il numero di quelli aperti (gli altri null).
+// For /api/sync: whoever runs the instance sees the Feedback page with the number of open ones (others null).
 export const openFeedback = userId => (isOwner(userId) ? acc.prepare("SELECT COUNT(*) AS n FROM feedback WHERE status = 'open'").get().n : null);
 
-// Giro di Organizer (server/tour.js): il workspace di prova della persona e se l'invito l'ha già visto.
+// Organizer tour (server/tour.js): the person's demo workspace and whether they have seen the invitation.
 export const tourOf = userId => acc.prepare('SELECT * FROM workspaces WHERE tour_of = ? AND deleted_at IS NULL').get(userId);
 export const tourInfo = userId => ({
   onboarded: !!acc.prepare('SELECT onboarded_at FROM users WHERE id = ?').get(userId)?.onboarded_at,

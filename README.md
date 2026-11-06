@@ -5,7 +5,7 @@
 **Inventory, mail and to-dos for your workshop.**<br>
 One app. Your own server. No subscriptions.
 
-<img src="docs/img/magazzino.png" alt="Organizer inventory, one column per category" width="100%">
+<img src="docs/img/inventory.png" alt="Organizer inventory, one column per category" width="100%">
 
 </div>
 
@@ -24,7 +24,7 @@ Type `SCH-042` in a mail, a to-do or the chat: it becomes a link. The part knows
 | 💬 [**Chat**](#-chat) | channels, mentions, push notifications |
 | 🔧 [**Setup**](#-under-the-hood) | runs on your machine, up in a minute |
 
-> The app is in Italian. The screenshots use made-up data.
+> The app speaks English and Italian (Settings → App and help → Language). The screenshots show the Italian interface, with made-up data.
 
 ---
 
@@ -33,7 +33,7 @@ Type `SCH-042` in a mail, a to-do or the chat: it becomes a link. The part knows
 Every part has its code, location, quantity and firmware version.
 Categories are colored columns: drag a part to move it.
 
-<img src="docs/img/articolo.png" alt="A part with its documents and assembly" width="100%">
+<img src="docs/img/item.png" alt="A part with its documents and assembly" width="100%">
 
 - **Alternative codes**: the supplier's code leads to the same part.
 - **Assemblies**: the rover contains the board, the battery, the bracket.
@@ -49,7 +49,7 @@ Click a spot, leave a note. On that hole, on that line.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/img/modello3d.png" alt="3D model with a note on the part"><br><b>STL, STEP, 3MF</b>: rotate it, annotate it.</td>
+<td width="50%"><img src="docs/img/model3d.png" alt="3D model with a note on the part"><br><b>STL, STEP, 3MF</b>: rotate it, annotate it.</td>
 <td width="50%"><img src="docs/img/dxf.png" alt="DXF drawing"><br><b>DXF</b>: technical drawings, zoom up to 12×.</td>
 </tr>
 </table>
@@ -84,7 +84,7 @@ The thread tree on the left, like a forum. The message in the middle. Links on t
 |---|---|
 | `#SCH-063` | a link to the part |
 | `@rover` | filed under the project |
-| `!ven` `!domani` `!3g` | due Friday, tomorrow, in 3 days |
+| `!fri` `!tomorrow` `!3d` | due Friday, tomorrow, in 3 days |
 | `+anna` | shared with Anna |
 | `++anna` | shared and assigned to her |
 | `m:` `n:` | a mail to send, a journal note |
@@ -93,7 +93,7 @@ The preview underneath shows what you typed before you hit Enter.
 
 ## 🗂️ Projects
 
-<img src="docs/img/progetto.png" alt="A project page" width="100%">
+<img src="docs/img/project.png" alt="A project page" width="100%">
 
 To-dos, journal, mail, parts used. Everything tagged `@rover`, on one page.
 Subprojects, status, colors.
@@ -112,7 +112,7 @@ Install it as an app from Safari or Chrome. To-dos and notes work offline too.
 <table>
 <tr>
 <td width="50%" align="center"><img src="docs/img/mobile-mail.png" alt="Mail on a phone" width="300"></td>
-<td width="50%" align="center"><img src="docs/img/mobile-radiale.png" alt="Radial menu on the bottom bar" width="300"></td>
+<td width="50%" align="center"><img src="docs/img/mobile-radial.png" alt="Radial menu on the bottom bar" width="300"></td>
 </tr>
 <tr>
 <td align="center">Collapse the cards, keep just the titles.</td>
@@ -142,17 +142,17 @@ Over thirty themes. The editor classics, and a few funky ones.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/img/tema-synthwave.png" alt="Synthwave '84 theme"><br>Synthwave '84</td>
-<td width="50%"><img src="docs/img/tema-matrix.png" alt="Matrix theme"><br>Matrix</td>
+<td width="50%"><img src="docs/img/theme-synthwave.png" alt="Synthwave '84 theme"><br>Synthwave '84</td>
+<td width="50%"><img src="docs/img/theme-matrix.png" alt="Matrix theme"><br>Matrix</td>
 </tr>
 <tr>
-<td><img src="docs/img/tema-bubblegum.png" alt="Bubblegum theme"><br>Bubblegum</td>
-<td><img src="docs/img/tema-catppuccin.png" alt="Catppuccin Mocha theme"><br>Catppuccin Mocha</td>
+<td><img src="docs/img/theme-bubblegum.png" alt="Bubblegum theme"><br>Bubblegum</td>
+<td><img src="docs/img/theme-catppuccin.png" alt="Catppuccin Mocha theme"><br>Catppuccin Mocha</td>
 </tr>
 </table>
 
 Tokyo Night, Gruvbox, Nord, Dracula, Monokai, Night Owl, Solarized, GitHub…
-Plus Vaporwave, an amber terminal, Halloween, Sorbetto. Why not.
+Plus Vaporwave, an amber terminal, Halloween, Sorbet. Why not.
 
 ---
 
@@ -172,7 +172,7 @@ make tunnel    # reach it from your phone, anywhere, via Cloudflare Tunnel
 ### From the terminal: `org`
 
 ```bash
-org add 'flash fw 2.3.1 #SCH-042 @rover !ven +marco'
+org add 'flash fw 2.3.1 #SCH-042 @rover !fri +marco'
 org ls -p rover --late
 org item show SCH-042
 org doc up SCH-060 fw_1.1.bin -V 1.1
@@ -188,7 +188,7 @@ One token, and your tools can talk to Organizer: bots, scripts, the test bench.
 ```bash
 curl -X POST http://localhost:8080/api/entries \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"text":"test failed #SCH-042 !oggi"}'
+  -d '{"text":"test failed #SCH-042 !today"}'
 ```
 
 Endpoints and examples: [docs/API.md](docs/API.md).
@@ -197,9 +197,14 @@ Endpoints and examples: [docs/API.md](docs/API.md).
 
 ## 📚 More
 
-- [Full guide](docs/GUIDA.md): every feature, page by page (in Italian).
+- [Full guide](docs/GUIDE.md): every feature, page by page.
 - [Install and remote access](docs/DEPLOY.md): domain, tunnel, phone.
 - [API](docs/API.md) · [CLI](cli/README.md) · [Changelog](CHANGELOG.md)
+
+## License
+
+Organizer is free software under the [GNU Affero General Public License v3.0](LICENSE): you can use, study, change and share it; if you offer a modified version as a service, you share its source too.
+The bundled libraries keep their own licenses: see [THIRD-PARTY.md](THIRD-PARTY.md).
 
 <div align="center">
 <sub>Made in a workshop, for the workshop. 🔧</sub>

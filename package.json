@@ -1,8 +1,8 @@
 {
   "name": "organizer",
-  "version": "0.23.0",
+  "version": "0.24.0",
   "private": true,
-  "description": "Todo, mail, diario e magazzino sincronizzati per chi lavora con schede e firmware",
+  "description": "Todos, mail, journal and parts inventory, synced, for people who work with boards and firmware",
   "type": "module",
   "engines": {
     "node": ">=22.13"
@@ -13,5 +13,10 @@
     "test": "node --test",
     "icons": "node tools/make-icons.js",
     "cli": "node --disable-warning=ExperimentalWarning server/cli.js"
+  },
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Mitra98t/organizer.git"
   }
 }

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="it">
+<html>
 <head>
   <meta charset="utf-8">
   <style>
@@ -21,19 +21,19 @@
 </head>
 <body>
   <h2>Organizer</h2>
-  <p class="muted">Collega Thunderbird a Organizer: "Manda" aprirà le mail qui, e le mail inviate e le risposte arrivate si aggiornano da sole in Organizer.</p>
-  <label for="server">Indirizzo di Organizer</label>
-  <input id="server" placeholder="https://organizer.esempio.it" autocomplete="off">
-  <label for="token">Token API</label>
+  <p class="muted" data-i18n="optIntro"></p>
+  <label for="server" data-i18n="optServer"></label>
+  <input id="server" placeholder="https://organizer.example.com" autocomplete="off">
+  <label for="token" data-i18n="optToken"></label>
   <input id="token" type="password" placeholder="org_…" autocomplete="off">
-  <p class="muted">Lo crei in Organizer: Impostazioni → Mail e Thunderbird → "Crea token per Thunderbird".</p>
-  <label class="check"><input id="inbox" type="checkbox" checked> Passa a Organizer tutta la posta in arrivo</label>
-  <p class="muted">Così in Organizer (Mail → In arrivo) vedi le mail ricevute e rispondi da lì. Le vedi solo tu. Spento, a Organizer arrivano solo le risposte alle mail mandate da Organizer.</p>
-  <button id="save">Salva e collega</button>
+  <p class="muted" data-i18n="optTokenHelp"></p>
+  <label class="check"><input id="inbox" type="checkbox" checked> <span data-i18n="optInbox"></span></label>
+  <p class="muted" data-i18n="optInboxHelp"></p>
+  <button id="save" data-i18n="optSave"></button>
   <div id="status"></div>
-  <label>Workspace di ogni account</label>
-  <p class="muted">Le conversazioni nuove di un account finiscono nel suo workspace di Organizer. Quelle già in Organizer restano dove sono (un topic si sposta dalla sua pagina, menu ⋯).</p>
-  <div id="accounts" class="muted">Collega prima Organizer.</div>
+  <label data-i18n="optAccounts"></label>
+  <p class="muted" data-i18n="optAccountsHelp"></p>
+  <div id="accounts" class="muted" data-i18n="optConnectFirst"></div>
   <script src="options.js"></script>
 </body>
 </html>

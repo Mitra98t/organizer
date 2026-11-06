@@ -1,5 +1,5 @@
-// Dove la CLI ricorda server, token e workspace: ~/.config/organizer/cli.json (leggibile solo da te).
-// Le variabili ORGANIZER_URL, ORGANIZER_TOKEN e ORGANIZER_WS hanno la precedenza (utile negli script).
+// Where the CLI remembers server, token and workspace: ~/.config/organizer/cli.json (readable only by you).
+// The variables ORGANIZER_URL, ORGANIZER_TOKEN and ORGANIZER_WS take precedence (handy in scripts).
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';

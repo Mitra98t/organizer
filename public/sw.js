@@ -1,17 +1,18 @@
-// Service worker: rete prima, cache come ripiego. Così l'app si apre anche offline
-// e mostra gli ultimi dati (salvati dall'app in localStorage). Le API non passano dalla cache.
+// Service worker: network first, cache as a fallback. So the app opens offline too and shows the latest data
+// (saved by the app in localStorage). The API does not go through the cache.
 //
-// I file si ricontrollano sempre con il server (cache: 'no-cache'), qualunque cosa dica la cache HTTP: dietro
-// Cloudflare JS e CSS arrivano con "tienili 4 ore" e dopo un aggiornamento l'app userebbe il codice vecchio.
-// Con l'ETag un file non cambiato non si riscarica (risposta 304).
-const CACHE = 'organizer-v77';
+// Files are always re-checked with the server (cache: 'no-cache'), whatever the HTTP cache says: behind Cloudflare
+// JS and CSS arrive with "keep them 4 hours" and after an update the app would use the old code.
+// With the ETag an unchanged file is not downloaded again (304 response).
+const CACHE = 'organizer-v78';
 const SHELL = [
-  './', 'index.html', 'css/app.css', 'js/app.js', 'js/core.js', 'js/views.js', 'js/parse.js', 'js/autocomplete.js', 'js/mail.js', 'js/contacts.js', 'js/trash.js', 'js/docview.js', 'js/documents.js', 'js/dnd.js', 'js/chat.js', 'js/changelog.js', 'js/themes.js', 'js/perms.js', 'js/model3d.js', 'js/step-worker.js', 'js/feedback.js', 'js/notifiche.js', 'js/tour.js', 'js/cad.js', 'js/topics.js', 'js/pickers.js', 'js/tabbar.js', 'js/palette.js', 'js/appicons.js',
+  './', 'index.html', 'css/app.css', 'js/app.js', 'js/core.js', 'js/views.js', 'js/parse.js', 'js/autocomplete.js', 'js/mail.js', 'js/contacts.js', 'js/trash.js', 'js/docview.js', 'js/documents.js', 'js/dnd.js', 'js/chat.js', 'js/changelog.js', 'js/themes.js', 'js/perms.js', 'js/model3d.js', 'js/step-worker.js', 'js/feedback.js', 'js/notifiche.js', 'js/tour.js', 'js/cad.js', 'js/topics.js', 'js/pickers.js', 'js/tabbar.js', 'js/palette.js', 'js/appicons.js', 'js/i18n.js',
+  'js/locales/it.js', 'js/locales/it/ac.js', 'js/locales/it/app.js', 'js/locales/it/common.js', 'js/locales/it/core.js', 'js/locales/it/docs.js', 'js/locales/it/docview.js', 'js/locales/it/mail.js', 'js/locales/it/palette.js', 'js/locales/it/people.js', 'js/locales/it/small.js', 'js/locales/it/topics.js', 'js/locales/it/tour.js', 'js/locales/it/views.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/apple-touch-icon.png',
 ];
 
 const fresh = req => fetch(req.mode === 'navigate'
-  ? new Request(req.url, { cache: 'no-cache', credentials: 'same-origin' }) // una navigazione non si copia con opzioni
+  ? new Request(req.url, { cache: 'no-cache', credentials: 'same-origin' }) // a navigation cannot be copied with options
   : new Request(req, { cache: 'no-cache' }));
 
 self.addEventListener('install', ev => {
@@ -40,19 +41,19 @@ self.addEventListener('fetch', ev => {
   );
 });
 
-// Notifiche push (server/push.js): { title, body, url, tag }. url è #/n/ID: l'app apre ciò a cui porta.
+// Push notifications (server/push.js): { title, body, url, tag }. url is #/n/ID: the app opens what it leads to.
 self.addEventListener('push', ev => {
   let d = {};
   try {
     d = ev.data ? ev.data.json() : {};
-  } catch { /* messaggio non leggibile: si mostra comunque qualcosa */ }
+  } catch { /* unreadable message: show something anyway */ }
   ev.waitUntil(self.registration.showNotification(d.title || 'Organizer', {
     body: d.body || '', tag: d.tag, renotify: !!d.tag, data: { url: d.url || '#/agenda' },
     icon: 'icons/icon-192.png', badge: 'icons/icon-192.png',
   }));
 });
 
-// Clic sulla notifica: si usa una finestra dell'app già aperta (portandola davanti), altrimenti se ne apre una.
+// Click on the notification: use an app window already open (bringing it to the front), otherwise open one.
 self.addEventListener('notificationclick', ev => {
   ev.notification.close();
   const url = new URL(`./${ev.notification.data?.url || '#/agenda'}`, self.registration.scope).href;

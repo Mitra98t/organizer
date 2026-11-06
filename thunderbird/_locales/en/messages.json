@@ -1,0 +1,122 @@
+{
+  "extDescription": {
+    "message": "Opens in Thunderbird the mails prepared in Organizer, with their attachments, keeps the conversations up to date and brings incoming mail into Organizer."
+  },
+  "optIntro": {
+    "message": "Connect Thunderbird to Organizer: \"Send\" will open the mails here, and sent mails and incoming replies update by themselves in Organizer."
+  },
+  "optServer": {
+    "message": "Organizer address"
+  },
+  "optToken": {
+    "message": "API token"
+  },
+  "optTokenHelp": {
+    "message": "Create it in Organizer: Settings → Mail and Thunderbird → \"Create token for Thunderbird\"."
+  },
+  "optInbox": {
+    "message": "Pass all incoming mail to Organizer"
+  },
+  "optInboxHelp": {
+    "message": "So in Organizer (Mail → Inbox) you see the mails you received and reply from there. Only you see them. Off, only the replies to mails sent from Organizer reach Organizer."
+  },
+  "optSave": {
+    "message": "Save and connect"
+  },
+  "optAccounts": {
+    "message": "Workspace of each account"
+  },
+  "optAccountsHelp": {
+    "message": "An account's new conversations end up in its Organizer workspace. Those already in Organizer stay where they are (a topic is moved from its page, ⋯ menu)."
+  },
+  "optConnectFirst": {
+    "message": "Connect Organizer first."
+  },
+  "optWsNotRead": {
+    "message": "Workspaces not read from Organizer ($1)."
+  },
+  "optDefault": {
+    "message": "default"
+  },
+  "optNotConnected": {
+    "message": "Not connected yet."
+  },
+  "optConnectedTo": {
+    "message": "Connected to $1"
+  },
+  "optBadAddress": {
+    "message": "Invalid address: write for example https://organizer.example.com"
+  },
+  "optNoPermission": {
+    "message": "Without the permission to connect to that address the extension cannot work."
+  },
+  "errStatus": {
+    "message": "error $1"
+  },
+  "stEnterConfig": {
+    "message": "Enter address and token in the options"
+  },
+  "stBadToken": {
+    "message": "Invalid or revoked token: create a new one in Organizer"
+  },
+  "stClosed": {
+    "message": "Connection closed, retrying…"
+  },
+  "stUnreachable": {
+    "message": "Server unreachable ($1), retrying…"
+  },
+  "ntOpenFail": {
+    "message": "Cannot open the mail \"$1\": $2"
+  },
+  "errAttachment": {
+    "message": "attachment $1 not downloaded (error $2)"
+  },
+  "ntSentUnknown": {
+    "message": "Mail sent, but Organizer did not hear about it: $1"
+  },
+  "errNotFound": {
+    "message": "mail not found in Thunderbird"
+  },
+  "ntAttachFail": {
+    "message": "Attachment \"$1\" not saved in Organizer: $2"
+  },
+  "errNoFolder": {
+    "message": "it is not in any Thunderbird folder"
+  },
+  "ntNotOpened": {
+    "message": "Mail not opened: $1"
+  },
+  "ntConnectFirst": {
+    "message": "Connect Organizer first (extension options)"
+  },
+  "noSubject": {
+    "message": "no subject"
+  },
+  "ntImported1": {
+    "message": "In Organizer: \"$1\", 1 message"
+  },
+  "ntImportedN": {
+    "message": "In Organizer: \"$1\", $2 messages"
+  },
+  "ntImportedMax": {
+    "message": "In Organizer: \"$1\", the first $2 messages"
+  },
+  "ntImportFail": {
+    "message": "Thread not brought into Organizer: $1"
+  },
+  "menuImport": {
+    "message": "Bring the thread into Organizer"
+  },
+  "stBackfill": {
+    "message": "Loading the last month's mails into Organizer…"
+  },
+  "stBackfillN": {
+    "message": "Loading the last month's mails into Organizer… $1/$2"
+  },
+  "ntBackfillDone": {
+    "message": "Last month's mails loaded into Organizer ($1)"
+  },
+  "stBackfillFail": {
+    "message": "Loading the last month interrupted ($1): retrying at the next connection"
+  }
+}

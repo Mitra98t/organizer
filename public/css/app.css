@@ -83,7 +83,7 @@ html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
   background: var(--bg);
-  background-image: var(--bg-image, none); /* temi funky: sfondo sfumato dietro ai pannelli */
+  background-image: var(--bg-image, none); /* funky themes: gradient background behind the panels */
   background-attachment: fixed;
   color: var(--text);
   font: 15px/1.45 var(--sans);
@@ -148,8 +148,8 @@ code, .mono { font-family: var(--mono); font-size: 0.92em; }
 .pv .ic { width: 13px; height: 13px; }
 .qhelp { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 8px 4px 0; font-size: 12px; color: var(--muted); }
 
-/* Larghezza dei contenuti: tutte le viste uguali, più spazio sugli schermi grandi. */
-/* Tutte le pagine usano la larghezza intera della finestra. */
+/* Content width: all views alike, more room on large screens. */
+/* All pages use the full width of the window. */
 #view { padding: 4px 16px 24px; }
 
 .tabs {
@@ -165,10 +165,10 @@ code, .mono { font-family: var(--mono); font-size: 0.92em; }
 .tab-ic { display: flex; }
 .tab .ic { width: 22px; height: 22px; }
 .tab.on { color: var(--accent); }
-/* I tasti con altre pagine dietro (pressione lunga): un trattino sotto l'icona. */
+/* Buttons with more pages behind them (long press): a dash under the icon. */
 .tab.more::after { content: ''; position: absolute; bottom: calc(3px + env(safe-area-inset-bottom) * 0); left: 50%; width: 14px; height: 2px; margin-left: -7px; border-radius: 2px; background: currentColor; opacity: 0.35; }
 .tab .nbadge.dot { min-width: 8px; height: 8px; padding: 0; line-height: 8px; font-size: 0; top: 6px; }
-/* Menu radiale: le pagine del gruppo su un arco sopra il dito. */
+/* Radial menu: the group's pages on an arc above the finger. */
 .radial { position: fixed; inset: 0; z-index: 90; background: rgb(0 0 0 / 28%); animation: rad-fade 0.15s ease-out; touch-action: none; }
 .rad-center { position: absolute; width: 0; height: 0; }
 .rad-i { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 76px; margin: -28px 0 0 -38px;
@@ -200,7 +200,7 @@ code, .mono { font-family: var(--mono); font-size: 0.92em; }
   .nav.on .ic { color: var(--accent); }
   .nav .nl { flex: 1; }
   .sep { height: 1px; background: var(--line); margin: 8px 6px; }
-  /* Gruppi della barra: un divisore più leggero (corto e tenue) tra un gruppo e l'altro; i gruppi senza voci visibili spariscono. */
+  /* Bar groups: a lighter divider (short and faint) between one group and the next; groups with no visible entries disappear. */
   .nav-group { display: flex; flex-direction: column; gap: 2px; }
   .nav-group + .nav-group::before { content: ''; height: 1px; margin: 4px 14px; background: color-mix(in srgb, var(--line) 55%, transparent); }
   .nav-group:not(:has(.nav:not([hidden]))) { display: none; }
@@ -215,7 +215,7 @@ code, .mono { font-family: var(--mono); font-size: 0.92em; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; padding: 4px 10px 14px; }
 .brand img { width: 28px; height: 28px; border-radius: 7px; }
 
-/* ---------- controlli ---------- */
+/* ---------- controls ---------- */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   border: 1px solid var(--line); background: var(--panel); border-radius: 8px;
@@ -268,7 +268,7 @@ textarea { resize: none; display: block; width: 100%; overflow: hidden; }
 .empty { color: var(--muted); padding: 22px 6px; text-align: center; }
 .empty p { margin: 6px 0; }
 
-/* ---------- sezioni ---------- */
+/* ---------- sections ---------- */
 .sec { margin-top: 12px; }
 .sec-h {
   display: flex; align-items: center; gap: 6px; width: 100%;
@@ -285,7 +285,7 @@ textarea { resize: none; display: block; width: 100%; overflow: hidden; }
 .settings .sec-b { padding: 14px; }
 .sec.drag .sec-b { border-color: var(--accent); background: var(--accent-soft); }
 
-/* ---------- voci ---------- */
+/* ---------- entries ---------- */
 .entry { border-bottom: 1px solid var(--line); border-left: 3px solid transparent; }
 .entry.k-todo { border-left-color: color-mix(in srgb, var(--accent) 75%, transparent); }
 .entry.k-mail { border-left-color: var(--mail); }
@@ -293,7 +293,7 @@ textarea { resize: none; display: block; width: 100%; overflow: hidden; }
 .entry.done { border-left-color: var(--line); }
 .entry.nested { border-left: 0; }
 
-/* Tipo della voce: pill all'inizio del titolo, stessi colori del bordo. */
+/* Kind of entry: pill at the start of the title, same colours as the border. */
 .kpill {
   display: inline-block; margin-right: 7px; padding: 1px 6px; border-radius: 4px; vertical-align: 1.5px;
   font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; line-height: 1.5;
@@ -368,7 +368,7 @@ a.ext { color: var(--accent); text-decoration: underline; text-decoration-color:
 .log-x { flex: 1; overflow-wrap: anywhere; }
 .ed-foot { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 
-/* ---------- progetti ---------- */
+/* ---------- projects ---------- */
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
 .card { display: flex; flex-direction: column; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
 .card:hover { border-color: var(--accent); }
@@ -386,12 +386,12 @@ a.ext { color: var(--accent); text-decoration: underline; text-decoration-color:
 .proj-notes { margin: 10px 0 4px; font-size: 14px; }
 .danger-zone { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 28px; font-size: 12.5px; }
 
-/* ---------- diario ---------- */
+/* ---------- journal ---------- */
 .day { margin-top: 14px; }
 .day-h { font-size: 12.5px; font-weight: 700; color: var(--muted); padding: 0 2px 6px; }
 .day .entry { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 6px; }
 
-/* ---------- magazzino ---------- */
+/* ---------- inventory ---------- */
 .items { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
 .items:empty { display: none; }
 .item-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
@@ -427,7 +427,7 @@ a.ext { color: var(--accent); text-decoration: underline; text-decoration-color:
 .ver { font-family: var(--mono); color: var(--text); }
 .sha { border: 0; background: var(--panel-2); border-radius: 4px; font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 0 5px; }
 
-/* ---------- impostazioni ---------- */
+/* ---------- settings ---------- */
 .user-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; flex-wrap: wrap; }
 .invites { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .invite { display: flex; align-items: center; gap: 10px; width: 100%; }
@@ -437,7 +437,7 @@ a.ext { color: var(--accent); text-decoration: underline; text-decoration-color:
 .syntax td:first-child { white-space: normal; width: 45%; }
 .install { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
 
-/* ---------- accesso ---------- */
+/* ---------- sign in ---------- */
 .auth { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: 16px; }
 .auth-card { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px; box-shadow: var(--shadow); }
 .auth-card .brand { padding: 0; }
@@ -463,7 +463,7 @@ a.ext { color: var(--accent); text-decoration: underline; text-decoration-color:
   .doc { flex-wrap: wrap; }
 }
 
-/* ---------- autocompletamento ---------- */
+/* ---------- autocomplete ---------- */
 .ac {
   position: fixed; z-index: 60; max-height: min(440px, 60vh); overflow-y: auto;
   background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 28px rgb(0 0 0 / 22%); padding: 4px;
@@ -492,7 +492,7 @@ select.sm { padding: 4px 8px; font-size: 13px; }
 .mail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .atts-n { color: var(--muted); }
 .replies { color: var(--mail); font-weight: 600; }
-/* Mail su due colonne: la mail a sinistra, a destra quello che la lega al resto di Organizer. */
+/* Mail in two columns: the mail on the left, on the right what ties it to the rest of Organizer. */
 .editor.mail-ed { gap: 12px; }
 .mail-cols { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 16px; align-items: start; }
 .mail-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
@@ -512,20 +512,20 @@ a.ms-person:hover .ccol, a.ms-link:hover, .ms-att a:hover { text-decoration: und
 @media (max-width: 1100px) {
   .mail-cols { grid-template-columns: minmax(0, 1fr); }
 }
-/* Schede chiudibili su telefono (vedi fold in core.js). */
+/* Collapsible cards on the phone (see fold in core.js). */
 .fold-bar { display: flex; justify-content: flex-end; margin: -4px 0 8px; }
 .fold-t { flex: none; margin-left: auto; padding: 2px 8px; border: 0; background: none; color: var(--muted); font-size: 14px; line-height: 1; transition: transform 0.15s; }
 @media (max-width: 899px) {
   [data-fold].folded > :not(:first-child) { display: none !important; }
   [data-fold].folded .fold-t { transform: rotate(-90deg); }
   [data-fold] > :first-child { cursor: pointer; }
-  /* Il numero degli elementi a destra, prima della freccia. */
+  /* The number of elements on the right, before the arrow. */
   [data-fold] > :first-child > .count, [data-fold] > :first-child > .tp-n { margin-left: auto; }
   [data-fold] .fold-t { margin-left: 4px; }
   .tp-h > .tp-n { order: 5; }
   .tp-h > .fold-t { order: 6; }
 }
-/* Posta a topic: schede dei topic con le loro conversazioni (pagina Mail), pagina del topic ad albero. */
+/* Mail by topic: topic cards with their conversations (Mail page), topic page as a tree. */
 .topic-card { display: flex; flex-direction: column; border: 1px solid var(--line); border-top: 3px solid hsl(var(--h) 60% 52%); border-radius: var(--radius); background: var(--panel); overflow: hidden; }
 .topic-card.drop-ok { box-shadow: 0 0 0 2px var(--accent); background: var(--accent-soft); }
 .tp-h { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px 6px; }
@@ -574,8 +574,8 @@ body.tdnd .topic-new { display: block; }
 .th-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .th-subj { margin: 0; font-size: 20px; overflow-wrap: anywhere; min-width: 0; cursor: text; }
 .th-count { font-size: 13px; }
-/* Albero a sinistra (resta in vista scorrendo), mail al centro, collegamenti a destra; più stretto la colonna
-   dei collegamenti va sotto la mail, sempre a destra dell'albero (che così non le finisce sopra). */
+/* Tree on the left (stays in view while scrolling), mail in the middle, links on the right; when narrower the links
+   column goes under the mail, still to the right of the tree (so that it does not end up on top of it). */
 .tp-cols { display: grid; grid-template-columns: minmax(240px, 300px) minmax(0, 1fr) 360px; grid-template-areas: "tree mail side"; gap: 16px; align-items: start; }
 .tp-tree { grid-area: tree; }
 .tp-new { align-self: flex-start; }
@@ -628,7 +628,7 @@ body.tdnd .topic-new { display: block; }
   .tp-cols { grid-template-columns: minmax(0, 1fr); grid-template-areas: "tree" "mail" "side"; }
   .tp-tree { position: static; max-height: none; }
 }
-/* Modali per scegliere dal magazzino. */
+/* Dialogs to pick from the inventory. */
 dialog.pk { width: min(640px, calc(100vw - 32px)); }
 .pk-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 16px 0; }
 .pk-h h2 { margin: 0; font-size: 17px; overflow-wrap: anywhere; }
@@ -664,7 +664,7 @@ dialog.pk { width: min(640px, calc(100vw - 32px)); }
 .invite-link { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; color: var(--accent); font-family: var(--mono); font-size: 12.5px; }
 .invite-link span { overflow-wrap: anywhere; }
 .invite-link .ic { width: 14px; height: 14px; flex: none; }
-/* Permessi: righe le aree, colonne le persone; la prima colonna resta ferma scorrendo di lato. */
+/* Permissions: areas in the rows, people in the columns; the first column stays put when scrolling sideways. */
 .pmt { border-collapse: separate; border-spacing: 0; min-width: 100%; font-size: 13.5px; }
 .pmt th, .pmt td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
 .pmt thead th { vertical-align: bottom; font-weight: 600; }
@@ -682,7 +682,7 @@ dialog.pk { width: min(640px, calc(100vw - 32px)); }
 .pm-legend { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; font-size: 13px; }
 .pm-legend .pm-sel { min-width: 0; padding: 2px 10px; text-align: center; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-/* Menu a comparsa (Visibile a, Assegnata, Scadenza, Tipo): come il menu dei tipi di documento. */
+/* Pop-up menus (Visible to, Assigned, Due date, Kind): like the document kinds menu. */
 .pop-b { display: inline-flex; align-items: center; gap: 6px; min-height: var(--ctl); padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); font: inherit; font-size: 13.5px; cursor: pointer; white-space: nowrap; }
 .pop-b:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
 .pop-b[aria-expanded="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
@@ -694,7 +694,7 @@ dialog.pk { width: min(640px, calc(100vw - 32px)); }
   display: flex; flex-direction: column; gap: 1px; padding: 5px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 32px rgb(0 0 0 / 25%);
 }
-/* Le voci non si schiacciano quando il menu è più alto dello spazio: si scorre. */
+/* The entries do not get squashed when the menu is taller than the space: it scrolls. */
 .popmenu > * { flex-shrink: 0; }
 .pop-i { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 4px 8px; border: 0; border-radius: 7px; background: none; color: var(--text); font: inherit; font-size: 13.5px; text-align: left; cursor: pointer; }
 .pop-i:hover, .pop-i:focus-visible { background: var(--panel-2); outline: none; }
@@ -712,7 +712,7 @@ dialog.pk { width: min(640px, calc(100vw - 32px)); }
 .pop-date input { width: auto; }
 .pop-note { margin: 4px 8px 2px; font-size: 12px; }
 .share-b.ro-info { cursor: default; }
-/* Campanella delle notifiche (in alto) e il suo elenco. */
+/* Notification bell (at the top) and its list. */
 .pop-b.bell { position: relative; min-height: 34px; padding: 0 8px; border-color: transparent; background: transparent; }
 .pop-b.bell .kpick-caret { display: none; }
 .pop-b.bell > .ic { width: 19px; height: 19px; color: var(--text); }
@@ -750,7 +750,7 @@ dialog.pk { width: min(640px, calc(100vw - 32px)); }
 .dnote .share-b { min-height: 26px; padding: 0 8px; font-size: 12px; border-color: transparent; background: transparent; }
 .shared { display: inline-flex; align-items: center; gap: 3px; }
 .shared .ic { width: 13px; height: 13px; }
-/* Impostazioni: categorie a sinistra, riquadri a destra; su telefono un elenco che apre una pagina per volta. */
+/* Settings: categories on the left, boxes on the right; on a phone a list that opens one page at a time. */
 .settings2 { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 28px; align-items: start; }
 .set-nav { position: sticky; top: 12px; display: flex; flex-direction: column; gap: 2px; }
 .set-cat { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 12px; border-radius: 10px; color: var(--text); text-decoration: none; }
@@ -790,13 +790,13 @@ dialog.pk { width: min(640px, calc(100vw - 32px)); }
 .pm-note .ic { flex: none; margin-top: 2px; }
 ol.steps { margin: 6px 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
 
-/* ---------- contatti ---------- */
+/* ---------- contacts ---------- */
 .contact-row .cname { font-weight: 600; }
 .contact-row .item-meta { margin-left: auto; }
 button.item-chip { cursor: pointer; color: var(--muted); }
 .check-row { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
 
-/* ---------- cestino ---------- */
+/* ---------- trash ---------- */
 .trash-link { display: flex; align-items: center; gap: 10px; padding: 12px 14px; margin-top: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); font-weight: 600; }
 .trash-link:hover { border-color: var(--accent); }
 .trash-link .muted { margin-left: auto; font-weight: 400; font-size: 13px; }
@@ -808,7 +808,7 @@ button.item-chip { cursor: pointer; color: var(--muted); }
 .code-t { font-family: var(--mono); font-weight: 600; color: var(--code-ink); }
 .nbadge.muted-badge { background: var(--panel-2); color: var(--muted); }
 
-/* ---------- progetti: albero e sottoprogetti ---------- */
+/* ---------- projects: tree and subprojects ---------- */
 .pforest { display: flex; flex-direction: column; gap: 10px; }
 .ptree.sub { margin-left: 18px; }
 .pkids { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; padding-left: 4px; border-left: 2px solid var(--line); }
@@ -817,8 +817,8 @@ button.item-chip { cursor: pointer; color: var(--muted); }
 .crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin: 6px 0 -4px; font-size: 13px; }
 .sec-b > .sub-in { margin: 10px; width: calc(100% - 20px); }
 
-/* ---------- magazzino: categorie ---------- */
-/* Senza categoria il codice è neutro; con una categoria prende il suo colore. */
+/* ---------- inventory: categories ---------- */
+/* Without a category the code is neutral; with a category it takes its colour. */
 a.code, .item-row .code, .item-chip .code, .cat-item .code, .ac-l.code, .pv.code { color: var(--text); background: var(--panel-2); }
 .code.cat, a.code.cat, .ac-l.cat, .pv.code.cat {
   color: hsl(var(--h) 60% var(--tag-l)); background: hsl(var(--h) 65% 50% / 0.14);
@@ -846,7 +846,7 @@ a.code, .item-row .code, .item-chip .code, .cat-item .code, .ac-l.code, .pv.code
 .pv.warn { color: var(--danger); }
 p.warn { display: flex; align-items: center; gap: 6px; color: var(--danger); }
 
-/* ---------- scheda rapida articolo (hover) ---------- */
+/* ---------- item quick card (hover) ---------- */
 .peek {
   position: fixed; z-index: 55; width: 320px; max-width: calc(100vw - 16px); pointer-events: none;
   background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
@@ -864,7 +864,7 @@ p.warn { display: flex; align-items: center; gap: 6px; color: var(--danger); }
 .peek-notes { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
 .peek .code:not(.cat) { background: var(--panel-2); color: var(--text); }
 
-/* ---------- drag and drop progetti ---------- */
+/* ---------- project drag and drop ---------- */
 .pforest .card[data-pid] { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-user-drag: none; cursor: grab; }
 .pforest .card.dragging { opacity: 0.35; }
 .pforest .card.drop-ok { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent); }
@@ -891,9 +891,9 @@ body.idnd .cat-new { display: block; }
   box-shadow: 0 8px 24px rgb(0 0 0 / 30%); font-weight: 600; font-size: 14px;
 }
 
-/* ---------- documenti con note ---------- */
-/* Alberi del magazzino a grafo: ogni articolo è una scheda, i componenti stanno a destra collegati da linee con
-   gli angoli arrotondati. Ogni albero è un riquadro a sé che scorre di lato se è largo. */
+/* ---------- documents with notes ---------- */
+/* Inventory trees as a graph: each item is a card, the components sit on the right linked by lines with rounded
+   corners. Each tree is a box of its own that scrolls sideways if it is wide. */
 .trees { display: flex; flex-direction: column; gap: 14px; }
 .g-tree {
   --g-gap: 26px; --g-line: color-mix(in srgb, var(--muted) 45%, transparent);
@@ -902,10 +902,10 @@ body.idnd .cat-new { display: block; }
 }
 .g-tree ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; justify-content: center; }
 .g-tree li { display: flex; align-items: center; position: relative; padding: 5px 0; }
-/* Dal genitore parte una linea verso la colonna dei figli… */
+/* From the parent a line goes to the children's column… */
 .g-tree li > ul { position: relative; padding-left: var(--g-gap); }
 .g-tree li > ul::before { content: ''; position: absolute; left: 0; top: 50%; width: var(--g-gap); border-top: 1.5px solid var(--g-line); }
-/* …e ogni figlio si aggancia alla barra verticale: dritto in mezzo, curvo al primo e all'ultimo. */
+/* …and each child hooks onto the vertical bar: straight in the middle, curved at the first and the last. */
 .g-tree ul ul > li { padding-left: var(--g-gap); }
 .g-tree ul ul > li::before, .g-tree ul ul > li::after { content: ''; position: absolute; left: 0; width: var(--g-gap); }
 .g-tree ul ul > li::before { top: 50%; border-top: 1.5px solid var(--g-line); }
@@ -941,7 +941,7 @@ body.idnd .cat-new { display: block; }
 .g-toggle:hover { color: var(--text); border-color: var(--muted); }
 .g-toggle.closed { background: var(--accent-soft); color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 .docview .head { flex-wrap: wrap; }
-/* Anteprima di un allegato ricevuto (mail.js): da chi e quale mail, accorciato. */
+/* Preview of a received attachment (mail.js): from whom and which mail, shortened. */
 .attview .att-from { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attview > .empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
 .dv-title { margin: 0; font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
@@ -953,9 +953,9 @@ body.idnd .cat-new { display: block; }
 .dv-zoom { min-width: 44px; text-align: center; font-family: var(--mono); font-size: 12px; }
 .dv-pl { margin-left: 8px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
 .dv-hint { font-size: 12px; }
-/* position: relative → offsetTop delle pagine è misurato rispetto a questo riquadro, come scrollTop. */
+/* position: relative → the pages' offsetTop is measured from this box, like scrollTop. */
 .dv-scroll { position: relative; height: calc(100dvh - 190px); min-height: 360px; overflow: auto; padding: 8px; }
-/* Margini automatici invece di align-items: center, così una pagina più larga del riquadro resta raggiungibile anche a sinistra. */
+/* Automatic margins instead of align-items: center, so a page wider than the box can be reached on the left too. */
 .dv-pages { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
 .dv-page { margin-inline: auto; }
 .dv-page { position: relative; background: #fff; box-shadow: 0 1px 4px rgb(0 0 0 / 25%); cursor: crosshair; flex: none; }
@@ -970,10 +970,10 @@ body.idnd .cat-new { display: block; }
 .dv-pin.on { background: var(--today); color: #fff; transform: translate(-1px, -100%) scale(1.25); z-index: 2; }
 .dv-pin.resolved { opacity: 0.45; }
 .dv-pin.draft { background: var(--mail); color: #fff; animation: pop 0.15s ease-out; }
-/* Modelli 3D: la scena riempie il riquadro; i segnaposto coperti dal modello restano attenuati. */
+/* 3D models: the scene fills the box; the pins hidden by the model stay dimmed. */
 .dv-scroll.model { padding: 0; overflow: hidden; }
 .dv-scroll.model .dv-pages { height: 100%; }
-.dv-scroll.table { padding: 0; } /* intestazione e numeri di riga fissi proprio sul bordo */
+.dv-scroll.table { padding: 0; } /* header and row numbers fixed right on the edge */
 .dv-model { position: relative; width: 100%; height: 100%; overflow: hidden; cursor: crosshair; touch-action: none; }
 .dv-model canvas { display: block; }
 .ro .dv-model { cursor: grab; }
@@ -1015,7 +1015,7 @@ body.idnd .cat-new { display: block; }
 .doc-notes { display: inline-flex; align-items: center; gap: 3px; color: var(--today); }
 .search-note { display: flex; flex-direction: column; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 14px; }
 .search-note:last-child { border-bottom: 0; }
-/* Modalità espansa: niente barra laterale dell'app, intestazione e barra rapida; il documento usa la finestra. */
+/* Expanded mode: no app sidebar, header or quick bar; the document uses the window. */
 body.doc-focus .side, body.doc-focus .top, body.doc-focus .quick, body.doc-focus .tabs { display: none !important; }
 body.doc-focus .main { padding-bottom: 0; }
 body.doc-focus #view { padding: 8px 10px 0; }
@@ -1028,7 +1028,7 @@ body.doc-focus .docview .head { margin: 0 0 8px; }
   .dv-hint { display: none; }
 }
 
-/* ---------- tipo e versione dei documenti ---------- */
+/* ---------- document kind and version ---------- */
 .docmeta { display: inline-flex; align-items: center; gap: 4px; flex: none; }
 .dk-sel { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; padding: 2px 4px; border-radius: 5px; background: var(--panel-2); color: var(--muted); border: 1px solid transparent; }
 .dk-sel.k-firmware { background: var(--accent-soft); color: var(--accent); }
@@ -1037,9 +1037,9 @@ body.doc-focus .docview .head { margin: 0 0 8px; }
 .ver-in:hover, .ver-in:focus { border-color: var(--line) !important; background: var(--panel) !important; }
 .doc .docmeta { flex-direction: column; align-items: stretch; }
 
-/* ---------- pagina documenti ---------- */
+/* ---------- documents page ---------- */
 .doc-groups { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: 12px; align-items: start; }
-/* Viste a colonne (magazzino per categoria, documenti raggruppati): 3 su schermo grande, 2 su medio, 1 su telefono. */
+/* Column views (inventory by category, grouped documents): 3 on a large screen, 2 on a medium one, 1 on a phone. */
 :root { --cols: 3; }
 @media (max-width: 1399px) { :root { --cols: 2; } }
 @media (max-width: 899px) { :root { --cols: 1; } }
@@ -1058,7 +1058,7 @@ body.doc-focus .docview .head { margin: 0 0 8px; }
   background: var(--panel); border: 1px solid var(--accent); box-shadow: var(--shadow);
 }
 
-/* ---------- revisione affiancata ---------- */
+/* ---------- side-by-side review ---------- */
 .review .head { flex-wrap: wrap; }
 .rv { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 10px; align-items: start; }
 .rv-pane { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -1079,11 +1079,11 @@ body.doc-focus .review .head { margin: 0 0 6px; }
 }
 @media (min-width: 900px) { .rv-bar { bottom: 16px; } }
 
-/* ---------- progetti di una voce (editor) ---------- */
+/* ---------- an entry's projects (editor) ---------- */
 .projs-b { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 13px; }
 .projs-b .sub-in { font-size: 13px; padding: 3px 7px; }
 
-/* ---------- selettore di colore ---------- */
+/* ---------- colour picker ---------- */
 .hues { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
 .hue { width: 20px; height: 20px; border-radius: 50%; padding: 0; border: 2px solid transparent; background: hsl(var(--h) 60% 52%); cursor: pointer; }
 .hue.on { border-color: var(--text); box-shadow: 0 0 0 2px var(--panel); }
@@ -1094,7 +1094,7 @@ button.cdot.pick:hover { box-shadow: 0 0 0 3px color-mix(in srgb, var(--text) 25
 .cat-pick { padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
 .view > .cat-pick { border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 10px; background: var(--panel); }
 
-/* ---------- contatti raggruppati ---------- */
+/* ---------- grouped contacts ---------- */
 .group-seg { align-items: center; }
 .group-seg > span { padding: 0 8px; font-size: 12px; }
 .group-seg button { font-size: 13px; }
@@ -1115,7 +1115,7 @@ button.cdot.pick:hover { box-shadow: 0 0 0 3px color-mix(in srgb, var(--text) 25
 .ws-list { margin: 6px 0 10px; }
 .no-ws { padding-top: 60px; }
 
-/* ---------- stato degli articoli ---------- */
+/* ---------- item status ---------- */
 .sdot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; }
 .sdot.s-evaluation { background: var(--mail); }
 .sdot.s-outdated { background: var(--today); }
@@ -1124,7 +1124,7 @@ button.cdot.pick:hover { box-shadow: 0 0 0 3px color-mix(in srgb, var(--text) 25
 .st-discarded .name { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--muted) 60%, transparent); }
 .status-seg { margin-left: 8px; }
 .status-seg button { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; }
-/* Telefono: lo stato va su una riga sua, a tutta larghezza, e il codice resta leggibile. */
+/* Phone: the status goes on its own row, full width, and the code stays readable. */
 @media (max-width: 699px) {
   .head:has(.status-seg) { flex-wrap: wrap; row-gap: 8px; }
   .status-seg { order: 10; flex: 1 0 100%; margin-left: 0; overflow-x: auto; }
@@ -1133,8 +1133,8 @@ button.cdot.pick:hover { box-shadow: 0 0 0 3px color-mix(in srgb, var(--text) 25
 .peek-status { display: flex; align-items: center; gap: 6px; margin: -4px 0 8px; font-size: 12px; color: var(--muted); }
 .item-row .sdot, .cat-item .sdot { align-self: center; }
 
-/* Pagina documento e revisione su schermo largo: alta quanto la finestra, la pagina non scorre;
-   scorrono solo il documento (e la colonna delle note). Su telefono resta lo scorrimento normale. */
+/* Document page and review on a wide screen: as tall as the window, the page does not scroll;
+   only the document scrolls (and the notes column). On a phone normal scrolling stays. */
 @media (min-width: 901px) {
   body.doc-page .main { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
   body.doc-page #view { flex: 1; min-height: 0; display: flex; flex-direction: column; padding-bottom: 10px; }
@@ -1148,13 +1148,13 @@ button.cdot.pick:hover { box-shadow: 0 0 0 3px color-mix(in srgb, var(--text) 25
   body.doc-page .dv-notes { position: static; max-height: none; min-height: 0; }
 }
 
-/* Gli esempi nei messaggi (code.k) possono andare a capo: su telefono una riga lunga allargava la pagina
-   e spingeva fuori dallo schermo la barra in basso. E nessun contenuto deve allargare la pagina. */
+/* The examples in messages (code.k) can wrap: on a phone a long line widened the page and pushed the bottom bar
+   off the screen. And no content must widen the page. */
 .empty code.k, .qhelp code.k, .syntax code.k { white-space: normal; overflow-wrap: anywhere; }
 .main { min-width: 0; }
 html, body { overflow-x: clip; }
 
-/* ---------- nome dei documenti ---------- */
+/* ---------- document names ---------- */
 .doc-name { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; }
 .doc-name a { overflow-wrap: anywhere; }
 .doc-name .icon-btn, .drow-edit { opacity: 0.45; }
@@ -1163,12 +1163,12 @@ html, body { overflow-x: clip; }
 .dv-title-in { flex: 0 1 auto; min-width: 120px; max-width: 520px; font-size: 17px !important; }
 .doc-name a { font-weight: 500; }
 
-/* Footprint (impronte PCB): colore proprio, come firmware e datasheet. */
+/* Footprint (PCB footprints): a colour of its own, like firmware and datasheet. */
 .dk.k-footprint, .dk-sel.k-footprint { background: color-mix(in srgb, var(--note) 15%, transparent); color: var(--note); }
 
 /* ---------- chat ---------- */
 .chat { display: flex; flex-direction: column; gap: 8px; }
-/* Canali a sinistra, il canale aperto a destra; su telefono i canali stanno in una riga che scorre. */
+/* Channels on the left, the open channel on the right; on a phone the channels sit in a row that scrolls. */
 .chat-cols { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 16px; flex: 1; min-height: 0; }
 .chat-main { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; }
 .chans { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -1213,8 +1213,8 @@ html, body { overflow-x: clip; }
 .chat-bar { display: flex; gap: 8px; align-items: flex-end; background: var(--bg); padding: 6px 0 4px; }
 .chat-in { flex: 1; min-height: 40px; max-height: 40vh; resize: none; }
 .chat-bar .btn { height: 40px; }
-/* La chat occupa l'altezza dello schermo: i messaggi scorrono in mezzo, la barra per scrivere resta ferma in fondo
-   (su telefono subito sopra la barra del menu, alta --tabs-h). */
+/* The chat takes the screen's height: the messages scroll in the middle, the bar for writing stays at the bottom
+   (on a phone right above the menu bar, --tabs-h tall). */
 @media (max-width: 899px) {
   body.chat-page .main { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; padding-bottom: var(--tabs-h, calc(56px + env(safe-area-inset-bottom))); }
   body.chat-page #view { flex: 1; min-height: 0; display: flex; flex-direction: column; padding-bottom: 0; }
@@ -1232,7 +1232,7 @@ html, body { overflow-x: clip; }
   body.chat-page .chat-list { flex: 1; min-height: 0; overflow-y: auto; }
 }
 
-/* Collegamenti nei messaggi: [[doc:…]], [[voce:…]], [[contatto:…]], +persona */
+/* Links in messages: [[doc:…]], [[voce:…]] (entry), [[contatto:…]] (contact), +person */
 .ref {
   display: inline-flex; align-items: center; gap: 4px; max-width: 100%; vertical-align: bottom;
   padding: 0 6px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
@@ -1246,14 +1246,14 @@ a.ref:hover { border-color: var(--accent); }
 .mention { color: var(--accent); font-weight: 600; }
 .mention.me { background: var(--accent-soft); border-radius: 4px; padding: 0 3px; }
 
-/* ---------- collegamenti e backlink ---------- */
-/* Campi di testo in lettura (richField): stesso aspetto del campo, testo colorato e link cliccabili. */
+/* ---------- links and backlinks ---------- */
+/* Read-only text fields (richField): same look as the field, coloured text and clickable links. */
 .rich-view {
   border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 7px 9px; cursor: text;
   white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; min-height: calc(var(--rows, 1) * 1.5em + 16px);
 }
 .rich-view:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
-/* Note in Markdown: blocchi veri, niente a capo conservati alla lettera. */
+/* Notes in Markdown: real blocks, no line breaks kept literally. */
 .rich-view.md { white-space: normal; }
 .md > :first-child { margin-top: 0; }
 .md > :last-child { margin-bottom: 0; }
@@ -1287,9 +1287,9 @@ a.ref:hover { border-color: var(--accent); }
 .bl-title { padding: 8px 12px 0; font-weight: 600; font-size: 13px; }
 .dv-notes .backlinks { margin-top: 12px; }
 
-/* Tipo di ciò che si collega, nel menu dei suggerimenti di [[ */
-/* Larghezza dell'etichetta più lunga della lista (--kw, misurata in fitPills): i nomi accanto partono tutti
-   dalla stessa colonna. */
+/* Kind of what is linked, in the suggestions menu of [[ */
+/* Width of the longest label of the list (--kw, measured in fitPills): the names next to it all start
+   from the same column. */
 .ac-k { flex: none; box-sizing: border-box; width: var(--kw, auto); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; padding: 1px 5px; border-radius: 4px; text-align: center; align-self: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ac-k.t-todo { color: var(--accent); background: var(--accent-soft); }
 .ac-k.t-mail { color: var(--mail); background: color-mix(in srgb, var(--mail) 15%, transparent); }
@@ -1303,7 +1303,7 @@ a.ref:hover { border-color: var(--accent); }
 .arch-h { display: flex; align-items: baseline; gap: 8px; }
 .arch-notes { white-space: pre-wrap; overflow-wrap: anywhere; }
 
-/* ---------- ricerca nel documento ---------- */
+/* ---------- search in the document ---------- */
 .dv-search { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .dv-search[hidden] { display: none; }
 .dv-search > .ic { color: var(--muted); }
@@ -1315,7 +1315,7 @@ a.ref:hover { border-color: var(--accent); }
 :is(.dv-text, .dv-table) mark { background: rgb(255 200 0 / 45%); color: inherit; border-radius: 2px; }
 :is(.dv-text, .dv-table) mark.on { background: rgb(255 120 0 / 70%); }
 
-/* ---------- testo selezionabile dei PDF (strato di testo di PDF.js, da pdf_viewer.css) e testi evidenziati ---------- */
+/* ---------- selectable text of PDFs (PDF.js text layer, from pdf_viewer.css) and highlighted text ---------- */
 .dv-main { position: relative; }
 .textLayer {
   position: absolute; inset: 0; width: 100% !important; height: 100% !important; overflow: clip; z-index: 0;
@@ -1348,7 +1348,7 @@ a.ref:hover { border-color: var(--accent); }
 .dv-selbtn { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 5; box-shadow: 0 4px 14px rgb(0 0 0 / 35%); }
 .dv-selbtn[hidden] { display: none; }
 
-/* ---------- tipi di documento aggiunti e documenti per categoria ---------- */
+/* ---------- added document kinds and documents per category ---------- */
 .dk.k-custom, .dk-sel.k-custom { color: hsl(var(--h) 60% var(--tag-l)); background: hsl(var(--h) 65% 50% / 0.14); }
 .dgroup.cat { border-top: 3px solid hsl(var(--h) 60% 52%); }
 .dgroup-cat { text-transform: uppercase; letter-spacing: 0.04em; font-size: 13px; font-weight: 700; }
@@ -1360,37 +1360,37 @@ a.ref:hover { border-color: var(--accent); }
 .dgroup-empty { padding: 10px 12px; margin: 0; font-size: 13px; }
 .dgroup-h .icon-btn { margin-left: -4px; }
 
-/* ---------- mail in attesa di risposta ---------- */
+/* ---------- mails awaiting reply ---------- */
 .awaiting { display: inline-flex; align-items: center; gap: 4px; color: var(--today); font-weight: 600; }
 .awaiting .ic { width: 14px; height: 14px; }
-/* Tasto della mail in attesa: clessidra arancione (un clic: risposta arrivata, in archivio). */
+/* Button of a mail awaiting reply: orange hourglass (one click: reply received, to the archive). */
 .entry.done.waiting .check.mail { background: transparent; border-color: var(--today); color: var(--today); }
 .entry.done.waiting .check.mail .ic { opacity: 1; }
-/* Freccia ↑ in fondo alla riga di una mail mandata: torna tra quelle da mandare. */
+/* ↑ arrow at the end of a sent mail's row: back among those to send. */
 .mail-up { flex: none; align-self: center; margin-left: auto; color: var(--muted); opacity: 0.7; }
 .mail-up:hover { opacity: 1; color: var(--accent); }
 .sec.waiting .sec-t { color: var(--today); }
-/* Colonne strette: dimensione e data vanno a capo invece di uscire dalla colonna. */
+/* Narrow columns: size and date wrap instead of overflowing the column. */
 .doc-groups .drow { flex-wrap: wrap; row-gap: 2px; }
 .doc-groups .drow-name { flex: 1 1 120px; }
 .doc-groups .drow .grow { display: none; }
-/* Mandata ma in attesa di risposta: il thread è ancora aperto, il titolo non è barrato. */
+/* Sent but awaiting reply: the thread is still open, the title is not struck through. */
 .entry.done.waiting .title { color: var(--text); text-decoration: none; }
 .entry.done.waiting { border-left-color: var(--today); }
-/* Contatti: nome con il colore del contatto (nelle mail, in rubrica). */
+/* Contacts: name in the contact's colour (in mails, in the address book). */
 .ccol { color: hsl(var(--h) 60% var(--tag-l)); font-weight: 600; }
 .contact-row .cdot { align-self: center; opacity: 1; }
 
-/* Colonne "a muro": i blocchi si impilano in ogni colonna senza allinearsi alle righe (vedi masonry in core.js). */
+/* "Masonry" columns: blocks stack in each column without lining up in rows (see masonry in core.js). */
 .masonry { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: 12px; align-items: start; }
 .mcol { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 
-/* ---------- novità (changelog) ---------- */
+/* ---------- what's new (changelog) ---------- */
 .side-foot { margin-top: auto; padding-top: 8px; border-top: 1px solid var(--line); }
 .side-foot .nbadge { background: var(--accent); color: var(--accent-ink); }
 .side-foot { display: flex; flex-direction: column; gap: 2px; }
 button.nav.fb-btn { width: 100%; border: 0; background: transparent; font: inherit; text-align: left; cursor: pointer; }
-/* Finestra del feedback e pagina per chi gestisce l'istanza. */
+/* Feedback dialog and page for whoever runs the instance. */
 dialog.fb { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); box-shadow: 0 20px 60px rgb(0 0 0 / 45%); }
 dialog.fb::backdrop { background: rgb(0 0 0 / 50%); }
 dialog.fb form { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
@@ -1423,7 +1423,7 @@ dialog.fb textarea { width: 100%; min-height: 120px; resize: vertical; }
 .cl-list { margin: 4px 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; line-height: 1.5; }
 .cl-ver code.k { white-space: normal; overflow-wrap: anywhere; }
 
-/* ---------- temi (Impostazioni) ---------- */
+/* ---------- themes (Settings) ---------- */
 .ic-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
 .ic-card { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 4px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); text-align: center; }
 .ic-card img { width: 56px; height: 56px; border-radius: 13px; box-shadow: 0 2px 8px rgb(0 0 0 / 25%); }
@@ -1442,7 +1442,7 @@ dialog.fb textarea { width: 100%; min-height: 120px; resize: vertical; }
 .th-line.short { width: 45%; }
 .th-dots { display: flex; gap: 4px; margin-top: auto; }
 .th-dots span { width: 9px; height: 9px; border-radius: 50%; }
-/* Anteprime dei temi di Organizer (colori del CSS di base). */
+/* Previews of Organizer's themes (colours of the base CSS). */
 .th-prev.base-light, .th-prev.base-auto { background: #f5f6f8; }
 .th-prev.base-dark { background: #0e1014; }
 .th-prev.base-auto { background: linear-gradient(135deg, #f5f6f8 50%, #0e1014 50%); }
@@ -1456,9 +1456,9 @@ dialog.fb textarea { width: 100%; min-height: 120px; resize: vertical; }
 .th-prev[class*="base-"] .th-dots span:nth-child(3) { background: #8a46d1; }
 .th-prev[class*="base-"] .th-dots span:nth-child(4) { background: #c76a00; }
 
-/* ---------- misure uniformi dei controlli (0.9) ----------
-   Un'altezza sola per campi, menu, pulsanti e chip dei moduli: in una riga stanno tutti allineati.
-   :where() ha specificità zero, così i controlli piccoli qui sotto (e nelle loro regole) la cambiano. */
+/* ---------- uniform control sizes (0.9) ----------
+   A single height for fields, menus, buttons and form chips: in a row they all line up.
+   :where() has zero specificity, so the small controls below (and their rules) change it. */
 :root { --ctl: 34px; --ctl-sm: 28px; }
 :where(input:not([type="checkbox"]):not([type="file"]):not([type="radio"]):not([type="range"]), select) { height: var(--ctl); padding-block: 0; }
 :where(.btn) { min-height: var(--ctl); padding-block: 0; }
@@ -1466,15 +1466,15 @@ dialog.fb textarea { width: 100%; min-height: 120px; resize: vertical; }
 .chip { min-height: var(--ctl-sm); }
 .h-title { height: auto; min-height: var(--ctl); }
 .ver-in, .dk-sel, .dv-search-in { height: 26px; }
-/* Nei moduli (dettagli di una voce, di un progetto…) i chip sono alti come i campi accanto. */
+/* In forms (details of an entry, a project…) the chips are as tall as the fields next to them. */
 .fields .chip, .fields .chips .chip { height: var(--ctl); border-radius: 8px; padding: 0 12px; }
 .fields .chips { align-items: flex-end; }
-/* Progetti di una voce: un riquadro come un campo, con i progetti e l'aggiunta dentro. */
+/* An entry's projects: a box like a field, with the projects and the add field inside. */
 .f.projs .projs-b { min-height: var(--ctl); border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 3px 4px; gap: 4px; }
 .f.projs .projs-b .sub-in { border: 0 !important; height: 26px; padding: 0 6px; }
 
-/* ---------- filtri (0.9): stesso chip in ogni pagina ----------
-   Colorati ("tint"): la parola sullo sfondo del suo colore, come i tipi di documento; acceso = bordo pieno. */
+/* ---------- filters (0.9): the same chip on every page ----------
+   Coloured ("tint"): the word on a background of its colour, like the document kinds; on = full border. */
 .toolbar.cats { width: 100%; gap: 6px; }
 .fchip.tint {
   --c: var(--muted); --cb: var(--panel-2);
@@ -1494,7 +1494,7 @@ dialog.fb textarea { width: 100%; min-height: 120px; resize: vertical; }
 .fchip.s-discarded { --c: var(--danger); --cb: var(--danger-soft); }
 .dnd-hint { margin: 0 0 10px; font-size: 13px; }
 
-/* Selettore della revisione affiancata (pagina Documenti). */
+/* Side-by-side review picker (Documents page). */
 .sel-btn {
   flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px;
   border: 1.5px dashed var(--line); border-radius: 8px; background: transparent; color: var(--muted);
@@ -1504,7 +1504,7 @@ dialog.fb textarea { width: 100%; min-height: 120px; resize: vertical; }
 .sel-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .sel-btn.on { border: 1.5px solid var(--accent); background: var(--accent); color: var(--accent-ink); }
 
-/* Scheda di un documento al passaggio del mouse (pagina Documenti): con l'anteprima del file. */
+/* A document's card on mouse hover (Documents page): with the file preview. */
 .peek.peek-doc { width: 340px; }
 .peek-doc .peek-h { justify-content: flex-start; }
 .peek-thumb { margin-top: 10px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); max-height: 280px; display: flex; justify-content: center; background: var(--panel-2); min-height: 40px; align-items: center; }
@@ -1513,22 +1513,22 @@ dialog.fb textarea { width: 100%; min-height: 120px; resize: vertical; }
 .peek-img.pdf { width: 100%; max-height: none; background: #fff; align-self: flex-start; }
 .peek-text { margin: 0; padding: 8px 10px; width: 100%; font-family: var(--mono); font-size: 11px; line-height: 1.4; white-space: pre-wrap; overflow: hidden; color: var(--text); align-self: flex-start; }
 body.no-quick .quick { display: none; }
-/* Descrizione dell'articolo: più larga degli altri campi (2 colonne, 3 su schermo grande). */
+/* Item description: wider than the other fields (2 columns, 3 on a large screen). */
 @media (min-width: 640px) { .grid > .f.wide { grid-column: span 2; } }
 @media (min-width: 1300px) { .grid > .f.wide { grid-column: span 3; } }
-/* Segnaposto delle note: si trascinano (anche con il dito: niente scorrimento sopra il segnaposto). */
+/* Note pins: they can be dragged (with the finger too: no scrolling over the pin). */
 .dv-pin { touch-action: none; }
 .dv-pin:active { cursor: grabbing; }
 .dv-pin.dragging { cursor: grabbing; z-index: 5; transform: translate(-1px, -100%) scale(1.3); box-shadow: 0 6px 18px rgb(0 0 0 / 45%); }
 
-/* Codici alternativi degli articoli. */
+/* Items' alternative codes. */
 .aliases { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -2px 0 10px; font-size: 13px; }
 .aliases .code { font-family: var(--mono); font-weight: 600; border-radius: 5px; padding: 1px 6px; font-size: 13px; }
 .aliases .sub-in { height: var(--ctl-sm); width: auto; font-size: 13px; }
 .alts { font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 30%; }
 .aliases .code:not(.cat) { background: var(--panel-2); }
 
-/* Scelta del tipo di documento: pulsante con il colore del tipo e menu con le voci colorate. */
+/* Document kind choice: button with the kind's colour and a menu with coloured entries. */
 .kpick { display: inline-flex; align-items: center; gap: 4px; height: 26px; cursor: pointer; }
 .kpick-caret { font-size: 9px; opacity: 0.7; }
 .kind-menu {
@@ -1542,7 +1542,7 @@ body.no-quick .quick { display: none; }
 .km-i .ic { width: 14px; height: 14px; }
 .km-i.new { border-top: 1px solid var(--line); border-radius: 0 0 7px 7px; margin-top: 2px; padding-top: 7px; }
 
-/* ---------- permessi (Impostazioni) ---------- */
+/* ---------- permissions (Settings) ---------- */
 .pm-wrap { overflow-x: auto; margin: 6px 0 10px; }
 .pm-rules { font-size: 13px; color: var(--muted); }
 .pm-rules summary { cursor: pointer; }
@@ -1551,13 +1551,13 @@ body.no-quick .quick { display: none; }
 .pm-l-none { color: var(--danger); }
 .pm-l-read { color: var(--code-ink); }
 
-/* Sola lettura (permessi): i controlli spenti si vedono attenuati. */
+/* Read-only (permissions): disabled controls look dimmed. */
 .ro :is(input, textarea, select, button):disabled { opacity: 0.55; cursor: not-allowed; }
 .ro .rich-view { cursor: default; }
 .ro .rich-view:hover { border-color: var(--line); }
 .ro .dv-page { cursor: default; }
 
-/* ---------- giro di Organizer ---------- */
+/* ---------- Organizer tour ---------- */
 .tour-spot { position: fixed; z-index: 80; border-radius: 10px; outline: 2px solid var(--accent); box-shadow: 0 0 0 9999px rgb(0 0 0 / 50%); pointer-events: none; transition: top 0.25s ease, left 0.25s ease, width 0.25s ease, height 0.25s ease; }
 .tour-spot.dim { outline: none; }
 .tour-card { position: fixed; z-index: 81; width: min(380px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); box-shadow: 0 16px 48px rgb(0 0 0 / 40%); }
@@ -1575,7 +1575,7 @@ body.no-quick .quick { display: none; }
 .ti-body h2 .ic { color: var(--accent); }
 .ti-body p { margin: 0; }
 
-/* ---------- barra comandi (⌘K) ---------- */
+/* ---------- command bar (⌘K) ---------- */
 dialog.pal { width: min(640px, calc(100vw - 24px)); max-height: none; margin: 12vh auto auto; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); box-shadow: 0 24px 70px rgb(0 0 0 / 50%); }
 dialog.pal::backdrop { background: rgb(0 0 0 / 40%); }
 .pal-box { display: flex; flex-direction: column; }
@@ -1598,7 +1598,7 @@ dialog.pal::backdrop { background: rgb(0 0 0 / 40%); }
 .pal-empty { margin: 10px; }
 @media (max-width: 899px) { dialog.pal { margin-top: 10px; } .pal-list { max-height: calc(100dvh - 140px); } }
 
-/* ---------- temi funky: accento luminoso ---------- */
+/* ---------- funky themes: glowing accent ---------- */
 :root[data-glow] .btn.primary { box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 55%, transparent); }
 :root[data-glow] .nav.on, :root[data-glow] .tab.on, :root[data-glow] .vtitle { text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 60%, transparent); }
 :root[data-glow] .nav.on .ic, :root[data-glow] .tab.on .ic { filter: drop-shadow(0 0 5px var(--accent)); }

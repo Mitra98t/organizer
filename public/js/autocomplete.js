@@ -1,31 +1,36 @@
-// Autocompletamento dei token (@progetto, #CODICE, !data, +utente, >destinatario) nei campi con data-ac.
-// data-ac = tipo della voce ('todo' | 'mail' | 'note'), oppure 'auto' per la barra rapida
-// (il tipo si ricava dal prefisso t:/m:/n: e dal contesto). data-ac-only limita i token accettati.
-// data-ac="email": campo di indirizzi separati da virgola (A, Cc), suggerisce la rubrica senza simboli.
-// data-ac="code" / "project": tutto il campo è un codice di magazzino / un progetto; scegliere un
-// suggerimento conferma subito il campo (come premere Invio). data-ac-self esclude un codice.
-// data-ac="cfield" + data-ac-field="company|timeslot|role": un campo dei contatti; suggerisce i valori già
-// usati in rubrica e scegliendone uno il campo si salva.
-// "[[" in qualunque campo di testo collega qualunque cosa: voci (todo, mail, note), documenti, articoli,
-// progetti e contatti, ognuno con la sua etichetta di tipo nel menu. Inserisce [[voce:34]], [[doc:12]],
-// [[progetto:3]], [[contatto:5]] (mostrati come link con il nome attuale); per gli articoli #CODICE.
-// data-ac-entry: la voce che si sta scrivendo (non si propone di collegarla a se stessa).
-// data-ac="chat": i messaggi della chat (@ # + e [[).
-// data-ac-bare: si inserisce il valore senza simbolo (testo delle mail: "#SCH" → "SCH-042").
-// Nella barra in alto: modalità 'item' (/categoria, @progetto) e 'project' (@progetto padre).
-// Un solo menu flottante per tutta l'app, agganciato al campo che ha il focus: sopravvive ai re-render.
-import { h, S, api, fmtDay, hue, catStyle, projHue, docName, userName, plainRefs } from './core.js';
+// Autocomplete for tokens (@project, #CODE, !date, +user, >recipient) in fields with data-ac.
+// data-ac = the entry's kind ('todo' | 'mail' | 'note'), or 'auto' for the quick bar (the kind comes from the
+// t:/m:/n: prefix and from the context). data-ac-only limits the accepted tokens.
+// data-ac="email": a field of comma-separated addresses (To, Cc), suggests the address book without symbols.
+// data-ac="code" / "project": the whole field is an inventory code / a project; picking a suggestion confirms the
+// field at once (like pressing Enter). data-ac-self excludes a code.
+// data-ac="cfield" + data-ac-field="company|timeslot|role": a contact field; suggests the values already used in
+// the address book and picking one saves the field.
+// "[[" in any text field links anything: entries (todos, mails, notes), documents, items, projects and contacts,
+// each with its kind label in the menu. Inserts [[voce:34]], [[doc:12]], [[progetto:3]], [[contatto:5]] (shown as
+// links with the current name); for items #CODE.
+// data-ac-entry: the entry being written (it is not offered as a link to itself).
+// data-ac="chat": chat messages (@ # + and [[).
+// data-ac-bare: the value is inserted without symbol (mail text: "#SCH" → "SCH-042").
+// In the top bar: 'item' mode (/category, @project) and 'project' mode (@parent project).
+// A single floating menu for the whole app, attached to the focused field: it survives re-renders.
+import { h, S, api, fmtDay, hue, catStyle, projHue, docName, userName, plainRefs, kindLabel } from './core.js';
 import { parseDate, parseQuick, today, fromYmd } from './parse.js';
+import { tr, trn, LANG } from './i18n.js';
 
 const box = h('div.ac', { hidden: true, role: 'listbox' });
 let st = null; // { el, start, end, items, index, token, suffix }
 let contextKind = () => 'todo';
 
 const lc = s => String(s ?? '').toLowerCase();
-const DOW = ['dom', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab'];
-const FUTURE_DATES = ['oggi', 'domani', 'dopodomani', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom', '1s', '2s', '1m', 'fm', 'no'];
-const PAST_DATES = ['oggi', 'ieri', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom', 'no'];
-const STATUS = { paused: 'in pausa', closed: 'chiuso' };
+// Date shortcuts in the interface language (the parser understands both).
+const IT = LANG === 'it';
+const DOW = IT ? ['dom', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab'] : ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const FUTURE_DATES = IT ? ['oggi', 'domani', 'dopodomani', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom', '1s', '2s', '1m', 'fm', 'no']
+  : ['today', 'tomorrow', '2d', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun', '1w', '2w', '1m', 'eom', 'no'];
+const PAST_DATES = IT ? ['oggi', 'ieri', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom', 'no']
+  : ['today', 'yesterday', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun', 'no'];
+const STATUS = { paused: tr('paused'), closed: tr('closed') };
 
 export function initAutocomplete(getContextKind) {
   contextKind = getContextKind;
@@ -34,16 +39,16 @@ export function initAutocomplete(getContextKind) {
   document.addEventListener('keyup', ev => {
     if (ev.target.dataset?.ac && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(ev.key)) update(ev.target);
   });
-  document.addEventListener('keydown', onKey, true); // in cattura: prima dei gestori Invio dei campi
+  document.addEventListener('keydown', onKey, true); // capturing: before the fields' Enter handlers
   document.addEventListener('focusout', ev => { if (st && ev.target === st.el) close(); });
   window.addEventListener('resize', () => st && place());
   window.addEventListener('scroll', ev => { if (st && !box.contains(ev.target)) place(); }, true);
-  // Tocchi e clic sul menu non devono togliere il focus al campo.
+  // Taps and clicks on the menu must not take the focus away from the field.
   box.addEventListener('pointerdown', ev => ev.preventDefault());
   box.addEventListener('mousedown', ev => ev.preventDefault());
 }
 
-// Dopo un re-render il campo agganciato può essere stato sostituito.
+// After a re-render the attached field may have been replaced.
 export function acCheck() {
   if (st && !st.el.isConnected) close();
 }
@@ -64,7 +69,7 @@ function update(el) {
   if (el.dataset.ac === 'email') return updateEmail(el, pos);
   if (['code', 'project', 'cfield'].includes(el.dataset.ac)) return updateWhole(el);
   const kind = kindOf(el);
-  // Le barre per creare articoli e progetti non hanno collegamenti.
+  // The bars creating items and projects have no links.
   if (kind !== 'item' && kind !== 'project') {
     const r = el.value.slice(0, pos).match(/\[\[([^\]\n]{0,60})$/);
     if (r) return updateRef(el, pos, r[1]);
@@ -72,7 +77,7 @@ function update(el) {
   const allowed = el.dataset.acOnly || { item: '/@', project: '@+' }[kind] || '@#!+>';
   const m = el.value.slice(0, pos).match(/(?:^|\s)(\+\+|[@#!+>/])([^\s@#!+>/]*)$/);
   if (!m || !allowed.includes(m[1])) return close();
-  // Nella barra articoli il primo termine è il codice: niente suggerimenti finché non c'è.
+  // In the items bar the first word is the code: no suggestions until there is one.
   if (kind === 'item' && m.index === 0 && !/^\s/.test(m[0])) return close();
   const [, sig, q] = m;
   const start = pos - q.length - 1;
@@ -96,7 +101,7 @@ function updateWhole(el) {
   } else if (el.dataset.ac === 'cfield') {
     items = contactFieldSuggestions(el.dataset.acField, q);
     commit = 'change';
-    // Già scritta per intero ed è l'unica: niente menu.
+    // Already written in full and the only one: no menu.
     if (items.length === 1 && lc(items[0].insert) === q) items = [];
   } else {
     items = projectSuggestions(q).map(p => ({ ...p, insert: p.label.slice(1) }));
@@ -115,9 +120,9 @@ function updateRef(el, pos, q) {
   draw();
 }
 
-// Il testo intero delle mail ricevute non è nei dati dell'app: per "[[" (e la barra comandi) si chiede al server
-// in quali conversazioni stanno le parole, poco dopo che si è smesso di scrivere; arrivata la risposta, done().
-const mailSearch = new Map(); // ricerca → id delle conversazioni (null = in arrivo)
+// The full text of received mails is not in the app's data: for "[[" (and the command bar) the server is asked
+// which conversations contain the words, shortly after typing stops; when the answer arrives, done().
+const mailSearch = new Map(); // search → conversation ids (null = on its way)
 let mailTimer = null;
 export function askMailSearch(ql, done) {
   if (ql.replace(/\s/g, '').length < 2 || mailSearch.has(ql) || !S.data?.mailThreads?.length) return;
@@ -130,13 +135,13 @@ export function askMailSearch(ql, done) {
   }, 250);
 }
 
-// Etichette di tipo nel menu dei collegamenti, per distinguere al volo cosa si sta collegando.
-const PILL = { todo: 'todo', mail: 'mail', note: 'nota', doc: 'documento', docnote: 'nota su file', item: 'articolo', project: 'progetto', contact: 'contatto', conv: 'conversazione' };
+// Kind labels in the links menu, to tell at a glance what is being linked.
+const PILL = { todo: 'todo', mail: 'mail', note: tr('note'), doc: tr('document'), docnote: tr('note on file'), item: tr('item'), project: tr('project'), contact: tr('contact'), conv: tr('conversation'), page: tr('page') };
 
-// Punteggio di più parole su più campi (più basso = meglio, null = qualche parola non c'è): ogni parola deve
-// trovarsi in almeno un campo, conta il campo migliore. Campi: [testo, peso, lungo]. Nei campi brevi (titoli,
-// nomi, codici) le lettere possono essere sparse; nei testi lunghi (note, corpo delle mail) serve il pezzo
-// intero, altrimenti lettere sparse si trovano quasi ovunque.
+// Score of several words over several fields (lower = better, null = some word is missing): every word must be in
+// at least one field, the best field counts. Fields: [text, weight, long]. In short fields (titles, names, codes)
+// the letters may be scattered; in long texts (notes, mail bodies) the whole piece is needed, otherwise scattered
+// letters are found almost everywhere.
 function scoreWords(words, fields) {
   let total = 0;
   for (const w of words) {
@@ -152,24 +157,24 @@ function scoreWords(words, fields) {
   return total;
 }
 
-// Tutto insieme; senza testo: le voci aperte più recenti, poi un po' di ogni altro tipo. Si cerca anche per
-// tipo ("mail", "todo", "nota", "documento"…), persone (nomi in rubrica e indirizzi) e testo. Ogni risultato ha
-// insert (il token per "[[") e href (dove porta, per la barra comandi).
+// Everything together; without text: the most recent open entries, then a bit of every other kind. Also searched by
+// kind ("mail", "todo", "note", "document"…), people (address-book names and addresses) and text. Each result has
+// insert (the token for "[[") and href (where it leads, for the command bar).
 const refSuggestions = (ql, opts) => findAll(ql, opts);
 
 export function findAll(ql, { bare = false, self = null, limit = 12 } = {}) {
   const D = S.data;
   const words = ql.split(/\s+/).filter(Boolean);
-  const plain = t => plainRefs(t).replace(/(^|\s)#/g, '$1').replace(/\[\[\w+:\d+\]\]/g, '…'); // i collegamenti con il loro nome
-  const entryState = e => (e.done_at ? (e.kind === 'mail' ? 'mandata' : e.kind === 'todo' ? 'fatta' : '') : e.kind === 'mail' ? 'da mandare' : '');
+  const plain = t => plainRefs(t).replace(/(^|\s)#/g, '$1').replace(/\[\[\w+:\d+\]\]/g, '…'); // links with their name
+  const entryState = e => (e.done_at ? (e.kind === 'mail' ? tr('sent') : e.kind === 'todo' ? tr('done') : '') : e.kind === 'mail' ? tr('to send') : '');
   const names = list => String(list || '').split(',').map(a => (a.match(/<([^>]+)>/)?.[1] || a).trim().toLowerCase()).filter(Boolean)
     .map(a => D.contactByEmail.get(a)?.name || '').join(' ');
-  // Le persone di una conversazione, una volta sola: il nome in rubrica, altrimenti quello della mail o l'indirizzo.
+  // The people of a conversation, once: the address-book name, otherwise the mail's name or the address.
   const people = list => [...new Set(String(list || '').split(',').map(a => {
     const email = (a.match(/<([^>]+)>/)?.[1] || a).trim().toLowerCase();
     return email && !D.mine.has(email) ? D.contactByEmail.get(email)?.name || a.replace(/<[^>]*>/, '').replace(/"/g, '').trim() || email : '';
   }).filter(Boolean))].slice(0, 3).join(', ');
-  const KIND_WORD = { todo: 'todo', mail: 'mail', note: 'nota' };
+  const KIND_WORD = { todo: 'todo', mail: 'mail', note: tr('note') };
   const scored = (list, fields, make) => list.map(x => ({ x, r: scoreWords(words, fields(x)) })).filter(o => o.r != null)
     .map(o => ({ ...make(o.x), r: o.r }));
   const mailIds = mailSearch.get(ql) || [];
@@ -178,50 +183,50 @@ export function findAll(ql, { bare = false, self = null, limit = 12 } = {}) {
       [e.title], [e.mail_subject, 0.2], [e.contact, 0.5], [names(`${e.contact},${e.mail_cc}`), 0.5], [e.mail_cc, 0.8],
       [KIND_WORD[e.kind], 1], ...projectsOfEntry(e).map(p => [p.tag, 1]), [e.notes, 0, true],
     ], e => ({ insert: `[[voce:${e.id}]]`, href: `#/v/${e.id}`, label: plain(e.title), hint: e.kind === 'mail' ? e.contact || '' : '', extra: entryState(e), pill: e.kind, sort: e.updated_at,
-      sub: line(projectsOfEntry(e).map(p => `@${p.tag}`).join(' '), e.due && `scade ${fmtDay(e.due)}`, e.assignee_id && `a ${userName(e.assignee_id)}`,
+      sub: line(projectsOfEntry(e).map(p => `@${p.tag}`).join(' '), e.due && tr('due {date}', { date: fmtDay(e.due) }), e.assignee_id && tr('to {name}', { name: userName(e.assignee_id) }),
         (D.itemsOfEntry.get(e.id) || []).map(x => D.itemById.get(x.item_id)?.code).filter(Boolean).slice(0, 4).join(' '), snippet(e.notes)) })),
     scored(D.mailThreads, t => {
       const msgs = D.msgsOfThread.get(t.id) || [];
       const addrs = msgs.map(m => `${m.from_addr},${m.to_addr},${m.cc}`).join(',');
-      return [[t.subject], [D.topicById.get(t.topic_id)?.title, 0.3], [addrs, 0.5, true], [names(addrs), 0.3, true], ['mail', 1], ['conversazione', 1],
+      return [[t.subject], [D.topicById.get(t.topic_id)?.title, 0.3], [addrs, 0.5, true], [names(addrs), 0.3, true], ['mail', 1], [tr('conversation'), 1],
         ...msgs.map(m => [m.snippet, 0.5, true]), ...(mailIds.includes(t.id) ? [[ql, 0, true]] : [])];
     }, t => {
       const msgs = D.msgsOfThread.get(t.id) || [];
       const topic = D.topicById.get(t.topic_id)?.title;
       return { insert: `[[mail:${t.id}]]`, href: `#/t/${t.topic_id}?th=${t.id}`, label: plain(t.subject), hint: people(msgs.map(m => m.direction === 'in' ? m.from_addr : m.to_addr).join(',')),
         extra: t.archived_at ? 'archiviata' : '', pill: 'conv', sort: t.last_at,
-        sub: line(topic && lc(topic) !== lc(t.subject) && `topic: ${topic}`, `${msgs.length} ${msgs.length === 1 ? 'messaggio' : 'messaggi'}`, t.last_at && `ultimo ${fmtDay(t.last_at.slice(0, 10))}`, snippet(msgs.at(-1)?.snippet)) };
+        sub: line(topic && lc(topic) !== lc(t.subject) && `topic: ${topic}`, trn(msgs.length, '1 message', '{n} messages'), t.last_at && tr('last {date}', { date: fmtDay(t.last_at.slice(0, 10)) }), snippet(msgs.at(-1)?.snippet)) };
     }),
     scored(D.docs.filter(d => D.itemById.has(d.item_id)), d => {
       const it = D.itemById.get(d.item_id);
-      return [[docName(d)], [d.filename, 0.3], [d.kind, 0.5], [it.code, 0.3], ...(D.aliasesOf.get(it.id) || []).map(a => [a.code, 0.4]), [it.name, 0.8], [d.version, 1], ['documento', 1]];
+      return [[docName(d)], [d.filename, 0.3], [kindLabel(d.kind), 0.5], [it.code, 0.3], ...(D.aliasesOf.get(it.id) || []).map(a => [a.code, 0.4]), [it.name, 0.8], [d.version, 1], [tr('document'), 1]];
     }, d => {
       const it = D.itemById.get(d.item_id);
       const open = (D.docNotesOf.get(d.id) || []).filter(n => !n.resolved_at).length;
       return { insert: `[[doc:${d.id}]]`, href: `#/d/${d.id}`, label: docName(d), hint: '', extra: d.kind, pill: 'doc', sort: d.created_at,
-        sub: line(`${it.code} · ${it.name || ''}`, d.version && `versione ${d.version}`, d.label && d.filename, d.url && d.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60),
-          open && `${open} ${open === 1 ? 'nota aperta' : 'note aperte'}`) };
+        sub: line(`${it.code} · ${it.name || ''}`, d.version && tr('version {v}', { v: d.version }), d.label && d.filename, d.url && d.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60),
+          open && trn(open, '1 open note', '{n} open notes')) };
     }),
-    // Note sui documenti (anche quelle su un pezzo di testo di un PDF): si cercano per testo, testo citato e documento.
+    // Notes on documents (also those on a piece of a PDF's text): searched by text, quoted text and document.
     scored(D.docNotes.filter(n => D.docById.has(n.doc_id) && (ql || !n.resolved_at)), n => {
       const d = D.docById.get(n.doc_id);
       const it = D.itemById.get(d.item_id);
-      return [[n.text.split('\n')[0]], [n.text, 0.3, true], [n.quote, 0.3, true], [docName(d), 0.6], [it?.code, 0.6], ['nota', 1], ['appunto', 1]];
+      return [[n.text.split('\n')[0]], [n.text, 0.3, true], [n.quote, 0.3, true], [docName(d), 0.6], [it?.code, 0.6], [tr('note'), 1]];
     }, n => {
       const d = D.docById.get(n.doc_id);
       const first = plain(n.text.split('\n')[0]);
       const it = D.itemById.get(d.item_id);
-      const page = n.page != null && n.z == null && /pdf/i.test(d.mime || d.filename || d.url || '') ? `pag. ${n.page}` : '';
+      const page = n.page != null && n.z == null && /pdf/i.test(d.mime || d.filename || d.url || '') ? tr('p. {n}', { n: n.page }) : '';
       return { insert: `[[nota:${n.id}]]`, href: `#/d/${n.doc_id}?n=${n.id}`, label: first.length > 120 ? `${first.slice(0, 120)}…` : first,
         hint: '', extra: n.resolved_at ? 'risolta' : page, pill: 'docnote', sort: n.updated_at,
-        // Dove sta: articolo › documento (tipo), chi l'ha scritta e il testo evidenziato.
-        sub: line(it && `${it.code}${it.name ? ` ${it.name}` : ''}`, `${docName(d)} (${d.kind})`, n.created_by !== S.data.me.id && userName(n.created_by), n.quote && `«${snippet(n.quote, 90)}»`) };
+        // Where it is: item › document (kind), who wrote it and the highlighted text.
+        sub: line(it && `${it.code}${it.name ? ` ${it.name}` : ''}`, `${docName(d)} (${kindLabel(d.kind)})`, n.created_by !== S.data.me.id && userName(n.created_by), n.quote && `«${snippet(n.quote, 90)}»`) };
     }),
-    scored(D.items, i => [[i.code], ...(D.aliasesOf.get(i.id) || []).map(a => [a.code, 0.2]), [i.name, 0.5], [i.category, 1], [i.firmware, 1], ['articolo', 1]],
+    scored(D.items, i => [[i.code], ...(D.aliasesOf.get(i.id) || []).map(a => [a.code, 0.2]), [i.name, 0.5], [i.category, 1], [i.firmware, 1], [tr('item'), 1]],
       i => ({ insert: bare ? i.code : `#${i.code}`, href: `#/i/${i.id}`, label: i.code, hint: i.name, extra: i.category, code: true, cat: i.category, pill: 'item', sort: i.updated_at || '', sub: itemSub(i) })),
-    scored(D.projects.filter(p => ql || p.status !== 'closed'), p => [[p.name], [p.tag], ['progetto', 1], [p.notes, 0.5, true]],
+    scored(D.projects.filter(p => ql || p.status !== 'closed'), p => [[p.name], [p.tag], [tr('project'), 1], [p.notes, 0.5, true]],
       p => ({ insert: `[[progetto:${p.id}]]`, href: `#/p/${p.id}`, label: p.name, hint: `@${p.tag}`, extra: STATUS[p.status] || '', pill: 'project', sort: p.updated_at || '', sub: projectSub(p) })),
-    scored(D.contacts, c => [[c.name], [c.email, 0.2], [c.company, 0.5], [c.role, 0.8], ['contatto', 1]],
+    scored(D.contacts, c => [[c.name], [c.email, 0.2], [c.company, 0.5], [c.role, 0.8], [tr('contact'), 1]],
       c => ({ insert: `[[contatto:${c.id}]]`, href: `#/contatti/${c.id}`, label: c.name || c.email, hint: c.company || (c.name ? c.email : ''), pill: 'contact', sort: c.updated_at || '',
         sub: line(c.name && c.email, c.role, c.phone, c.timeslot) })),
   ];
@@ -232,14 +237,14 @@ export function findAll(ql, { bare = false, self = null, limit = 12 } = {}) {
 
 export { scoreWords, PILL };
 
-// Etichette di tipo larghe quanto la più lunga della lista: si misurano alla larghezza naturale e si fissano.
+// Kind labels as wide as the longest in the list: measured at their natural width and then fixed.
 export function fitPills(list) {
   list.style.removeProperty('--kw');
   const w = Math.max(0, ...[...list.querySelectorAll('.ac-k')].map(k => k.getBoundingClientRect().width));
   if (w) list.style.setProperty('--kw', `${Math.ceil(w)}px`);
 }
 
-// Seconda riga dei suggerimenti: il contesto (a quale articolo appartiene, dove sta, di chi è…), pezzi separati da ·.
+// Second line of the suggestions: the context (which item it belongs to, where it is, whose it is…), pieces separated by ·.
 const line = (...parts) => parts.filter(x => x && String(x).trim()).join(' · ');
 const snippet = (t, n = 70) => {
   const s = String(t || '').replace(/\[\[\w+:\d+\]\]/g, '…').replace(/\s+/g, ' ').trim();
@@ -250,15 +255,15 @@ function itemSub(i) {
   const D = S.data;
   const docs = (D.docsOf.get(i.id) || []).length;
   const alts = (D.aliasesOf.get(i.id) || []).map(a => a.code);
-  return line(i.category, i.location && `in ${i.location}`, i.firmware && `fw ${i.firmware}`, alts.length && `alt. ${alts.slice(0, 3).join(', ')}`,
-    docs && `${docs} ${docs === 1 ? 'documento' : 'documenti'}`, i.qty != null && `${i.qty} pz`);
+  return line(i.category, i.location && tr('in {where}', { where: i.location }), i.firmware && `fw ${i.firmware}`, alts.length && `alt. ${alts.slice(0, 3).join(', ')}`,
+    docs && trn(docs, '1 document', '{n} documents'), i.qty != null && tr('{n} pcs', { n: i.qty }));
 }
 
 function projectSub(p) {
   const D = S.data;
   const open = D.entries.filter(e => !e.done_at && projectsOfEntry(e).some(x => x.id === p.id)).length;
   const parent = p.parent_id && D.projectById.get(p.parent_id);
-  return line(parent && `in @${parent.tag}`, `${open} ${open === 1 ? 'voce aperta' : 'voci aperte'}`, snippet(p.notes));
+  return line(parent && `in @${parent.tag}`, trn(open, '1 open entry', '{n} open entries'), snippet(p.notes));
 }
 
 const projectsOfEntry = e => [e.project_id, ...(S.data.extraProjectsOf.get(e.id) || []).map(x => x.project_id)]
@@ -277,17 +282,17 @@ function contactFieldSuggestions(field, ql) {
   return [...counts.values()].filter(c => fuzzy(c.name, ql) != null)
     .sort((a, b) => rank(a.name, ql) - rank(b.name, ql) || b.n - a.n || a.name.localeCompare(b.name))
     .slice(0, 8)
-    .map(c => ({ insert: c.name, label: c.name, extra: c.n === 1 ? '1 contatto' : `${c.n} contatti` }));
+    .map(c => ({ insert: c.name, label: c.name, extra: trn(c.n, '1 contact', '{n} contacts') }));
 }
 
-// Nei codici trattini, punti e barre non contano: "sch051" trova SCH-051.
+// In codes dashes, dots and slashes do not count: "sch051" finds SCH-051.
 const bare = s => lc(s).replace(/[-_./\s]+/g, '');
 
-// Si cerca anche nei codici alternativi; si inserisce sempre il codice principale (quello con cui è noto),
-// e nel suggerimento si vede quale alternativo ha trovato.
+// Alternative codes are searched too; the main code (the one it is known by) is always inserted, and the suggestion
+// shows which alternative it found.
 function itemSuggestions(ql, filter = () => true) {
   const qb = bare(ql);
-  // Codice (anche senza trattini: "sch051"), codici alternativi, poi nome, firmware e categoria.
+  // Code (also without dashes: "sch051"), alternative codes, then name, firmware and category.
   const codeScore = c => best(ql, [c]) ?? (qb ? best(qb, [bare(c)]) : null);
   const scored = S.data.items.filter(filter).map(i => {
     const alts = (S.data.aliasesOf.get(i.id) || []).map(a => a.code);
@@ -324,7 +329,7 @@ function updateEmail(el, pos) {
   draw();
 }
 
-// Rubrica prima, poi gli indirizzi usati di recente nelle mail.
+// Address book first, then the addresses recently used in mails.
 function contactItems(ql) {
   const D = S.data;
   const out = [];
@@ -345,9 +350,9 @@ function contactItems(ql) {
   return out.sort((a, b) => a.r - b.r).slice(0, 8);
 }
 
-// Ricerca "fuzzy": le lettere scritte nell'ordine, anche non attaccate ("almar" trova ALDO-MARCO-LUIGI,
-// "sch51" trova SCH-051). Punteggio, più basso = meglio: uguale, inizia così, contiene, poi lettere sparse
-// (meglio se a inizio parola e vicine). null = non c'entra.
+// "Fuzzy" search: the letters typed in order, also not adjacent ("almar" finds ALDO-MARCO-LUIGI, "sch51" finds
+// SCH-051). Score, lower = better: equal, starts like this, contains, then scattered letters (better at the start of
+// a word and close together). null = unrelated.
 export function fuzzy(s, q) {
   const v = lc(s);
   if (!q) return 0;
@@ -369,7 +374,7 @@ export function fuzzy(s, q) {
   return 3 + Math.min(gaps, 90) / 100 - starts / 100;
 }
 
-// Il punteggio migliore tra più campi; un campo secondario (nome, descrizione) pesa un po' meno.
+// The best score among several fields; a secondary field (name, description) weighs a bit less.
 function best(q, ...fields) {
   let out = null;
   for (const [value, weight = 0] of fields) {
@@ -396,17 +401,17 @@ function suggest(sig, q, kind) {
     return [...counts].filter(([c]) => fuzzy(c, ql) != null)
       .sort((a, b) => rank(a[0], ql) - rank(b[0], ql) || b[1] - a[1])
       .slice(0, 8)
-      .map(([c, n]) => ({ insert: `/${c.replace(/ /g, '_')}`, label: `/${c}`, extra: `${n} articoli`, cat: c }));
+      .map(([c, n]) => ({ insert: `/${c.replace(/ /g, '_')}`, label: `/${c}`, extra: trn(n, '1 item', '{n} items'), cat: c }));
   }
 
-  // +persona la vede anche lei, ++persona in più gliela assegna, +all la vedono tutti.
+  // +person sees it too, ++person also gets it assigned, +all everyone sees it.
   if (sig === '+' || sig === '++') {
     const me = D.me.id;
     const people = D.members
       .filter(u => u.id !== me && best(ql, [u.username], [u.name]) != null)
       .sort((a, b) => best(ql, [a.username], [a.name]) - best(ql, [b.username], [b.name]))
-      .map(u => ({ insert: `${sig}${u.username}`, label: `${sig}${u.username}`, hint: lc(u.name) !== lc(u.username) ? u.name : '', extra: sig === '++' ? 'condividi e assegna' : 'condividi' }));
-    const all = sig === '+' && (!ql || 'all'.startsWith(ql) || 'tutti'.startsWith(ql)) ? [{ insert: '+all', label: '+all', hint: 'tutti', extra: 'condividi con tutti' }] : [];
+      .map(u => ({ insert: `${sig}${u.username}`, label: `${sig}${u.username}`, hint: lc(u.name) !== lc(u.username) ? u.name : '', extra: sig === '++' ? tr('share and assign') : tr('share') }));
+    const all = sig === '+' && (!ql || 'all'.startsWith(ql) || 'tutti'.startsWith(ql)) ? [{ insert: '+all', label: '+all', hint: tr('everyone'), extra: tr('share with everyone') }] : [];
     return [...people, ...all];
   }
 
@@ -414,10 +419,10 @@ function suggest(sig, q, kind) {
     return contactItems(ql).map(c => ({ insert: `>${c.email}`, label: c.label === c.email ? `>${c.email}` : c.label, hint: c.hint, extra: c.extra }));
   }
 
-  // !data: scorciatoie con la data risolta accanto, così si vede subito dove cade.
+  // !date: shortcuts with the resolved date next to them, so you see at once where it falls.
   const past = kind === 'note';
   let toks = (past ? PAST_DATES : FUTURE_DATES).filter(t => t.startsWith(ql));
-  if (/^\d{1,3}$/.test(q)) toks = past ? [] : [`${q}g`, `${q}s`, `${q}m`];
+  if (/^\d{1,3}$/.test(q)) toks = past ? [] : IT ? [`${q}g`, `${q}s`, `${q}m`] : [`${q}d`, `${q}w`, `${q}m`];
   else if (/^\d{1,2}[/.-]\d{1,2}([/.-]\d{2,4})?$/.test(q)) toks = [q];
   const t = today();
   return toks.map(tok => ({ tok, d: parseDate(tok, t, { past }) }))
@@ -425,17 +430,17 @@ function suggest(sig, q, kind) {
     .map(({ tok, d }) => ({
       insert: `!${tok}`,
       label: `!${tok}`,
-      hint: d === null ? 'togli la data' : `${DOW[fromYmd(d).getDay()]} ${fmtDay(d)}`,
+      hint: d === null ? tr('remove the date') : `${DOW[fromYmd(d).getDay()]} ${fmtDay(d)}`,
       extra: d === null ? '' : relative(d, t),
     }));
 }
 
 function relative(d, t) {
   const diff = Math.round((fromYmd(d) - fromYmd(t)) / 864e5);
-  if (diff === 0) return 'oggi';
-  if (diff === 1) return 'domani';
-  if (diff === -1) return 'ieri';
-  return diff > 0 ? `tra ${diff}g` : `${-diff}g fa`;
+  if (diff === 0) return tr('today');
+  if (diff === 1) return tr('tomorrow');
+  if (diff === -1) return tr('yesterday');
+  return diff > 0 ? tr('in {n}d', { n: diff }) : tr('{n}d ago', { n: -diff });
 }
 
 function draw() {
@@ -456,9 +461,9 @@ function draw() {
   it.extra && h('span.ac-x', it.extra))));
   box.classList.toggle('wide', st.items.some(it => it.sub));
   box.hidden = false;
-  fitPills(box); // dopo hidden = false: nascosto non si misura
+  fitPills(box); // after hidden = false: hidden it cannot be measured
   place();
-  // Il menu scorre con la selezione (frecce su e giù), anche quando dall'ultima si torna alla prima.
+  // The menu scrolls with the selection (arrows up and down), also when going from the last back to the first.
   box.querySelector('.ac-i.on')?.scrollIntoView({ block: 'nearest' });
 }
 
@@ -466,8 +471,8 @@ function place() {
   if (!st.el.isConnected) return close();
   const r = st.el.getBoundingClientRect();
   const vh = window.visualViewport?.height ?? window.innerHeight;
-  // Con il contesto (seconda riga) il menu prende tutto lo spazio che serve per leggerlo, ovunque sia il campo
-  // (anche nelle note a destra del documento: si allarga verso sinistra); gli altri, largo almeno quanto il campo.
+  // With the context (second line) the menu takes all the space needed to read it, wherever the field is (also in
+  // the notes on the right of the document: it widens to the left); the others at least as wide as the field.
   const vw = window.innerWidth;
   const margin = vw < 700 ? 8 : 16;
   const width = box.classList.contains('wide') ? Math.min(960, vw - 2 * margin) : Math.min(Math.max(r.width, 420), 720, vw - 2 * margin);
@@ -475,7 +480,7 @@ function place() {
   box.style.left = `${Math.max(margin, Math.min(r.left, vw - width - margin))}px`;
   const below = r.bottom + 4;
   const height = box.offsetHeight;
-  // Con la tastiera del telefono aperta lo spazio sotto può mancare: allora il menu va sopra.
+  // With the phone keyboard open the space below may be missing: then the menu goes above.
   box.style.top = `${below + height > vh - 8 && r.top - height - 4 > 8 ? r.top - height - 4 : below}px`;
 }
 
@@ -502,7 +507,7 @@ function onKey(ev) {
     st.index = (st.index + (ev.key === 'ArrowDown' ? 1 : n - 1)) % n;
     draw();
   } else if (ev.key === 'Tab' || ev.key === 'Enter') {
-    // Token già scritto per intero: Invio conferma la riga invece di completare.
+    // Token already written in full: Enter confirms the line instead of completing.
     if (ev.key === 'Enter' && lc(st.token) === lc(st.items[st.index].insert)) return close();
     swallow();
     accept(st.index);

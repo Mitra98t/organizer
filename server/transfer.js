@@ -1,14 +1,14 @@
-// Esporta e importa i dati di una persona, per portarli in un altro workspace o su un altro server (Impostazioni →
-// I tuoi dati). Lo può fare chiunque, non solo gli admin.
-//  - Esportazione (GET /api/export): un .zip con organizer-export.json (le righe delle tabelle, leggibili) e in
-//    files/ i file veri di documenti e allegati. Dentro: tutto il magazzino e i documenti del workspace (sono di
-//    tutti) e quello che la persona ha creato: voci (todo, diario, mail scritte), progetti, contatti, note sui
-//    documenti, la sua posta. Niente cose private degli altri, niente chat. Solo le aree che può leggere.
-//  - Importazione (POST /api/import): si aggiunge al workspace in cui si è, senza sovrascrivere niente, solo nelle
-//    aree in cui si può scrivere. Un articolo con lo stesso codice (o alternativo) resta com'è e prende solo i
-//    documenti che gli mancano; un progetto con lo stesso tag e un contatto con la stessa mail si uniscono a
-//    quelli che ci sono. Tutto quello che arriva diventa di chi importa. Gli id cambiano: i collegamenti [[…]]
-//    nei testi si aggiornano; quelli verso cose non esportate diventano il loro nome in chiaro.
+// Exports and imports a person's data, to take it to another workspace or another server (Settings → Your data).
+// Anyone can do it, not only admins.
+//  - Export (GET /api/export): a .zip with organizer-export.json (the table rows, readable) and in files/ the real
+//    files of documents and attachments. Inside: all the workspace's inventory and documents (they belong to
+//    everyone) and what the person created: entries (todos, journal, written mails), projects, contacts, notes on
+//    documents, their mail. Nothing private of others, no chat. Only the areas they can read.
+//  - Import (POST /api/import): added to the current workspace, overwriting nothing, only in the areas one can
+//    write. An item with the same code (or alternative code) stays as it is and only takes the documents it is
+//    missing; a project with the same tag and a contact with the same email are merged with the existing ones.
+//    Everything that arrives belongs to whoever imports it. Ids change: [[…]] links in the texts are updated;
+//    those to things not exported become their name in plain text.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -71,15 +71,15 @@ route('GET', '/api/export', ({ res, user }) => {
     T.mail_messages = json(`SELECT * FROM mail_messages WHERE thread_id IN (${threads})`, { uid });
     T.mail_thread_links = json(`SELECT * FROM mail_thread_links WHERE thread_id IN (${threads})`, { uid });
   }
-  // Il nome delle cose citate nei testi ([[voce:12]]…): se non arrivano con l'esportazione, all'importazione
-  // diventano testo in chiaro (gli id di là sarebbero di altre cose).
+  // The names of things mentioned in the texts ([[voce:12]]…): if they do not arrive with the export, on import
+  // they become plain text (the ids from there would belong to other things).
   const names = {};
   const texts = [...(T.entries || []).flatMap(e => [e.title, e.notes, e.mail_subject]), ...(T.entry_log || []).map(l => l.text),
     ...(T.doc_notes || []).map(n => n.text), ...(T.projects || []).map(p => p.notes), ...(T.contacts || []).map(c => c.notes), ...(T.items || []).map(i => i.notes)];
   for (const t of texts) {
     for (const [m, kind, id] of String(t || '').matchAll(REF_RE)) names[m] ||= db.prepare(REF_NAME[kind]).get(+id)?.n || null;
   }
-  // I file: documenti e allegati che ci sono davvero sul server.
+  // The files: documents and attachments that really are on the server.
   const stored = new Set([...(T.documents || []), ...(T.mail_attachments || [])].map(x => x.stored).filter(Boolean));
   const files = [...stored].filter(f => fs.existsSync(path.join(UPLOAD_DIR, f)))
     .map(f => ({ name: `files/${f}`, data: fs.readFileSync(path.join(UPLOAD_DIR, f)) }));
@@ -103,7 +103,7 @@ function cols(table) {
   return colsOf.get(table);
 }
 
-// Una riga nuova con le colonne che la tabella ha davvero (l'esportazione può venire da un'altra versione).
+// A new row with the columns the table really has (the export may come from another version).
 function insert(table, row) {
   const keys = Object.keys(row).filter(k => k !== 'id' && cols(table).includes(k) && row[k] !== undefined);
   const r = db.prepare(`INSERT OR IGNORE INTO "${table}" (${keys.map(k => `"${k}"`).join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`)
@@ -122,7 +122,7 @@ function importAll(meta, files, user) {
   const skip = area => { if (!n.saltati.includes(area)) n.saltati.push(area); };
   const has = name => (T[name] || []).length > 0;
   const mine = row => ({ ...row, created_by: uid, deleted_at: null, deleted_by: null });
-  // Collegamenti [[tipo:id]]: all'id nuovo, o al nome in chiaro se la cosa non è arrivata.
+  // [[kind:id]] links: to the new id, or to the plain name if the thing did not arrive.
   const refMap = { doc: 'documents', voce: 'entries', contatto: 'contacts', progetto: 'projects', mail: 'mail_threads', nota: 'doc_notes' };
   const fixRefs = s => (s == null ? s : String(s).replace(REF_RE, (m, kind, id) => {
     const to = M[refMap[kind]].get(+id);
@@ -136,7 +136,7 @@ function importAll(meta, files, user) {
     return name;
   };
 
-  // Magazzino: per codice (anche alternativo, anche nel cestino: in quel caso torna).
+  // Inventory: by code (also alternative, also in the trash: then it comes back).
   if (has('items') && !can('magazzino')) skip('magazzino');
   if (can('magazzino')) {
     for (const it of T.items || []) {
@@ -157,14 +157,14 @@ function importAll(meta, files, user) {
     }
     for (const c of T.category_colors || []) insert('category_colors', c);
   } else {
-    // Senza poter scrivere nel magazzino gli articoli che ci sono già servono comunque (documenti, voci).
+    // Without being able to write the inventory, the items already there are still needed (documents, entries).
     for (const it of T.items || []) {
       const hit = db.prepare('SELECT id FROM items WHERE code = ? AND deleted_at IS NULL').get(it.code);
       if (hit) M.items.set(it.id, hit.id);
     }
   }
 
-  // Documenti: quelli che l'articolo non ha già (stesso contenuto o stesso link), con il loro file.
+  // Documents: those the item does not have yet (same content or same link), with their file.
   if (has('documents') && !can('documenti')) skip('documenti');
   if (can('documenti')) {
     for (const k of T.doc_kinds || []) insert('doc_kinds', { ...k, created_by: uid });
@@ -176,13 +176,13 @@ function importAll(meta, files, user) {
         : d.sha256 && db.prepare('SELECT id FROM documents WHERE item_id = ? AND sha256 = ? AND deleted_at IS NULL').get(item, d.sha256);
       if (same) { M.documents.set(d.id, same.id); continue; }
       const stored = d.url ? null : copyFile(d.stored);
-      if (!d.url && !stored) continue; // il file non è nell'archivio
+      if (!d.url && !stored) continue; // the file is not in the archive
       M.documents.set(d.id, insert('documents', { ...mine(d), item_id: item, stored }));
       n.documenti++;
     }
   }
 
-  // Progetti (per tag) e contatti (per indirizzo).
+  // Projects (by tag) and contacts (by address).
   if (has('projects') && !can('progetti')) skip('progetti');
   if (can('progetti')) {
     for (const p of T.projects || []) {
@@ -210,7 +210,7 @@ function importAll(meta, files, user) {
     }
   }
 
-  // Posta: topic e conversazioni prima, perché le mail scritte qui ne fanno parte.
+  // Mail: topics and conversations first, because the mails written here belong to them.
   const mailOk = can('mail');
   if (has('mail_threads') && !mailOk) skip('mail');
   if (mailOk) {
@@ -218,12 +218,12 @@ function importAll(meta, files, user) {
     for (const t of T.mail_threads || []) {
       const id = insert('mail_threads', { ...t, owner_id: uid, topic_id: M.mail_topics.get(t.topic_id) ?? null, deleted_at: null, deleted_by: null });
       M.mail_threads.set(t.id, id);
-      if (id) ensureTopic(id); // senza il suo topic (es. esportazione di prima dei topic): uno nuovo
+      if (id) ensureTopic(id); // without its topic (e.g. an export from before topics): a new one
       n.conversazioni++;
     }
   }
 
-  // Note sui documenti prima delle voci, che possono citarle ([[nota:…]]); i loro testi si sistemano alla fine.
+  // Notes on documents before entries, which may mention them ([[nota:…]]); their texts are fixed at the end.
   if (can('documenti')) {
     for (const x of T.doc_notes || []) {
       const doc = M.documents.get(x.doc_id);
@@ -233,7 +233,7 @@ function importAll(meta, files, user) {
     }
   }
 
-  // Voci: le mie, con i loro aggiornamenti, progetti, articoli e collegamenti.
+  // Entries: mine, with their updates, projects, items and links.
   const kindOk = kind => can(kind === 'mail' ? 'mail' : 'voci');
   for (const e of T.entries || []) {
     if (!kindOk(e.kind)) { skip(e.kind === 'mail' ? 'mail' : 'voci'); continue; }
@@ -288,7 +288,7 @@ function importAll(meta, files, user) {
     }
   }
 
-  // Testi di note, progetti, contatti e articoli nuovi: collegamenti aggiornati.
+  // Texts of new notes, projects, contacts and items: links updated.
   for (const [table, map] of [['doc_notes', M.doc_notes], ['projects', M.projects], ['contacts', M.contacts], ['items', M.items]]) {
     const field = table === 'doc_notes' ? 'text' : 'notes';
     for (const row of T[table] || []) {
@@ -307,12 +307,12 @@ route('POST', '/api/import', async ({ req, user }) => {
     try {
       files = unzip(fs.readFileSync(file));
     } catch {
-      fail(400, 'Il file non è un\'esportazione di Organizer (serve il .zip scaricato da "Esporta i miei dati")');
+      fail(400, 'The file is not an Organizer export (it needs the .zip downloaded from "Export my data")');
     }
     const raw = files.get('organizer-export.json');
     const meta = raw && JSON.parse(raw().toString('utf8'));
-    if (meta?.format !== FORMAT) fail(400, 'Il file non è un\'esportazione di Organizer');
-    if (meta.version > 1) fail(400, 'L\'esportazione viene da una versione più nuova dell\'app: aggiorna prima l\'app');
+    if (meta?.format !== FORMAT) fail(400, 'The file is not an Organizer export');
+    if (meta.version > 1) fail(400, 'The export comes from a newer version of the app: update the app first');
     return tx(() => importAll(meta, files, user));
   } finally {
     fs.rmSync(file, { force: true });

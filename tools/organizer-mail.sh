@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Apre in Thunderbird una mail preparata in Organizer, con destinatari, oggetto, testo e allegati.
-# Il sistema lo invoca con un link del tipo:
-#   organizer-mail://open?server=https%3A%2F%2Fmac.tailnet.ts.net%2F&token=XXXX
-# Installazione: make mail-helper  (registra lo schema organizer-mail:// su macOS o Linux)
+# Opens in Thunderbird a mail prepared in Organizer, with recipients, subject, text and attachments.
+# The system invokes it with a link like:
+#   organizer-mail://open?server=https%3A%2F%2Forganizer.example.com%2F&token=XXXX
+# Installation: make mail-helper  (registers the organizer-mail:// scheme on macOS or Linux)
 #
-# Variabili utili: THUNDERBIRD=/percorso/thunderbird   ORGANIZER_INSECURE=1 (certificati self-signed)
+# Useful variables: THUNDERBIRD=/path/to/thunderbird   ORGANIZER_INSECURE=1 (self-signed certificates)
 set -euo pipefail
 
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/organizer-mail"
@@ -19,12 +19,12 @@ notify() {
     notify-send "Organizer Mail" "$1" || true
   fi
 }
-die() { log "ERRORE: $*"; notify "$*"; exit 1; }
+die() { log "ERROR: $*"; notify "$*"; exit 1; }
 urldecode() { local s="${1//+/ }"; printf '%b' "${s//%/\\x}"; }
 
 url="${1:-}"
-[[ "$url" == organizer-mail://* ]] || die "link non valido: $url"
-log "ricevuto $url"
+[[ "$url" == organizer-mail://* ]] || die "invalid link: $url"
+log "received $url"
 
 server=""; token=""
 IFS='&' read -ra pairs <<< "${url#*\?}"
@@ -34,20 +34,20 @@ for kv in "${pairs[@]}"; do
     token) token="${kv#*=}" ;;
   esac
 done
-[[ "$server" =~ ^https?://[^[:space:]]+$ ]] || die "indirizzo del server non valido"
-[[ "$token" =~ ^[A-Za-z0-9_-]{16,}$ ]] || die "token non valido"
+[[ "$server" =~ ^https?://[^[:space:]]+$ ]] || die "invalid server address"
+[[ "$token" =~ ^[A-Za-z0-9_-]{16,}$ ]] || die "invalid token"
 server="${server%/}"
 
 curl_opts=(-fsS --max-time 300)
 [[ "${ORGANIZER_INSECURE:-0}" == 1 ]] && curl_opts+=(-k)
 
-# Pulizia delle mail aperte nei giorni precedenti (Thunderbird copia gli allegati quando si invia).
+# Cleanup of the mails opened on previous days (Thunderbird copies the attachments when sending).
 find "$cache" -mindepth 1 -maxdepth 1 -type d -mtime +1 -exec rm -rf {} + 2>/dev/null || true
 dir="$cache/$token"
 rm -rf "$dir"
 mkdir -p "$dir"
 
-fetch() { curl "${curl_opts[@]}" "$server/api/mailpkg/$token/$1" -o "$2" || die "download fallito ($1) da $server"; }
+fetch() { curl "${curl_opts[@]}" "$server/api/mailpkg/$token/$1" -o "$2" || die "download failed ($1) from $server"; }
 fetch manifest "$dir/manifest"
 fetch body "$dir/body.html"
 
@@ -58,7 +58,7 @@ while IFS=$'\t' read -r key a b; do
     CC) cc="$a" ;;
     SUBJECT) subject="$a" ;;
     ATTACH)
-      [[ "$a" =~ ^[0-9]+$ && "$b" =~ ^[A-Za-z0-9._()+-]+$ ]] || die "allegato non valido: $b"
+      [[ "$a" =~ ^[0-9]+$ && "$b" =~ ^[A-Za-z0-9._()+-]+$ ]] || die "invalid attachment: $b"
       fetch "file/$a" "$dir/$b"
       attachments+="${attachments:+,}file://$dir/$b"
       ;;
@@ -82,8 +82,8 @@ else
     tb=(flatpak run org.mozilla.Thunderbird)
   fi
 fi
-[[ ${#tb[@]} -gt 0 ]] || die "Thunderbird non trovato (imposta THUNDERBIRD=/percorso/thunderbird)"
+[[ ${#tb[@]} -gt 0 ]] || die "Thunderbird not found (set THUNDERBIRD=/path/to/thunderbird)"
 
-log "apro ${tb[*]} -compose $compose"
-# Se Thunderbird è già aperto, la nuova istanza passa la richiesta a quella esistente.
+log "opening ${tb[*]} -compose $compose"
+# If Thunderbird is already open, the new instance passes the request to the existing one.
 nohup "${tb[@]}" -compose "$compose" >> "$logfile" 2>&1 &

@@ -1,26 +1,26 @@
-// Canali della chat: chi legge, chi scrive, quanti messaggi non letti. Senza dipendenze da api.js perché lo
-// usano sia le route della chat (chat.js) sia /api/sync.
-//   everyone = 1: tutti i membri del workspace leggono e scrivono (es. "generale");
-//   altrimenti chat_members, con can_write 0 per chi può solo leggere.
+// Chat channels: who reads, who writes, how many unread messages. Without dependencies on api.js because both the
+// chat routes (chat.js) and /api/sync use it.
+//   everyone = 1: all the workspace members read and write (e.g. "general");
+//   otherwise chat_members, with can_write 0 for those who can only read.
 import { db } from './db.js';
 
-export const CHAT_IN_SYNC = 100; // ultimi messaggi per canale in /api/sync; i precedenti con /api/chat?before=
+export const CHAT_IN_SYNC = 100; // last messages per channel in /api/sync; earlier ones with /api/chat?before=
 
-// Chi crea, rinomina, elimina i canali e ne sceglie le persone: gli admin e chi ha il permesso "canali".
+// Who creates, renames, deletes channels and picks their people: admins and whoever has the "channels" permission.
 export const canManageChannels = user => !!user?.is_admin || user?.perms?.canali === 'write';
 
-// I canali che l'utente legge, con can_write.
+// The channels the user reads, with can_write.
 export function myChannels(uid) {
   return db.prepare(`SELECT c.id, c.name, c.everyone, CASE WHEN c.everyone = 1 THEN 1 ELSE m.can_write END AS can_write
     FROM chat_channels c LEFT JOIN chat_members m ON m.channel_id = c.id AND m.user_id = $uid
     WHERE c.deleted_at IS NULL AND (c.everyone = 1 OR m.user_id IS NOT NULL) ORDER BY c.id`).all({ uid });
 }
 
-// Per l'ETag di /api/sync: cambia quando l'utente legge (le letture non mandano notifiche a nessuno).
+// For /api/sync's ETag: changes when the user reads (reads send no notifications to anyone).
 export const readKey = uid => db.prepare('SELECT COALESCE(SUM(read_id), 0) AS n FROM chat_reads WHERE user_id = ?').get(uid).n;
 
-// Canali, messaggi recenti e non letti per /api/sync. Chi gestisce i canali li vede tutti (per gestirli),
-// ma i messaggi solo di quelli in cui è dentro.
+// Channels, recent messages and unread counts for /api/sync. Whoever manages channels sees all of them (to manage
+// them), but the messages only of those they are in.
 export function chatSync(user) {
   const uid = user.id;
   const mine = myChannels(uid);
@@ -45,7 +45,7 @@ export function chatSync(user) {
   return { chatChannels: channels, chat, chatUnread: channels.reduce((n, c) => n + c.unread, 0), canManageChannels: manage };
 }
 
-// Chi legge il canale (per le notifiche): tutti i membri del workspace o le persone del canale; muted = silenziato.
+// Who reads the channel (for notifications): all the workspace members or the channel's people; muted = silenced.
 export function channelReaders(channelId) {
   const c = db.prepare('SELECT everyone FROM chat_channels WHERE id = ?').get(channelId);
   const ids = c?.everyone

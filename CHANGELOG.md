@@ -1,348 +1,265 @@
 # Changelog
 
-Le novità di ogni versione, dalla più recente. Le versioni sono i tag git (`v0.7`, `v0.6.2`…); il numero in `package.json` è lo stesso.
-Aggiornando non serve fare niente a mano: il database si migra da solo all'avvio (la versione dello schema è indicata quando cambia).
+What's new in each version, most recent first. Versions are the git tags (`v0.7`, `v0.6.2`…); the number in `package.json` is the same.
+Updating needs nothing by hand: the database migrates by itself at startup (the schema version is given when it changes).
+
+## 0.24.0 — 2026-11-06
+- **English and Italian**: the app, the server's messages and notifications, the guided tour, the CLI and the Thunderbird extension speak English, with Italian as a second language. In the app: Settings → App and help → Language (per device; by default the browser's language). Notifications arrive in the language each person last used. The CLI follows `ORG_LANG=it` or an Italian `LANG`; the extension follows Thunderbird's language. The quick bar understands the date words of both (`!tomorrow`, `!domani`, `!fri`, `!ven`, `!3d`, `!3g`…).
+- **Open source** under the AGPL-3.0 license; the bundled libraries and their licenses are listed in `THIRD-PARTY.md`.
+- Documentation in English: README, `docs/GUIDE.md` (was `GUIDA.md`), `docs/API.md`, `docs/DEPLOY.md`, `cli/README.md`.
+- CLI: the built-in document kinds also have English names (`schematic`, `manual`, `photo`, `other`); `org chat channels` (the old `canali` still works).
+- Makefile: `make reset-password NAME=…` and `make make-admin NAME=…` (was `UTENTE=`); destructive commands ask for "yes".
+- **Thunderbird extension 1.8**: in English and Italian. Download it again from Settings → Mail and Thunderbird and reinstall it (token and settings stay).
+- Account schema v10.
 
 ## 0.23.0 — 2026-11-05
-- **Alberi del magazzino**: nel Magazzino una terza vista disegna a grafo cosa compone cosa. Ogni articolo che ne contiene altri ha i suoi componenti a destra, collegati da linee, fino in fondo; il numero sulla scheda chiude o riapre un ramo; un articolo usato in più posti compare sotto ognuno. Il filtro tiene gli alberi che contengono gli articoli trovati (evidenziati); "Vedi l'albero" nella scheda di un articolo mostra solo i suoi.
-- **Spostare e copiare documenti** tra articoli: l'icona accanto al nome (nella scheda e nel visualizzatore) apre la ricerca dell'articolo con "Sposta in…" (il documento con le sue note) e "Copia in…" (un file nuovo, senza note). Il firmware con versione aggiorna anche l'articolo di destinazione. Dalla CLI: `org doc mv ID… CODICE` e `org doc cp ID… CODICE`.
-- **Zoom dei PDF con pinch e ctrl/⌘ + rotella**, attorno al punto sotto il puntatore (anche immagini e DXF). Mentre si ingrandisce le pagine si allargano subito e si ridisegnano nitide quando ti fermi.
-- **Mail e workspace**: nelle opzioni dell'estensione di Thunderbird scegli per ogni account di posta in quale workspace vanno le sue conversazioni nuove (senza scelta, il predefinito). Un topic già in Organizer si sposta in un altro workspace dal suo menu ⋯, con le conversazioni e le mail scritte qui; i collegamenti a cose del workspace di prima si perdono, quelli automatici si rifanno con il magazzino di là.
-- **Apri in Thunderbird** sotto ogni messaggio: lo apre in Thunderbird, in una scheda.
-- Per le ultime due serve l'**estensione di Thunderbird 1.7**: scaricala di nuovo da Impostazioni → Mail e reinstallala (token e impostazioni restano).
-- **Manda al primo clic**: prima, con il testo della mail in modifica, il primo clic chiudeva solo il campo (che ridisegnandosi spostava il tasto) e serviva un secondo clic.
-- La barra rapida resta attaccata all'intestazione mentre la pagina scorre: non c'è più la fessura da cui si vedeva il contenuto passare dietro.
+- **Inventory trees**: a third view in the Inventory draws what makes up what as a graph. Each item that contains others has its components on the right, linked by lines, all the way down; the number on the card collapses or reopens a branch; an item used in several places shows up under each one. The filter keeps the trees containing the items found (highlighted); "Show the tree" on an item's page shows only its own.
+- **Moving and copying documents** between items: the icon next to the name (on the item's page and in the viewer) opens the item search with "Move to…" (the document with its notes) and "Copy to…" (a new file, without notes). A firmware with a version also updates the destination item. CLI: `org doc mv ID… CODE` and `org doc cp ID… CODE`.
+- **PDF zoom with pinch and ctrl/⌘ + wheel**, around the point under the pointer (images and DXF too). Pages grow right away while zooming and are redrawn sharp when you stop.
+- **Mail and workspaces**: in the Thunderbird extension's options choose, for each mail account, which workspace its new conversations go to (no choice: the default one). A topic already in Organizer moves to another workspace from its ⋯ menu, with its conversations and the mails written here; links to things of the previous workspace are lost, the automatic ones are redone with the inventory over there.
+- **Open in Thunderbird** under each message opens it in Thunderbird, in a tab.
+- The last two need the **Thunderbird extension 1.7**.
+- **Send on the first click**: before, with the mail's text being edited, the first click only closed the field (which moved the button as it was redrawn).
+- The quick bar stays attached to the header while the page scrolls: no more gap where the content showed through.
 
 ## 0.22.0 — 2026-11-02
-- **Anteprima degli allegati ricevuti**: PDF, immagini, disegni DXF, modelli 3D, testi e tabelle CSV allegati a una mail si aprono con "anteprima" (o cliccando il nome) senza salvarli: il file arriva da Thunderbird in qualche secondo. Dall'anteprima "→ magazzino" li salva in un articolo subito, senza richiederli a Thunderbird; indietro (o Esc) torna alla mail da cui l'hai aperta. "→ magazzino" resta anche accanto a ogni allegato. Serve l'**estensione di Thunderbird 1.6**: scaricala di nuovo da Impostazioni → Mail e reinstallala (token e impostazioni restano).
-- **Meno "offline" per niente**: una richiesta interrotta (Safari ne perde qualcuna al risveglio del Mac o quando cambia rete) non mette più l'app offline se il server risponde; si riprova e basta. Quando il server sta ripartendo per un aggiornamento la barra lo dice ("il server non risponde") invece di "sei offline", e appena torna l'app riapre da sola il tempo reale (prima poteva restare su "riconnessione…" finché non la rimettevi in primo piano).
+- **Preview of received attachments**: PDFs, images, DXF drawings, 3D models, texts and CSV tables attached to a mail open with "preview" (or by clicking the name) without saving them: the file arrives from Thunderbird in a few seconds. From the preview "→ inventory" saves it in an item right away; back (or Esc) returns to the mail. Needs the **Thunderbird extension 1.6**.
+- **Fewer false "offline"**: an interrupted request (Safari loses some when the Mac wakes up or the network changes) no longer puts the app offline if the server answers; it simply retries. While the server restarts for an update the bar says "the server does not answer" instead of "you are offline", and as soon as it is back the app reopens real-time updates by itself.
 
 ## 0.21.3 — 2026-11-02
-- **Nuova mail dalla pagina del topic**: sotto l'elenco delle conversazioni, un tasto apre una conversazione nuova nello stesso topic con la bozza già pronta a destra.
-- Una mail scritta qui, finché la sua conversazione non ha altri messaggi, dà alla conversazione il suo oggetto (o il titolo) anche quando lo cambi dopo averla creata.
+- **New mail from the topic page**: under the list of conversations, a button opens a new conversation in the same topic with the draft ready on the right.
+- A mail written here gives its conversation its subject (or title), as long as the conversation has no other messages, even when changed later.
 
 ## 0.21.2 — 2026-11-01
-- **Markdown anche fuori dal magazzino**: dettagli di todo e diario (anche quelle fatte da più di 30 giorni), note di progetti e contatti e note sui documenti si leggono formattate, come le note degli articoli. Il testo delle mail resta semplice, perché parte così com'è.
+- **Markdown outside the inventory too**: details of todos and journal notes, notes of projects and contacts and notes on documents read formatted, like item notes. The text of mails stays plain, because it goes out as it is.
 
 ## 0.21.1 — 2026-11-01
-- Le tabelle CSV con tante colonne si scorrono di lato invece di stringersi nella finestra (prima le celle andavano a capo lettera per lettera): ogni colonna è larga quanto il suo contenuto, fino a circa 420 px, e i testi lunghi vanno a capo fra le parole. Intestazione e numeri di riga restano fissi sul bordo.
+- CSV tables with many columns scroll sideways instead of squeezing into the window: each column is as wide as its content, up to about 420 px, and long texts wrap between words. Header and row numbers stay fixed on the edge.
 
 ## 0.21 — 2026-11-01
-- **Scarica tutti**: nella sezione Documenti di un articolo, con più file, un tasto li scarica tutti in un `.zip` (`CODICE-documenti.zip`) con i nomi dati nell'app.
-- **Visualizzatore di tabelle** per i file `.csv`, `.tsv` e `.scsv`: colonne in tabella, righe zebrate, intestazione fissa e numero di riga; separatore riconosciuto da solo, virgolette gestite, CSV di Excel (Windows-1252) con gli accenti giusti. ⌘F cerca anche nelle celle. Nella pagina Documenti l'anteprima al passaggio del mouse mostra le prime righe.
+- **Download all**: in an item's Documents section, with several files, a button downloads them all in a `.zip` (`CODE-documents.zip`) with the names given in the app.
+- **Table viewer** for `.csv`, `.tsv` and `.scsv` files: columns in a table, zebra rows, fixed header and row numbers; separator recognised by itself, quotes handled, Excel CSVs (Windows-1252) with the right accents. ⌘F searches the cells too. On the Documents page the hover preview shows the first rows.
 
 ## 0.20.5 — 2026-11-01
-- **Nuovo stato degli articoli: "in valutazione"** (pallino blu), oltre ad attivo, outdated e scartato: si sceglie nella scheda, compare negli elenchi e ha il suo filtro in cima al magazzino. Dalla CLI: `org item set CODICE -s valutazione`. Sul telefono gli stati stanno su una riga loro, così il codice dell'articolo resta leggibile.
-- **Note degli articoli in Markdown**: titoli (`#`, `##`, `###`), **grassetto**, *corsivo*, ~~barrato~~, `codice`, elenchi puntati e numerati (anche annidati), caselle (`- [ ]` / `- [x]`), citazioni (`>`), blocchi di codice (```` ``` ````), linee (`---`) e link `[testo](url)`. I `#CODICI`, gli indirizzi e i collegamenti `[[…]]` restano cliccabili; `#CODICE` attaccato non diventa un titolo.
-- Tolti i pulsanti "Documenti" nel magazzino e "Magazzino" nei documenti: ci si arriva dalla barra laterale e, sul telefono, dalla barra in basso.
+- **New item status "being evaluated"** (blue dot), besides active, outdated and discarded: chosen on the item's page, shown in the lists, with its own filter. CLI: `org item set CODE -s evaluation`. On the phone the statuses sit on their own row, so the item's code stays readable.
+- **Item notes in Markdown**: headings, bold, italic, strikethrough, code, bulleted and numbered lists (nested too), checkboxes, quotes, code blocks, rules and links. `#CODES`, addresses and `[[…]]` links stay clickable.
+- Removed the "Documents" button in the inventory and "Inventory" in the documents: the sidebar and, on the phone, the bottom bar lead there.
 
 ## 0.20.4 — 2026-10-30
-- Nei suggerimenti (e nella barra comandi) l'etichetta del tipo è larga quanto la più lunga della lista: con soli articoli resta stretta, con "nota su file" si allarga, e i nomi partono sempre dalla stessa colonna.
+- In the suggestions (and the command bar) the kind label is as wide as the longest in the list, so the names always start from the same column.
 
 ## 0.20.3 — 2026-10-30
-- **Ricerca nei PDF (⌘F) di nuovo funzionante in Safari e nell'app installata dal Dock**: il testo si leggeva con un costrutto che Safari non supporta ("undefined is not a function"), così nessuna pagina risultava leggibile.
-- Nei suggerimenti l'etichetta del tipo ha sempre la stessa larghezza: i nomi accanto partono tutti dalla stessa colonna.
+- **PDF search (⌘F) works again in Safari and in the app installed from the Dock**: the text was read with a construct Safari does not support, so no page was readable.
 
 ## 0.20.2 — 2026-10-30
-- **Ricerca nei PDF (⌘F) sistemata** per i PDF con font asiatici, frequenti nei datasheet: mancavano le tabelle dei caratteri di PDF.js (cMaps), e quel testo non si leggeva né per la ricerca né per la selezione. Aggiunte anche le tabelle dei colori (ICC). Se la lettura fallisce lo stesso, la barra dice il motivo.
-- **Suggerimenti più informativi** (`[[`, `#`, `@`, `>` e la barra comandi): sotto il nome una seconda riga con il contesto. Una nota su un file dice articolo, documento, chi l'ha scritta e il testo evidenziato; un documento l'articolo, la versione e le note aperte; una todo progetti, scadenza, assegnatario e articoli; una conversazione topic, messaggi e ultimo messaggio; un articolo categoria, posizione, firmware, codici alternativi e documenti; un progetto il progetto padre e le voci aperte. I collegamenti nei titoli si leggono con il loro nome.
-- **Menu dei suggerimenti largo quanto serve** (fino a 960 px su desktop), anche quando il campo è stretto o a destra, come le note di un documento: si allarga verso sinistra. Sul telefono prende tutta la larghezza.
-- Ricerca nei documenti (⌘F) più tollerante: maiuscole, accenti, spazi (anche quelli non separabili dei PDF) e trattini tipografici non contano. Se un PDF non ha testo (una scansione) o il testo non si legge, la barra lo dice invece di "nessun risultato".
+- **PDF search fixed** for PDFs with Asian fonts, frequent in datasheets: PDF.js's character tables (cMaps) and colour tables (ICC) are now bundled. If reading fails anyway, the bar says why.
+- **More informative suggestions** (`[[`, `#`, `@`, `>` and the command bar): a second line with the context (item, version, open notes, projects, due date, topic, category, location…).
+- **Suggestions menu as wide as needed** (up to 960 px), growing to the left when the field is narrow or on the right; full width on the phone.
+- Search in documents is more forgiving: case, accents, spaces (the PDFs' non-breaking ones too) and typographic dashes do not count. A PDF without text (a scan) says so instead of "no results".
 
 ## 0.20.1 — 2026-10-30
-- Il menu dei suggerimenti (`[[`, `#`, `@`, `+`…) scorre insieme alla selezione con le frecce, ed è più largo (fino a 720 px): titoli e dettagli si leggono per intero.
+- The suggestions menu scrolls along with the selection when using the arrows, and it is wider (up to 720 px).
 
 ## 0.20 — 2026-10-30
-- **Note su un pezzo di testo nei PDF**: trascinando sul testo (o con doppio o triplo clic) la nota si attacca a quel testo, che resta evidenziato nel documento e citato nella nota; il clic su un punto per una nota lì resta com'è. Cliccando il testo evidenziato si apre la sua nota. Sul telefono: tieni premuto per selezionare, poi **Nota sul testo**. La citazione compare anche in `org doc notes` e nella todo creata dalla nota.
-- **Citare una nota di un documento con `[[`**: le note sui file (anche quelle su un pezzo di testo) compaiono nei suggerimenti di `[[` e nella barra comandi come "nota su file"; il link `[[nota:ID]]` apre il documento sulla nota, e la nota selezionata mostra le voci che la citano ("Citata in"). Una nota non condivisa con te si vede come "non hai permessi sufficienti". Funziona anche nell'esportazione e importazione dei dati.
-- Schema dati v23.
+- **Notes on a piece of text in PDFs**: dragging over the text (or double/triple click) attaches the note to that text, which stays highlighted in the document and quoted in the note. Clicking the highlighted text opens its note. On the phone: hold to select, then **Note on the text**. The quote also shows in `org doc notes` and in the todo created from the note.
+- **Quoting a note on a document with `[[`**: notes on files show up in the `[[` suggestions and in the command bar as "note on file"; `[[nota:ID]]` opens the document on the note, and the selected note shows the entries that quote it. A note not shared with you shows as "not enough permissions". It also works in data export and import.
+- Data schema v23.
 
 ## 0.19 — 2026-10-30
-- **Esporta e importa i tuoi dati** (Impostazioni → I tuoi dati, per tutti, non solo gli admin): un `.zip` con tutto il magazzino e i documenti (con i file) e quello che hai creato tu, posta compresa; niente cose private degli altri. Importandolo in un altro workspace, o su un altro server, i dati si aggiungono senza sovrascrivere: articoli già presenti restano come sono e prendono solo i documenti mancanti, progetti con lo stesso tag e contatti con la stessa mail si uniscono, i collegamenti `[[…]]` si aggiornano. Le aree in cui non puoi scrivere si saltano.
+- **Export and import your data** (Settings → Your data, for everyone, not only admins): a `.zip` with the whole inventory and documents (with the files) and what you created, mail included; nothing private of other people. Importing it into another workspace, or on another server, adds the data without overwriting: items already there stay as they are and only get the documents they lack, projects with the same tag and contacts with the same email are merged, `[[…]]` links are updated. The areas you cannot write to are skipped.
 
 ## 0.18.1 — 2026-10-30
-- Correzione: il logo in alto a sinistra (barra laterale e pagina di accesso) usa l'icona dell'app scelta e cambia subito.
+- Fix: the logo at the top left (sidebar and sign-in page) uses the chosen app icon and changes right away.
 
 ## 0.18 — 2026-10-30
-- **Icona dell'app a scelta** (Impostazioni → Aspetto): una per ogni tema (le funky con lo sfondo sfumato) e alcune minimal (spunta nera, bianca o verde, punto, cerchio, casella), scelte indipendentemente dal tema; "Automatica" segue il tema. Vale per il dispositivo: cambia subito l'icona della scheda del browser e quella che il sistema prende quando installi l'app. Per l'app già installata va rimossa e aggiunta di nuovo (con Chrome su Android a volte si aggiorna da sola).
-- Le icone le disegna il server, in SVG e PNG nelle misure che servono, senza file in più.
+- **Choosable app icon** (Settings → Appearance): one per theme and some minimal ones, independent from the theme; "Automatic" follows the theme. Per device: the browser tab's icon changes right away, and so does the one the system takes when you install the app. The server draws the icons, in SVG and PNG at the sizes needed.
 
 ## 0.17.6 — 2026-10-30
-- **Codici di 2 caratteri**: una lettera e una cifra (`Q5`, `R1`) si collegano da soli nelle mail, come parola a sé (non dentro `Q55`). Le sigle di sole lettere o sole cifre restano escluse.
-- All'avvio il server ricontrolla i collegamenti automatici delle conversazioni attive con le regole della versione: chi aggiorna non deve fare niente.
+- **2-character codes**: a letter and a digit (`Q5`, `R1`) link themselves in mails, as a word of their own. Letters-only or digits-only names stay excluded.
+- At startup the server rechecks the automatic links of the active conversations with the version's rules.
 
 ## 0.17.5 — 2026-10-30
-- **Collegamenti che non valgono più**: se il codice di un articolo cambia o gli si toglie un codice alternativo, le conversazioni di mail attive che non lo citano più perdono il collegamento automatico. Quelli messi a mano restano. Anche una conversazione che torna attiva viene ripulita così.
+- **Links that no longer apply**: if an item's code changes or an alternative code is removed, the active mail conversations that no longer mention it lose the automatic link. Manual ones stay.
 
 ## 0.17.4 — 2026-10-30
-- **Collegamenti delle mail sempre aggiornati**: quando nasce un articolo, ne cambia il codice o gli si aggiunge un codice alternativo, le conversazioni di mail attive che lo citano (anche scritto alla buona) gli si collegano da sole. Quelle archiviate si ricontrollano per intero quando tornano attive. I collegamenti tolti a mano non tornano.
+- **Mail links always up to date**: when an item is born, its code changes or it gets an alternative code, the active mail conversations that mention it (even written loosely) link to it by themselves. Archived ones are rechecked when they become active again. Links removed by hand do not come back.
 
 ## 0.17.3 — 2026-10-30
-- Mail: nelle schede dei topic non c'è più il pallino per cambiare colore (si cambia aprendo il topic); la scheda mostra il colore nel bordo in alto.
+- Mail: the topic cards no longer have the dot to change colour (it is changed by opening the topic); the card shows the colour in its top border.
 
 ## 0.17.2 — 2026-10-30
-- **Codici scritti alla buona**: nelle mail un codice di magazzino con dei numeri si collega anche scritto senza trattini, punti o barre e senza gli zeri davanti ai numeri: `sch44`, `SCH.044` e `sch-44` trovano SCH-44. Vale per i codici principali e per quelli alternativi.
-- Correzione: nella barra comandi le persone di una conversazione compaiono una volta sola.
+- **Codes written loosely**: in mails an inventory code with digits also links when written without dashes, dots or slashes and without leading zeros: `sch44`, `SCH.044` and `sch-44` find SCH-44. Main and alternative codes alike.
+- Fix: in the command bar the people of a conversation show up only once.
 
 ## 0.17.1 — 2026-10-30
-- **Temi nuovi** (Impostazioni → Aspetto): Monokai Pro, Ayu Mirage, Night Owl, Material Palenight tra gli scuri; Rosé Pine Dawn e Ayu Light tra i chiari.
-- **Temi funky**, in una sezione loro: Synthwave '84, Vaporwave, Matrix, Terminale ambra, Cobalt2, Shades of Purple, Halloween, Bubblegum, Sorbetto e Limonata. Alcuni hanno lo sfondo sfumato dietro ai pannelli, l'accento luminoso (pulsanti, menu e titoli), angoli più tondi; Matrix e Terminale ambra usano il carattere da terminale.
+- **New themes**: Monokai Pro, Ayu Mirage, Night Owl, Material Palenight among the dark ones; Rosé Pine Dawn and Ayu Light among the light ones.
+- **Funky themes**, in a section of their own: Synthwave '84, Vaporwave, Matrix, Amber terminal, Cobalt2, Shades of Purple, Halloween, Bubblegum, Sorbet and Lemonade, some with gradient backgrounds, glowing accents, rounder corners or the terminal font.
 
 ## 0.17 — 2026-10-30
-- **Barra in basso su telefono rifatta**: Progetti, Agenda, Magazzino, Mail, Impostazioni. Tenendo premuto un tasto si apre attorno al dito un menu radiale con le altre pagine del gruppo (Diario; Documenti; Contatti e Chat; Cestino, Novità, Feedback): scorrendo su una la si apre e prende il posto del tasto. Il menu si apre lontano dal dito e verso il centro dello schermo, così il dito non lo copre. Chat e Impostazioni non stanno più in alto.
-- **Barra comandi** (⌘K o ⌘P, su telefono toccando "Cerca"): apre al volo pagine, voci, conversazioni di mail (anche cercando nel testo), articoli, documenti, progetti e contatti, con la ricerca di `[[`; "Cerca ovunque" porta alla pagina Cerca.
-- **Barra laterale riordinata**: Progetti, Agenda (Diario), Magazzino (Documenti), Mail (Contatti), Chat; Cestino e Impostazioni in fondo, con Novità e Feedback.
-- **Contatti da salvare**: regole per ignorare in un colpo tutti gli indirizzi o i nomi che contengono un pezzo (`noreply`, `@amazon.it`…). Le regole e gli indirizzi ignorati sono dell'account e valgono su tutti i dispositivi (quelli ignorati prima su un dispositivo ci passano da soli).
-- **Schede chiudibili su telefono** in Magazzino, Documenti e Mail: "Chiudi tutto" lascia le intestazioni con il loro numero (a destra), toccandone una si apre solo quella.
-- **Chat su telefono**: la barra per scrivere resta ferma in fondo, subito sopra la barra del menu; i messaggi scorrono sopra.
-- Correzione: "Rispondi" e "Rispondi a tutti" aprono subito la bozza da scrivere (prima, arrivando da un link, si tornava alla mail).
-- Correzione: con tante notifiche le righe della campanella si schiacciavano una sull'altra (soprattutto su telefono); ora la lista scorre e le righe sono più ariose. Su telefono anche i tag dei progetti dei topic vanno su una riga loro.
-- Account v9.
+- **Phone bottom bar redone**: Projects, Agenda, Inventory, Mail, Settings. Holding a button opens a radial menu around the finger with the group's other pages; sliding onto one opens it and it takes the button's place.
+- **Command bar** (⌘K or ⌘P, on the phone tapping "Search"): opens pages, entries, mail conversations (searching their text too), items, documents, projects and contacts on the fly; "Search everywhere" leads to the Search page.
+- **Sidebar reordered**: Projects, Agenda (Journal), Inventory (Documents), Mail (Contacts), Chat; Trash and Settings at the bottom, with What's new and Feedback.
+- **Contacts to save**: rules to ignore in one go all the addresses or names containing a piece (`noreply`, `@amazon.com`…). Rules and ignored addresses belong to the account and apply on all devices.
+- **Collapsible cards on the phone** in Inventory, Documents and Mail.
+- **Chat on the phone**: the bar for writing stays at the bottom, right above the menu bar.
+- Fixes: "Reply" and "Reply all" open the draft right away; with many notifications the bell's rows no longer squash together.
+- Account schema v9.
 
 ## 0.16.1 — 2026-10-29
-- Correzione: nella pagina di un topic, su schermi non larghissimi, l'albero delle mail (che resta in vista scorrendo) finiva sopra la colonna dei collegamenti. Ora l'albero ha la sua colonna a sinistra e mail e collegamenti stanno uno sotto l'altro a destra.
+- Fix: on a topic page, on screens that are not very wide, the mail tree ended up on top of the links column.
 
 ## 0.16 — 2026-10-29
-- **Posta rifatta a topic e conversazioni.** Si riparte da zero: in Organizer restano solo le mail scritte qui (con le loro conversazioni), il resto lo ricarica Thunderbird.
-  - **Primo collegamento**: l'estensione carica l'ultimo mese da tutte le cartelle (tranne spam, cestino e bozze), con i messaggi più vecchi citati; vale per ogni persona nuova e, questa volta, per tutti.
-  - **Conversazioni ad albero**: ogni risposta sotto la mail a cui risponde, anche a destinatari diversi. Senza riferimenti (Outlook e simili) una mail va nella conversazione con lo stesso oggetto e una persona in comune.
-  - **Topic**: raccolgono una o più conversazioni; di base una ciascuno. Nella pagina Mail si trascina una conversazione su un altro topic per unirle. Stella e colore (automatico) per topic e conversazioni.
-  - Un **segnalino** con il numero di mail da leggere sta in alto a destra di ogni conversazione e di ogni topic, nelle schede e nell'albero; nell'albero ogni mail da leggere ha il suo pallino.
-  - **Archiviare** vale per la singola conversazione; il topic va in archivio quando lo sono tutte e torna attivo con loro.
-  - **Pagina del topic**: albero a sinistra, mail scelta al centro (Rispondi, Rispondi a tutti, bozze), a destra collegamenti, persone e allegati della conversazione.
-  - Anche il **topic intero** si collega a un progetto (o a un articolo, un documento…), nella colonna a destra: vale per tutte le sue conversazioni, compare nel progetto e nei filtri per progetto.
-  - **Collegamenti automatici** da codici di magazzino (anche alternativi) e progetti negli oggetti e nei testi, e da quello che citi nelle mail scritte qui; si tolgono con la × e non tornano.
-- **Ricerca con `[[`**: più parole, ognuna in un campo qualsiasi (titolo, persone con il nome in rubrica o l'indirizzo, testo, tipo come "mail" o "documento", codici anche alternativi, versioni). Si possono citare anche le **conversazioni di mail** ricevute, cercando anche nel loro testo intero: `[[marco mail 500mA`. Nella conversazione citata compare "Citata in"; chi non la riceve vede "non hai permessi sufficienti".
-- **Allegati e magazzino**: "Dal magazzino…" apre un modale con la ricerca dei documenti (nome, codice, articolo, tipo, versione); ogni allegato ricevuto ha "→ magazzino" con un modale per scegliere articolo e tipo.
-- **Estensione per Thunderbird 1.5**: caricamento dell'ultimo mese e versione mostrata in Impostazioni (con un avviso se è vecchia). Va riscaricata e reinstallata.
-- Schema dati v22, account v8.
+- **Mail redone as topics and conversations.** Starting from scratch: Organizer keeps only the mails written here, Thunderbird loads the rest again.
+  - **First connection**: the extension loads the last month from all folders (except spam, trash and drafts), with the older messages they quote.
+  - **Conversations as trees**: each reply under the mail it replies to. Without references (Outlook and the like) a mail goes into the conversation with the same subject and a person in common.
+  - **Topics** gather one or more conversations; drag a conversation onto another topic to merge them. Star and colour for topics and conversations; unread counters on each.
+  - **Archiving** applies to the single conversation; the topic is archived when all of them are.
+  - **Topic page**: tree on the left, the chosen mail in the middle (Reply, Reply all, drafts), links, people and attachments on the right. The whole topic can be linked to a project, an item, a document…
+  - **Automatic links** from inventory codes (alternative ones too) and projects in subjects and texts; removed with the × and they do not come back.
+- **Search with `[[`**: several words, each in any field (title, people, text, kind, codes, versions). Received **mail conversations** can be quoted too, searching their full text.
+- **Attachments and inventory**: "From the inventory…" opens a document search dialog; each received attachment has "→ inventory".
+- **Thunderbird extension 1.5**. Data schema v22, account schema v8.
 
 ## 0.15 — 2026-10-29
-- **Mail a thread**: la pagina Mail mostra le conversazioni come schede su più colonne, divise in **Attivi** e **Archiviati**, con i filtri per stato (da leggere, da mandare, in attesa di risposta), allegati e progetto. Ogni scheda dice chi scrive, l'inizio dell'ultimo messaggio, i progetti e gli articoli collegati.
-  - Aprire un thread lo **legge** e basta: resta dov'è. Il tasto a sinistra della scheda (o "Archivia" nel thread) lo **archivia**; torna attivo da solo se arriva o parte un nuovo messaggio.
-  - Nella pagina del thread: i messaggi in ordine (i più vecchi raccolti in "messaggi precedenti"), **Rispondi** e **Rispondi a tutti** che preparano la bozza lì sotto, "Nuova mail nel thread", gli allegati ricevuti con "→ magazzino".
-  - **Collegamenti**: nella colonna a destra colleghi il thread ad articoli (`#codice`), progetti (`@progetto`), documenti, contatti e voci (`[[`). Un codice di magazzino scritto in una mail ricevuta si collega da solo, e così quello che citi nelle mail che scrivi. L'articolo, il progetto, il documento o il contatto mostrano i suoi thread in "Thread di mail".
-  - Quando arriva o parte una risposta a mail vecchie che Organizer non ha, l'estensione di Thunderbird gli passa anche quelle: il thread è completo.
-  - **Rinomina** ed **Elimina**: dal menu ⋯ della scheda o accanto al titolo del thread. Eliminato, il thread va nel **cestino** con le mail scritte in Organizer che ne fanno parte, e si ripristina tutto insieme; in Thunderbird le mail restano, e se le ripassa non riaprono il thread.
-  - Le mail ricevute e quelle già in Organizer diventano thread da sole (le ricevute già lette tra gli archiviati).
-- **Porta il thread in Organizer**: in Thunderbird, tasto destro su una mail (anche vecchia, in Archivio o in qualunque cartella) → "Porta il thread in Organizer". Arriva tutta la conversazione: i messaggi prima di quella mail e tutte le risposte dopo (cercate per oggetto), in un thread solo, già letti ma tra gli **attivi**. Un thread che c'era già torna attivo e si completa.
-- **Estensione per Thunderbird 1.4**: serve per i thread e per "Porta il thread in Organizer". Scaricala di nuovo da Impostazioni → Mail e Thunderbird e reinstallala (Thunderbird chiede il nuovo permesso per il menu): token e impostazioni restano.
-- **Disegni DXF**: si vedono nel visualizzatore dei documenti, con zoom fino a 12× e le note nei punti, come i PDF. Su carta bianca: linee, polilinee con raccordi, cerchi, archi, ellissi, spline, testi, blocchi e quote; i layer spenti non si vedono. Nella pagina Documenti c'è anche l'anteprima piccola.
-- **Giro di Organizer**: alla prima entrata l'app chiede "Vuoi fare il giro?"; si rifà da Impostazioni → App e aiuto. Il giro mostra le parti dell'app una alla volta, sull'app vera, in un workspace di prova solo tuo con contenuti finti (Anna e Luca non esistono). Alla fine lo elimini con un clic (e torni al tuo) o lo tieni per provare ancora; nel menu dei workspace è segnato "di prova".
-- **Barra laterale a gruppi**: Agenda con Diario, Progetti, Mail con Contatti, Magazzino con Documenti, Chat; le voci sotto sono rientrate e i gruppi separati da una linea leggera.
-- **Suggerimenti più tolleranti**: basta un pezzo di quello che cerchi, anche saltando lettere: `#almar` trova ALDO-MARCO-LUIGI, `#sch42` trova SCH-042. Vale per articoli, progetti, persone, contatti, categorie e collegamenti `[[`.
-- Correzione: togliere una persona da un workspace (o eliminare il workspace di prova) mentre aveva l'app aperta poteva fermare il server.
-- Schema dati v20, account v7.
+- **Threaded mail**: the Mail page shows the conversations as cards on several columns, **Active** and **Archived**, with filters (unread, to send, awaiting reply), attachments and project. Opening a thread reads it; archiving it is a button; a new message makes it active again. Links to items, projects, documents, contacts and entries; an inventory code written in a received mail links itself. Earlier mails Organizer does not have are passed by the extension, so the thread is complete. Rename and delete (to the trash, with the Organizer mails).
+- **Bring the thread into Organizer**: in Thunderbird, right click on a mail (even old, in any folder) brings the whole conversation, the messages before and the replies after.
+- **Thunderbird extension 1.4**.
+- **DXF drawings** in the document viewer, with zoom up to 12× and notes on points.
+- **Organizer tour**: at the first entry the app offers a guided tour, on the real app, in a test workspace with fake content; at the end it is deleted with one click.
+- **Grouped sidebar** and **more forgiving suggestions** (`#sch42` finds SCH-042).
+- Fix: removing a person from a workspace while they had the app open could stop the server.
+- Data schema v20, account schema v7.
 
 ## 0.14 — 2026-10-29
-- **Notifiche**: la campanella in alto raccoglie le ultime, con il numero di quelle da leggere; aprendone una si va dove serve, anche in un altro workspace. Arrivano:
-  - a chi viene **citato** con +persona in una voce, in un aggiornamento, in una nota su un documento o in chat, e a chi riceve una voce **assegnata** (++persona o menu Assegnata) o **condivisa**;
-  - quando **arriva una mail** nella posta in arrivo (estensione di Thunderbird) o una risposta a una tua conversazione;
-  - per **ogni messaggio** dei canali in cui sei; nei canali **silenziati** (pulsante "Silenzia" nel canale o Impostazioni → Notifiche) solo quando ti citano.
-- **Notifiche di sistema**: Impostazioni → Notifiche → "Attiva le notifiche" su ogni dispositivo (Mac, iPhone con l'app installata sulla schermata Home, Android, browser): arrivano anche ad app chiusa, con "Manda una prova". I messaggi dello stesso canale si sostituiscono invece di accumularsi.
-- Aprendo una voce o leggendo un canale le sue notifiche si segnano lette; mentre l'app è aperta le nuove compaiono anche in basso.
-- `+persona` in un aggiornamento resta scritto, cita la persona e (se la voce è tua) gliela condivide.
-- Chi entra nel workspace o in un canale trova letti i messaggi di prima.
-- Schema dati v18, account v6.
+- **Notifications**: the bell at the top gathers the latest ones, with the unread count. They arrive for mentions (+person in entries, updates, notes on documents, chat), assigned or shared entries, incoming mail and replies, and every message of your channels (in **muted** channels only mentions).
+- **System notifications** on each device (Mac, iPhone with the app on the Home Screen, Android, browsers), even with the app closed, with "Send a test".
+- Opening an entry or reading a channel marks its notifications as read.
+- Data schema v18, account schema v6.
 
 ## 0.13.1 — 2026-10-29
-- **Menu a comparsa**: Tipo, Scadenza (o Data per le note), Assegnata e Visibile a si aprono come un menu accanto al pulsante, con la stessa grafica del menu dei tipi di documento. Scadenza: oggi, domani, lunedì prossimo, tra una settimana, tra un mese, un'altra data o nessuna. Visibile a: solo io, tutti, persona per persona (resta aperto mentre si scelgono). Si chiudono cliccando fuori o con Esc; ↑↓ per spostarsi.
-- **Citazioni non accessibili**: in chat e negli altri testi, un collegamento a qualcosa che non è condiviso con te (o a un'area che non puoi vedere) mostra "Nota: non hai permessi sufficienti" invece di "voce 12". Le voci archiviate mostrano il loro titolo, quelle eliminate "voce eliminata".
-- Correzione (da un feedback): scrivendo una nota su un documento, `+persona` ora suggerisce le persone (serve a condividerla).
+- **Pop-up menus** for Kind, Due date, Assigned and Visible to, like the document kinds menu.
+- **Inaccessible quotes**: a link to something not shared with you shows "not enough permissions"; archived entries show their title, deleted ones "entry deleted".
+- Fix: in a note on a document `+person` suggests the people.
 
 ## 0.13 — 2026-10-29
-- **Tutto è privato di chi lo crea**, tranne magazzino e documenti: todo, diario, mail, progetti, contatti e note sui documenti li vede solo chi li ha creati (e chi ha una voce assegnata). Vale anche per gli admin. I dati già esistenti diventano privati di chi li aveva creati; chi aveva una voce assegnata la vede ancora.
-- **Condividere**: `+marco` la rende visibile anche a Marco, `++marco` la condivide e gliela assegna, `+all` (o `+tutti`) la rende visibile a tutti, anche a chi entrerà dopo. Funziona nella barra in alto, nel titolo di una voce, nella barra dei progetti e nel testo delle note sui documenti; i suggerimenti propongono le persone e +all. In ogni voce, progetto, contatto e nota c'è **"Visibile a"**: chi l'ha creato sceglie con chi condividerlo e può togliere la condivisione. Nelle righe si vede di chi è una voce non tua e con chi hai condiviso le tue. "all" e "tutti" non possono più essere nomi utente.
-- **Chat a canali**: la chat di prima è #generale (di tutti). Si creano canali con le persone scelte, ognuna che legge o anche scrive; i non letti sono per canale. Li gestiscono gli admin e chi ha il nuovo permesso **"Gestire i canali"** (Impostazioni → Permessi, di base no). CLI: `org chat -c canale`, `org chat canali`.
-- **Feedback**: accanto a Novità (su telefono in Impostazioni → App e aiuto) si segnala un errore o un'idea, con testo e screenshot (scelti, trascinati o incollati con ⌘V); pagina, versione e browser si aggiungono da soli. Li rivede chi gestisce l'istanza (admin del primo workspace) nella pagina Feedback, o con `make feedback` che li esporta in `feedback/`.
-- **Impostazioni rifatte**: categorie a sinistra (Account, Aspetto, Privacy e condivisione, Mail e Thunderbird, Workspace e persone, Permessi, CLI e token, Barra rapida, App e aiuto, Backup) e riquadri a destra; su telefono un elenco che apre una pagina per volta. Controlli più grandi, titoli e etichette per la lettura da tastiera e con lettori di schermo.
-- **Offline**: senza rete si possono creare todo (in Agenda) e note (nel Diario). Restano in coda con "in coda offline" e finché non partono si possono modificare, segnare fatte o eliminare; tutto il resto si legge soltanto (una barra in alto lo spiega). Al ritorno della rete partono da sole, senza doppioni anche se l'invio si interrompe. Solo voci nuove: niente da mettere d'accordo con le modifiche fatte da altri.
-- **Inviti come link**: in Impostazioni → Workspace e persone ogni invito è il suo link, da aprire, copiare o condividere; quello appena creato è evidenziato.
-- **Permessi a tabella**: una riga per area (con cosa comprende), una colonna per persona, in ogni casella il livello per intero (Nessun accesso, Lettura, Scrittura) con il suo colore; sotto, la riga "Gestire i canali" e la legenda.
-- Schema dati v17, account v5.
+- **Everything is private to whoever creates it**, except inventory and documents: todos, journal, mails, projects, contacts and notes on documents are seen only by their creator (and the assignee). Admins included.
+- **Sharing**: `+marco`, `++marco` (and assign), `+all`; and "Visible to" on every entry, project, contact and note.
+- **Chat with channels**: the old chat becomes #general; new channels with chosen people, each reading or also writing; the new **Manage chat channels** permission.
+- **Feedback** with text and screenshots, reviewed on the Feedback page or exported with `make feedback`.
+- **Settings redone** as categories on the left and boxes on the right; a list on the phone.
+- **Offline**: new todos and notes can be created without a network; they go out when it comes back, without duplicates.
+- **Invites as links**, **permissions as a table**.
+- Data schema v17, account schema v5.
 
 ## 0.12.2 — 2026-10-28
-- Correzione: dietro Cloudflare l'app poteva usare fino a 4 ore il codice della versione precedente (Cloudflare dice al browser di tenere JS e CSS 4 ore). Ora l'app ricontrolla sempre i suoi file con il server; un file non cambiato non si riscarica.
+- Fix: behind Cloudflare the app could use the previous version's code for up to 4 hours. The app now always rechecks its files with the server.
 
 ## 0.12.1 — 2026-10-28
-- **Avviso di nuova versione**: se Organizer viene aggiornato mentre l'app è aperta, in alto compare "È disponibile Organizer X" con **Ricarica** (e il link alle Novità). Si controlla quando la connessione col server si riattiva, quando torni sull'app e ogni 30 minuti.
+- **New version notice**: if Organizer is updated while the app is open, "Organizer X is available" shows up with **Reload**.
 
 ## 0.12 — 2026-10-28
-- **Estensione Organizer per Thunderbird** (Impostazioni → Mail e Thunderbird: si scarica già impostata per il tuo indirizzo, poi un token). Con Thunderbird aperto, **Manda** apre la mail lì con gli allegati, anche se premi dal telefono; Thunderbird resta l'unico a conoscere le password della posta.
-- **Stato automatico**: quando la mail parte da Thunderbird diventa "mandata" e "in attesa di risposta" da sola; quando arriva la risposta esce da "in attesa".
-- **Conversazioni**: nella mail compaiono i messaggi mandati e le risposte arrivate (senza la citazione dei precedenti, "messaggio completo" per vederla), con i nomi degli allegati. Nelle liste (agenda, progetto, contatto, articolo) le mail con risposte hanno ↩ e il numero.
-- **Rispondi** su una risposta arrivata: crea in Organizer la mail di risposta, negli stessi progetti; con Manda si apre in Thunderbird come risposta al messaggio originale, con la citazione sotto.
-- **In arrivo**: nella pagina Mail le mail ricevute in Thunderbird (cartelle Posta in arrivo, non lo spam), con **Rispondi** e **Rispondi a tutti** (gli altri destinatari in Cc, senza i tuoi indirizzi) e Archivia. Sono personali: le vede solo chi le riceve, in ogni workspace. Al collegamento l'estensione recupera anche quelle arrivate mentre Thunderbird era chiuso (la prima volta gli ultimi 7 giorni). Nelle opzioni dell'estensione si può spegnere: allora a Organizer arrivano solo le risposte alle mail mandate da Organizer. Dopo 180 giorni le mail in arrivo si cancellano da Organizer (in Thunderbird restano).
-- **Allegati nel magazzino**: un allegato di una mail ricevuta (in arrivo o nella conversazione) si salva come documento di un articolo con "→ magazzino", scegliendo codice e tipo. Il file lo prende Thunderbird, che deve essere collegato.
-- **La posta è personale**: le mail di Organizer (da mandare, mandate, conversazioni) le vedono solo chi le ha scritte e chi le deve mandare (assegnate); la posta in arrivo solo chi la riceve. Nessun altro membro del workspace, nemmeno un admin, vede la posta degli altri: è scritto anche in Impostazioni → Permessi. Le mail già scritte da altri spariscono dalla tua vista; "privata" non serve più sulle mail.
-- **Pagina Mail riorganizzata**: in "Da fare" solo ciò che è aperto (ricevute da leggere, da mandare, in attesa di risposta); le ricevute lette e le mail mandate vanno in **Archivio**. Una mail ricevuta aperta è letta e passa in archivio quando lasci la pagina; il tasto a sinistra la segna letta o da leggere. In alto i filtri: testo (oggetto, persone, indirizzi, testo), tipo, con allegati, progetto.
-- Le mail ricevute hanno la stessa grafica delle mail di Organizer.
-- **Mail su due colonne**: a sinistra conversazione, testo e aggiornamenti; a destra quello che la lega a Organizer: dettagli (tipo, scadenza, progetti, assegnata), persone (con azienda e ruolo, "+ rubrica" per chi non c'è), allegati in uscita (anche dal magazzino) e ricevuti (→ magazzino), articoli e collegamenti scritti nella mail, chi la cita. Sotto i 1100 px le colonne si impilano.
-- **Contatti → Da salvare**: un pannello con gli indirizzi delle tue mail (ricevute, mandate, in copia) che non sono in rubrica, con il nome preso dalla mail: si salvano uno a uno, o si ignorano.
-- Rispondi a tutti anche sui messaggi ricevuti nella conversazione di una mail. Il numero sulla voce Mail conta anche le mail arrivate da leggere.
-- L'helper `organizer-mail://` resta come alternativa senza estensione.
-- Schema dati v15, account v4.
+- **Organizer extension for Thunderbird**: with Thunderbird open, **Send** opens the mail there with its attachments, even from the phone. Thunderbird stays the only one that knows the mail passwords.
+- **Automatic status**: a mail sent from Thunderbird becomes "sent" and "awaiting reply" by itself; the reply closes the wait.
+- **Conversations** in the mail, **Reply** and **Reply all**, **Inbox** with the mails received in Thunderbird (personal), **attachments into the inventory**.
+- **Mail is personal**: only its writer and assignee see an Organizer mail, only its recipient sees incoming mail. Not even admins see other people's mail.
+- **Mail in two columns**, **Contacts → To save**.
+- Data schema v15, account schema v4.
 
 ## 0.11 — 2026-10-28
-- **Accesso da fuori con Cloudflare Tunnel** al posto di Tailscale: `make tunnel` collega il tuo dominio all'app con HTTPS e senza porte aperte (connessione in uscita); il token sta in `.env`. Guida passo passo in `docs/DEPLOY.md`, anche per il futuro trasloco su Raspberry. Tolti i comandi `make remote`.
-- L'app ascolta solo sul computer che la ospita (`127.0.0.1`): niente più porta aperta in rete locale (`APP_BIND=0.0.0.0` per riaprirla).
-- Sicurezza dietro il tunnel: il limite dei tentativi di login usa l'indirizzo vero di chi si collega (`CF-Connecting-IP`), non quello del tunnel; in HTTPS il browser riceve HSTS.
-- **Anteprima dei modelli 3D**: i documenti STL, 3MF e STEP si aprono in un visore 3D (trascina per ruotare, tasto destro per spostare, rotella per lo zoom, "Vista iniziale" per tornare all'inizio). Gli STEP sono convertiti in triangoli nel browser con OpenCascade, con i colori delle parti; i 3MF tengono i loro colori.
-- **Note sui punti del modello**: clicchi sul modello e lasci una nota lì, come sui PDF. I segnaposto seguono la vista, quelli coperti da altre parti si attenuano, si trascinano sulla superficie; cliccando una nota la vista gira verso il punto. `org doc notes` le mostra sotto "Sul modello".
-- Schema dati v14.
+- **Access from outside with Cloudflare Tunnel**: `make tunnel` connects your domain to the app with HTTPS and no open ports; step-by-step guide in `docs/DEPLOY.md`.
+- The app listens only on the host (`127.0.0.1`); `APP_BIND=0.0.0.0` opens it on the LAN.
+- Behind the tunnel the login attempts limit uses the real client address; HSTS over HTTPS.
+- **3D model preview** (STL, 3MF, STEP via OpenCascade in the browser) with **notes on points of the model**.
+- Data schema v14.
 
 ## 0.10 — 2026-10-28
-- **Permessi**: in Impostazioni → Permessi un admin sceglie per ogni persona del workspace il livello di ogni area (todo e diario, mail, progetti, magazzino, documenti, contatti, chat): nessun accesso, lettura o scrittura. Le aree collegate si sistemano da sole (scrivere le mail richiede di leggere contatti, documenti, magazzino e progetti…; l'elenco è nella stessa sezione).
-- Senza accesso un'area sparisce dal menu e dalle tab; in sola lettura si vede tutto ma i controlli per modificare sono spenti. Il server controlla ogni richiesta e manda solo i dati che si possono leggere: valgono anche per CLI e bot.
-- Chi ha limitazioni vede i propri permessi in Impostazioni.
-- Account v3.
+- **Permissions**: an admin chooses, for each person, the level of each area (no access, read, write); linked areas adjust by themselves. Without access an area disappears; read-only shows everything with the controls off. The server checks every request, for the CLI and bots too.
+- Account schema v3.
 
 ## 0.9.2 — 2026-10-28
-- Magazzino: **codici alternativi** per gli articoli, oltre al codice principale con cui sono noti. Si aggiungono e si tolgono nella scheda dell'articolo; `#ALTERNATIVO` nelle voci porta all'articolo, filtri, ricerca, suggerimenti e scheda rapida li trovano. Ogni codice appartiene a un solo articolo; scrivendo un alternativo come nuovo codice diventa il principale e il vecchio resta tra gli alternativi. CLI: `org item alias`.
-- Tipo di documento: il menu che si apre ha le voci con il loro colore (il menu di sistema sul Mac non le colorava); si usa anche con la tastiera (↑↓, Invio, Esc).
-- Correzione: i file `.json` non si caricavano come documenti né come allegati (dalla CLI e dall'app il server li scambiava per la creazione di un link: "Il link deve iniziare con http://"). Ora un caricamento si riconosce dal nome del file nella richiesta.
-- Schema dati v13.
+- **Alternative codes** for items, besides the main code. CLI: `org item alias`.
+- The document kind menu has coloured entries and works with the keyboard.
+- Fix: `.json` files could not be uploaded as documents or attachments.
+- Data schema v13.
 
 ## 0.9.1 — 2026-10-28
-- Note sui PDF e sulle immagini: i segnaposto si trascinano in un altro punto, anche su un'altra pagina (vicino ai bordi il documento scorre). Un clic senza trascinare seleziona la nota come prima.
+- Note pins on PDFs and images can be dragged to another point, even to another page.
 
 ## 0.9 — 2026-10-28
-
-**Temi**
-- Impostazioni → Tema: oltre a Organizer (automatico, chiaro, scuro) temi ispirati a Neovim e VS Code: Tokyo Night, Catppuccin Mocha e Latte, Gruvbox scuro e chiaro, Nord, Dracula, One Dark, Rosé Pine, Kanagawa, Everforest, GitHub scuro e chiaro, Solarized scuro e chiaro. Ogni tema ha l'anteprima dei suoi colori; vale per il dispositivo.
-
-**Interfaccia più uniforme**
-- Campi, menu, pulsanti e chip hanno la stessa altezza: nei dettagli di una voce tipo, scadenza, pulsanti della scadenza, progetti e assegnatario stanno sulla stessa linea. I progetti di una voce sono in un riquadro come gli altri campi.
-- Filtri uguali in ogni pagina: la parola sullo sfondo del suo colore (categorie del magazzino, tipi di documento, todo/mail in Agenda, stato degli articoli), con il bordo pieno quando è attivo; la riga dei filtri usa tutta la larghezza e le spiegazioni stanno sempre sotto i filtri.
-- Pagina Documenti: per la revisione affiancata un pulsante disegnato apposta al posto della casella, che mostra la posizione (1, 2, 3) in cui si aprirà il documento.
-- Documenti: passando il mouse sul nome di un documento (pagina Documenti e scheda dell'articolo) compare una scheda con tipo, articolo, versione, dimensione e un'anteprima piccola (prima pagina dei PDF, immagini, prime righe dei file di testo).
-- Scheda dell'articolo: la descrizione è più larga degli altri campi.
-- Nella pagina Novità non c'è più la barra per aggiungere.
+- **Themes** inspired by Neovim and VS Code (Tokyo Night, Catppuccin, Gruvbox, Nord, Dracula, One Dark, Rosé Pine, Kanagawa, Everforest, GitHub, Solarized), per device.
+- **More uniform interface**: same height for fields, menus, buttons and chips; the same filter chips on every page; a dedicated side-by-side review picker; a hover card with a small preview for documents.
 
 ## 0.8.3 — 2026-10-28
-- Pagina **Novità** con questo changelog, una scheda per versione e quella in uso segnata: su computer dal pulsante in fondo alla barra laterale (con "nuovo" finché non la apri dopo un aggiornamento), su telefono da Impostazioni.
+- **What's new** page with this changelog, one card per version, the one in use marked.
 
 ## 0.8.2 — 2026-10-28
-- Pagina Documenti: il pulsante a pannelli ora mostra la vista per categoria del magazzino (con gli articoli e i loro documenti), come nel magazzino; l'altro pulsante la vista per tipo di documento.
-- Viste a colonne (magazzino per categoria, documenti raggruppati) disposte "a muro" come la home di Pinterest: ogni blocco va nella colonna più corta, così sotto un blocco basso non resta spazio vuoto. Si ricompongono quando la finestra cambia larghezza.
+- Documents page: the panels button shows the inventory by category with the items and their documents.
+- Column views laid out as "masonry": each block goes into the shortest column.
 
 ## 0.8.1 — 2026-10-28
-- Mail: un tasto solo le fa avanzare. Da mandare → (clic) in attesa di risposta, con la clessidra → (clic) risposta arrivata, in archivio. Su una mail in archivio lo stesso tasto la rimette in attesa. Tolto il pulsante "risposta arrivata".
-- Mail mandate: freccia ↑ in fondo alla riga per riportarle tra quelle da mandare (es. per un sollecito).
-- Ogni contatto ha un colore (automatico, o scelto dal pallino accanto al nome nella sua pagina): il suo nome è colorato nelle mail, in rubrica e nei backlink.
-- Impostazioni → Contatti: i contatti si colorano per contatto (automatico o scelto, come prima), oppure per azienda, fascia oraria o ruolo (stesso colore per lo stesso valore). Preferenza di questo dispositivo.
-- Schema dati v12.
+- Mail: a single button moves it forward (to send → awaiting reply → archived); the ↑ arrow brings a sent mail back among those to send.
+- Each contact has a colour; contacts can be coloured by company, time slot or role.
+- Data schema v12.
 
 ## 0.8 — 2026-10-28
-
-**Mail in attesa di risposta**
-- Una mail segnata come mandata finisce in **In attesa di risposta** (pagina Mail e pagina del progetto), dalla più vecchia, con da quanti giorni aspetta. "Risposta arrivata" chiude il thread e lo scrive nello storico; se una mail non richiede risposta, "Nessuna risposta" nel messaggio che compare dopo l'invio (o il chip "attende risposta" nella mail).
-- I thread in attesa restano visibili anche dopo 30 giorni.
-- CLI: `org mail` mostra anche i thread in attesa; `org mail replied ID` li chiude.
-
-**Documenti**
-- Pagina Documenti, vista per articolo: ora le colonne sono le categorie del magazzino (come il magazzino a colonne), con dentro gli articoli e i loro documenti. L'altra vista resta per tipo di documento.
-- Nuovi tipi di documento oltre a quelli fissi: "+ nuovo tipo" nella pagina Documenti o "+ nuovo tipo…" in fondo a ogni menu del tipo. Ognuno ha il suo colore; i tipi aggiunti si eliminano dalla loro colonna (i documenti diventano "altro"). CLI: `org doc kinds [--add NOME] [--rm NOME]`.
-- Nelle colonne strette (Documenti su schermi medi) dimensione e data vanno a capo invece di essere tagliate.
-
-**Progetti**
-- Il colore del progetto si sceglie dal pallino accanto al nome, che apre il popup dei colori come per le categorie del magazzino (prima i colori stavano sempre in vista tra i campi).
-
-- Schema dati v11.
+- **Mail awaiting reply**: a sent mail ends up in **Awaiting reply**, with how many days it has been waiting; "Reply received" closes the thread. CLI: `org mail replied ID`.
+- Documents page by inventory category; **new document kinds** besides the built-in ones (CLI: `org doc kinds`).
+- The project colour is chosen from the dot next to its name.
+- Data schema v11.
 
 ## 0.7.4 — 2026-10-27
-- Descrizione degli articoli, appunti di progetti e contatti, dettagli delle voci e testo delle mail si leggono come la chat: `#CODICE`, collegamenti `[[…]]` e link colorati e cliccabili dentro il testo. Un clic sul testo (o Invio) apre il campo per scrivere; uscendo si salva e si torna alla lettura.
-- Nel testo delle mail anche i codici di magazzino scritti senza `#` sono colorati e cliccabili.
+- Item descriptions, project and contact notes, entry details and mail text read like the chat: `#CODE`, `[[…]]` links and URLs coloured and clickable; a click opens the field for writing.
 
 ## 0.7.3 — 2026-10-27
-- Tutte le pagine usano la larghezza intera della finestra (prima si fermavano a 1480 px; anche la chat).
-- Viste a colonne (magazzino per categoria, documenti raggruppati): 3 colonne su schermo grande (da 1400 px), 2 su medio, 1 su telefono.
+- All pages use the full width of the window; column views with 3 columns on large screens, 2 on medium, 1 on phones.
 
 ## 0.7.2 — 2026-10-27
-- **Ricerca nel documento**: ⌘F (Ctrl+F) nella pagina di un PDF o di un file di testo apre una barra di ricerca; i risultati sono evidenziati sulla pagina (anche con lo zoom), con il conteggio, Invio / Maiusc+Invio per passare al successivo o al precedente, Esc per chiudere. Fuori dai documenti ⌘F resta la ricerca del browser.
-- CLI: `org doc notes ID` mostra le note scritte su un documento, prima le generali poi pagina per pagina con lo stesso numero del segnaposto nell'app (`--all` anche le risolte); `org doc` indica quante note aperte ha ogni documento.
+- **Search in the document** (⌘F) in PDFs and text files, with highlighted results.
+- CLI: `org doc notes ID` shows the notes written on a document.
 
 ## 0.7.1 — 2026-10-27
-
-**Collegamenti ovunque**
-- `[[` funziona in ogni campo di testo: titoli e dettagli delle voci, aggiornamenti, testo delle mail, appunti di progetti, articoli e contatti, note sui documenti, barra rapida, chat. Collega voci (un todo a un altro todo, una mail, una nota), documenti, articoli, progetti e contatti.
-- Nel menu dei suggerimenti ogni riga ha l'etichetta del tipo (todo, mail, nota, documento, articolo, progetto, contatto) e lo stato (da mandare, mandata, fatta), così si distingue cosa si sta collegando.
-- I collegamenti si vedono come link con il nome attuale: nei titoli e, sotto i campi di testo, come riga di link.
-
-**Backlink**
-- Ogni elemento collegato mostra chi lo collega, con le mail divise in **da mandare** e **mandate**: articoli ("Nelle mail"), documenti, progetti, contatti e voci ("Citata in"). Comprende le mail archiviate.
-- Nel testo delle mail i codici di magazzino senza `#` contano come collegamento all'articolo; per i documenti contano anche gli allegati, per i contatti le mail al loro indirizzo.
-- Le voci fatte da più di 30 giorni si aprono in sola lettura dai backlink, con "Riapri".
-- Nella scheda articolo le mail stanno solo in "Nelle mail" (non più in "Da fare").
-
-**Mail**
-- Nelle mail mandate (Thunderbird, `.eml`, app mail) i collegamenti diventano il nome di ciò che collegano.
-- Correzione: con il Cc vuoto il `.eml` aveva una riga vuota tra le intestazioni e arrivava senza oggetto.
-
-**CLI e API**
-- `GET /api/backlinks/:tipo/:id`; la CLI mostra i collegamenti con il nome (`«…»`), `org show` le voci che citano la voce, `org item show` le mail da mandare e mandate.
-- Schema dati v10 (i collegamenti delle voci esistenti si calcolano al primo avvio).
+- **Links everywhere**: `[[` works in every text field and links entries, documents, items, projects and contacts, shown as links with their current name.
+- **Backlinks**: every linked element shows who links it, with the mails split into **to send** and **sent**.
+- In sent mails links become the name of what they link. Fix: an empty Cc made the `.eml` lose its subject.
+- `GET /api/backlinks/:kind/:id`. Data schema v10.
 
 ## 0.7 — 2026-10-27
-
-**Chat del workspace**
-- Nuova pagina Chat (barra laterale; su telefono l'icona in alto) per i membri del workspace, in tempo reale.
-- I messaggi collegano le cose dell'app: `@progetto`, `#CODICE`, `+persona` e, scrivendo `[[`, documenti, voci (todo, mail, note) e contatti. Nel messaggio diventano link con il nome sempre aggiornato.
-- Messaggi non letti nel badge, notifica quando ne arriva uno mentre sei in un'altra pagina, modifica ed eliminazione dei propri messaggi, "Messaggi precedenti" per scorrere indietro.
-- Nuova pagina `#/v/ID` che mostra una voce da sola (ci portano i link della chat).
-
-**Mail**
-- Nel testo di una mail `#` suggerisce gli articoli del magazzino e inserisce il codice senza `#` (la mail va a chi non usa l'app).
-- Nei suggerimenti dei codici trattini e punti non contano: `#sch051` trova `SCH-051`.
-
-**CLI e API pubbliche**
-- `org`, la CLI per il terminale (cartella `cli/`, `make cli`): voci, progetti, magazzino, documenti (caricare, scaricare, aprire, rinominare), mail con allegati, chat (`org chat -f` la segue dal vivo), cestino, `--json` per gli script. Guida in [cli/README.md](cli/README.md).
-- Token API per la CLI e per bot e script: si creano in Impostazioni → *CLI e token API* o con `org login`, si revocano dall'app. Autenticazione `Authorization: Bearer`, workspace scelto con `X-Workspace`.
-- API documentate in [docs/API.md](docs/API.md); nuovi `GET /api/info`, `GET /api/entries/:id`, endpoint della chat. Il campo `due` delle voci accetta anche le date della barra rapida (`"ven"`, `"3g"`, `"25/11"`).
-- Schema dati v9, account v2.
+- **Workspace chat** in real time, with links to the app's things, unread badge, editing and deleting one's own messages.
+- **`org`, the CLI** (`cli/`, `make cli`): entries, projects, inventory, documents, mail with attachments, chat, trash, `--json` for scripts.
+- **API tokens** for the CLI, bots and scripts; the API is documented in `docs/API.md`.
+- Data schema v9, account schema v2.
 
 ## 0.6.2 — 2026-10-27
-- Nuovo tipo di documento **footprint** (impronte PCB), con il suo colore.
+- New document kind **footprint** (PCB footprints).
 
 ## 0.6.1 — 2026-10-27
-- I documenti si rinominano dall'app: dal titolo nel visualizzatore o con la matita nella scheda articolo, nella pagina Documenti e nella revisione. Scaricando, il file prende quel nome con l'estensione originale.
+- Documents can be renamed from the app; when downloaded the file takes that name.
 
 ## 0.6 — 2026-10-27
-- **Workspace**: più insiemi di dati separati, ognuno con i suoi membri e ruoli (admin/membro), inviti per workspace, cambio dalla barra laterale. L'installazione esistente diventa il workspace "Principale".
-- Contatti: fascia oraria, raggruppamento per azienda, fascia oraria o ruolo.
-- Colori scelti a mano per progetti e categorie.
-- PDF da link esterni visti direttamente nell'app (scaricati dal server, solo indirizzi pubblici).
-- Articoli outdated e scartati, con pallini e filtri; colonne del magazzino più larghe.
-- Pagine documento alte quanto la finestra; pulsante Magazzino nella pagina Documenti.
-- Correzione: su telefono la barra in basso spariva nel Diario.
-- Schema dati v6–v8.
+- **Workspaces**: separate sets of data, each with its members and roles, invites per workspace. The existing installation becomes the "Main" workspace.
+- Contacts with time slot and grouping; hand-picked colours for projects and categories; PDFs from external links; outdated and discarded items.
+- Data schema v6–v8.
 
 ## 0.5 — 2026-10-27
-- Pagina **Documenti** con filtri e revisione affiancata fino a 3 documenti, ognuno con le sue note.
-- Tipo e versione dei documenti modificabili; la versione firmware dell'articolo segue il firmware più recente.
-- Voci in più progetti; link sugli articoli; drag and drop degli articoli tra categorie.
-- Visualizzatore PDF più largo con note nascondibili e modalità espansa.
-- Schema dati v5.
+- **Documents** page with filters and a side-by-side review of up to 3 documents with their notes.
+- Editable document kind and version; entries in several projects; links on items; drag and drop of items between categories.
+- Data schema v5.
 
 ## 0.4 — 2026-10-27
-- **Note sui documenti**: visualizzatore PDF (PDF.js incluso), immagini e testo; note posizionate su un punto della pagina o generali, risolte, trasformabili in todo.
-- Contatti: suggerimento delle aziende già in rubrica.
-- Schema dati v4.
+- **Notes on documents**: PDF viewer (bundled PDF.js), images and text; notes on a point of the page or general, resolvable, turned into todos.
+- Data schema v4.
 
 ## 0.3 — 2026-10-27
-- **Sottoprogetti** a più livelli, riorganizzabili con drag and drop.
-- Articoli collegati a mano ai progetti; la barra in alto crea articoli (in Magazzino) e progetti (in Progetti).
-- Magazzino per categoria: colori, filtri, vista a colonne, scheda rapida al passaggio del mouse, composizione con autocompletamento.
-- Esc per uscire dai campi e risalire; ripristino di un backup dalle Impostazioni.
-- Schema dati v3.
+- **Subprojects** on several levels, reorganised by drag and drop.
+- Items linked to projects by hand; the top bar creates items and projects; inventory by category with colours, filters, columns and a hover card.
+- Restore a backup from the Settings. Data schema v3.
 
 ## 0.2 — 2026-10-27
-- **Autocompletamento** di `@progetto`, `#CODICE`, `!data`, `+utente`, `>destinatario`.
-- **Cestino** con "Annulla" e pulizia automatica dopo 30 giorni.
-- **Mail** con destinatari, oggetto, testo e allegati, aperte in Thunderbird con l'helper (`make mail-helper`), oppure `.eml`.
-- **Contatti**: rubrica condivisa, `>nome` diventa l'email.
-- Schema dati v2.
+- **Autocomplete** for `@project`, `#CODE`, `!date`, `+user`, `>recipient`.
+- **Trash** with "Undo" and automatic cleanup after 30 days.
+- **Mail** with recipients, subject, text and attachments, opened in Thunderbird with the helper, or as `.eml`.
+- **Contacts**: a shared address book.
+- Data schema v2.
 
 ## 0.1 — 2026-10-27
-- Prima versione: todo, mail, diario e magazzino (codici, firmware, documenti) sincronizzati in tempo reale; barra rapida con token; più utenti con inviti; PWA installabile; Docker con HTTPS opzionale.
-- Makefile (avvio, reset, dati demo, backup, utenti), dati dimostrativi.
+- First version: todos, mails, journal and inventory (codes, firmware, documents) synced in real time; quick bar with tokens; several users with invites; installable PWA; Docker with optional HTTPS; Makefile and demo data.

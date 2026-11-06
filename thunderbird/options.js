@@ -1,7 +1,11 @@
-// Opzioni: indirizzo del server (già scritto se l'estensione è stata scaricata da Organizer), token API e il
-// workspace di Organizer in cui vanno le conversazioni nuove di ogni account di posta.
+// Options: server address (already filled in if the extension was downloaded from Organizer), API token and the
+// Organizer workspace where each mail account's new conversations go. Texts: _locales (Thunderbird's language).
 /* global browser */
 const $ = id => document.getElementById(id);
+const t = (key, ...subs) => browser.i18n.getMessage(key, subs.map(String)) || key;
+
+for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
+document.documentElement.lang = browser.i18n.getUILanguage();
 
 async function init() {
   const saved = await browser.storage.local.get(['server', 'token', 'inbox', 'status']);
@@ -20,10 +24,10 @@ async function showAccounts() {
   let spaces;
   try {
     const r = await fetch(`${server}/api/mail/workspaces`, { headers: { Authorization: `Bearer ${token}` } });
-    if (!r.ok) throw new Error(`errore ${r.status}`);
+    if (!r.ok) throw new Error(t('errStatus', r.status));
     spaces = await r.json();
   } catch (e) {
-    box.textContent = `Workspace non letti da Organizer (${e.message}).`;
+    box.textContent = t('optWsNotRead', e.message);
     return;
   }
   const accounts = (await browser.accounts.list(false)).filter(a => a.type !== 'none');
@@ -31,7 +35,7 @@ async function showAccounts() {
   box.className = '';
   box.replaceChildren(...accounts.map(a => {
     const sel = document.createElement('select');
-    sel.append(new Option(`predefinito${def ? ` (${def.name})` : ''}`, ''), ...spaces.map(w => new Option(w.name, String(w.id))));
+    sel.append(new Option(`${t('optDefault')}${def ? ` (${def.name})` : ''}`, ''), ...spaces.map(w => new Option(w.name, String(w.id))));
     sel.value = String(wsByAccount[a.id] || '');
     sel.addEventListener('change', async () => {
       const cur = (await browser.storage.local.get('wsByAccount')).wsByAccount || {};
@@ -50,7 +54,7 @@ async function showAccounts() {
 function showStatus(s) {
   const el = $('status');
   el.className = s?.state || '';
-  el.textContent = !s ? 'Non ancora collegato.' : s.state === 'on' ? `Collegato a ${s.text}` : s.text;
+  el.textContent = !s ? t('optNotConnected') : s.state === 'on' ? t('optConnectedTo', s.text) : s.text;
 }
 
 $('save').addEventListener('click', async () => {
@@ -58,12 +62,12 @@ $('save').addEventListener('click', async () => {
   try {
     server = new URL(server).origin;
   } catch {
-    return showStatus({ state: 'error', text: 'Indirizzo non valido: scrivi per esempio https://organizer.esempio.it' });
+    return showStatus({ state: 'error', text: t('optBadAddress') });
   }
-  // Il permesso di collegarsi al server: già concesso se l'estensione viene da lì, altrimenti si chiede ora.
+  // The permission to connect to the server: already granted if the extension comes from there, otherwise asked now.
   const origins = [`${server}/*`];
   if (!(await browser.permissions.contains({ origins })) && !(await browser.permissions.request({ origins }))) {
-    return showStatus({ state: 'error', text: 'Senza il permesso di collegarsi a quell\'indirizzo l\'estensione non può funzionare.' });
+    return showStatus({ state: 'error', text: t('optNoPermission') });
   }
   $('server').value = server;
   await browser.storage.local.set({ server, token: $('token').value.trim(), inbox: $('inbox').checked });

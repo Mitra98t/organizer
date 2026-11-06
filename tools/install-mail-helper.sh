@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Registra lo schema organizer-mail:// così il pulsante "Manda" apre Thunderbird con gli allegati.
-#   tools/install-mail-helper.sh              installa per l'utente corrente (macOS o Linux)
-#   tools/install-mail-helper.sh --uninstall  rimuove
-# APP_DIR e NO_REGISTER=1 servono solo per provarlo senza toccare il sistema.
+# Registers the organizer-mail:// scheme so the "Send" button opens Thunderbird with the attachments.
+#   tools/install-mail-helper.sh              installs for the current user (macOS or Linux)
+#   tools/install-mail-helper.sh --uninstall  removes it
+# APP_DIR and NO_REGISTER=1 are only for trying it without touching the system.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -15,13 +15,13 @@ Darwin)
   lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
   if [[ "$action" == --uninstall ]]; then
     [[ -d "$app" ]] && { "$lsregister" -u "$app" 2>/dev/null || true; rm -rf "$app"; }
-    echo "Rimosso $app"
+    echo "Removed $app"
     exit 0
   fi
   mkdir -p "$(dirname "$app")"
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' EXIT
-  # Un'app AppleScript minima: riceve il link e lo passa allo script bash nelle sue Resources.
+  # A minimal AppleScript app: it receives the link and passes it to the bash script in its Resources.
   cat > "$tmp/handler.applescript" <<'APPLESCRIPT'
 on open location theURL
 	set helper to (POSIX path of (path to me)) & "Contents/Resources/organizer-mail.sh"
@@ -29,7 +29,7 @@ on open location theURL
 end open location
 
 on run
-	display dialog "Organizer Mail apre in Thunderbird le mail preparate in Organizer. Non serve avviarlo a mano." buttons {"OK"} default button 1 with title "Organizer Mail"
+	display dialog "Organizer Mail opens in Thunderbird the mails prepared in Organizer. There is no need to start it by hand." buttons {"OK"} default button 1 with title "Organizer Mail"
 end run
 APPLESCRIPT
   rm -rf "$app"
@@ -48,10 +48,10 @@ APPLESCRIPT
     -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" \
     -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string organizer-mail" \
     "$plist"
-  # Info.plist modificato: la firma ad-hoc di osacompile va rifatta, altrimenti macOS rifiuta l'app.
+  # Info.plist changed: osacompile's ad-hoc signature must be redone, otherwise macOS refuses the app.
   codesign --force --deep --sign - "$app" >/dev/null 2>&1
   [[ "${NO_REGISTER:-0}" == 1 ]] || "$lsregister" -f "$app"
-  echo "Installato $app"
+  echo "Installed $app"
   ;;
 Linux)
   bin="$HOME/.local/bin/organizer-mail"
@@ -59,7 +59,7 @@ Linux)
   if [[ "$action" == --uninstall ]]; then
     rm -f "$bin" "$desktop"
     command -v update-desktop-database >/dev/null && update-desktop-database "$(dirname "$desktop")" || true
-    echo "Rimosso"
+    echo "Removed"
     exit 0
   fi
   install -Dm755 "$helper" "$bin"
@@ -75,13 +75,13 @@ MimeType=x-scheme-handler/organizer-mail;
 DESKTOP
   command -v update-desktop-database >/dev/null && update-desktop-database "$(dirname "$desktop")" || true
   xdg-mime default organizer-mail.desktop x-scheme-handler/organizer-mail
-  echo "Installato $bin"
+  echo "Installed $bin"
   ;;
 *)
-  echo "Sistema non supportato: su Windows o telefono usa \"Apri con app mail\" o \"Scarica .eml\"." >&2
+  echo "System not supported: on Windows or a phone use the default mail app or the \".eml\" button." >&2
   exit 1
   ;;
 esac
 
-echo "Ora in Organizer: Impostazioni → Mail → spunta \"Helper Thunderbird installato su questo computer\"."
-echo "La prima volta il browser chiede il permesso di aprire Organizer Mail: consenti e ricorda la scelta."
+echo "Now in Organizer: Settings → Mail and Thunderbird → Without the extension → tick \"Helper installed on this computer\"."
+echo "The first time the browser asks for permission to open Organizer Mail: allow it and remember the choice."

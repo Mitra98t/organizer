@@ -1,5 +1,5 @@
-// Ripristino di un backup del database (il file .db scaricato da Impostazioni → Backup).
-// Prima di sovrascrivere si salva una copia del database attuale in DATA_DIR (pre-restore-*.db).
+// Restoring a database backup (the .db file downloaded from Settings → Backup).
+// Before overwriting, a copy of the current database is saved in DATA_DIR (pre-restore-*.db).
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -9,7 +9,7 @@ import { route, saveUpload } from './api.js';
 import { fail } from './util.js';
 
 const KEEP_SAFETY_COPIES = 3;
-// Account, sessioni e inviti non stanno più nei dati del workspace (vedi accounts.js): non si ripristinano.
+// Accounts, sessions and invites are no longer in the workspace's data (see accounts.js): they are not restored.
 const SKIP = new Set(['sessions', 'mail_tokens', 'invites']);
 
 function checkBackup(file) {
@@ -17,17 +17,17 @@ function checkBackup(file) {
   try {
     src = new DatabaseSync(file);
     const ok = Object.values(src.prepare('PRAGMA integrity_check').get())[0];
-    if (ok !== 'ok') fail(400, 'Il database del backup è danneggiato');
+    if (ok !== 'ok') fail(400, 'The backup\'s database is damaged');
   } catch (e) {
     src?.close();
     if (e.status) throw e;
-    fail(400, 'Il file non è un database SQLite');
+    fail(400, 'The file is not an SQLite database');
   }
   try {
     const { user_version: v } = src.prepare('PRAGMA user_version').get();
     const hasUsers = src.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'").get();
-    if (!v || !hasUsers) fail(400, 'Il file non è un backup di Organizer');
-    if (v > SCHEMA_VERSION) fail(400, 'Il backup viene da una versione più nuova dell\'app: aggiorna prima l\'app');
+    if (!v || !hasUsers) fail(400, 'The file is not an Organizer backup');
+    if (v > SCHEMA_VERSION) fail(400, 'The backup comes from a newer version of the app: update the app first');
     migrate(src);
     return src.prepare('SELECT COUNT(*) AS n FROM users').get().n;
   } finally {
@@ -37,7 +37,7 @@ function checkBackup(file) {
 
 function safetyCopy() {
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-  const prefix = `pre-restore-ws${currentWorkspace()}-`; // copie separate per workspace
+  const prefix = `pre-restore-ws${currentWorkspace()}-`; // separate copies per workspace
   const file = path.join(DATA_DIR, `${prefix}${stamp}.db`);
   db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
   const old = fs.readdirSync(DATA_DIR).filter(f => f.startsWith(prefix) && f.endsWith('.db')).sort().reverse().slice(KEEP_SAFETY_COPIES);
@@ -53,7 +53,7 @@ route('POST', '/api/admin/restore', async ({ req }) => {
   try {
     checkBackup(file);
     const copy = safetyCopy();
-    // foreign_keys si può cambiare solo fuori da una transazione: le tabelle si svuotano e ricopiano in blocco.
+    // foreign_keys can only change outside a transaction: the tables are emptied and copied back in one go.
     db.exec('PRAGMA foreign_keys = OFF');
     db.exec(`ATTACH DATABASE '${file}' AS src`);
     try {
@@ -66,8 +66,8 @@ route('POST', '/api/admin/restore', async ({ req }) => {
           if (shared) db.exec(`INSERT INTO main."${t}" (${shared}) SELECT ${shared} FROM src."${t}"`);
         }
         const bad = db.prepare('PRAGMA foreign_key_check').all();
-        if (bad.length) fail(400, 'Il backup contiene riferimenti incoerenti: ripristino annullato');
-        // Gli utenti del backup restano come nomi (ex membri); i membri attuali vengono dagli account.
+        if (bad.length) fail(400, 'The backup has inconsistent references: restore cancelled');
+        // The backup's users stay as names (former members); current members come from the accounts.
         db.exec("UPDATE users SET pass = '', member = 0");
       });
     } finally {
@@ -77,7 +77,7 @@ route('POST', '/api/admin/restore', async ({ req }) => {
     const ws = workspaceById(currentWorkspace());
     for (const m of acc.prepare('SELECT user_id FROM memberships WHERE workspace_id = ?').all(ws.id)) syncMirror(ws, m.user_id);
     const users = acc.prepare('SELECT COUNT(*) AS n FROM memberships WHERE workspace_id = ?').get(ws.id).n;
-    // I file caricati non sono nel .db: si segnala quanti documenti e allegati non hanno il file sul server.
+    // Uploaded files are not in the .db: report how many documents and attachments have no file on the server.
     const stores = db.prepare(`SELECT stored FROM documents WHERE stored IS NOT NULL
       UNION ALL SELECT stored FROM mail_attachments WHERE stored IS NOT NULL`).all();
     const missing = stores.filter(r => !fs.existsSync(path.join(UPLOAD_DIR, r.stored))).length;

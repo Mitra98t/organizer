@@ -1,8 +1,8 @@
-// Mail scritte nell'app: destinatari, oggetto, testo, allegati (file caricati o documenti del magazzino).
-// "Manda" non spedisce dal server: la mail si apre già compilata nel client di posta.
-//  - helper locale (tools/organizer-mail.sh): scarica il "pacchetto" con un token monouso a tempo
-//    e lancia `thunderbird -compose` con gli allegati;
-//  - in alternativa si scarica un .eml, oppure si usa mailto: (senza allegati).
+// Mails written in the app: recipients, subject, text, attachments (uploaded files or inventory documents).
+// "Send" does not send from the server: the mail opens already filled in the mail client.
+//  - local helper (tools/organizer-mail.sh): downloads the "package" with a one-time token that expires
+//    and runs `thunderbird -compose` with the attachments;
+//  - otherwise an .eml is downloaded, or mailto: is used (without attachments).
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -13,7 +13,7 @@ import { fail, now, str } from './util.js';
 const TOKEN_MINUTES = 15;
 const sha = t => crypto.createHash('sha256').update(t).digest('hex');
 
-// Nomi file sicuri per riga di comando e URL file:// (niente spazi, virgole, apici).
+// Safe file names for the command line and file:// URLs (no spaces, commas, quotes).
 function safeNames(names) {
   const seen = new Set();
   return names.map(n => {
@@ -25,7 +25,7 @@ function safeNames(names) {
   });
 }
 
-// I collegamenti [[tipo:ID]] nel testo diventano il nome di ciò che collegano: la mail va a chi non usa l'app.
+// [[kind:ID]] links in the text become the name of what they link: the mail goes to people who do not use the app.
 const REF_NAME = {
   doc: "SELECT COALESCE(NULLIF(label, ''), filename, url) AS n FROM documents WHERE id = ?",
   voce: 'SELECT title AS n FROM entries WHERE id = ?',
@@ -58,14 +58,14 @@ export function mailParts(e) {
   };
 }
 
-// ---------- allegati ----------
+// ---------- attachments ----------
 route('POST', '/api/entries/:id/attachments', async ({ req, params, query, user, body }) => {
   const e = entryFor(params.id, user, 'read');
   const t = now();
-  if (isJsonRequest(req, query)) { // { doc_id }: documento del magazzino; altrimenti un file (?name=)
+  if (isJsonRequest(req, query)) { // { doc_id }: an inventory document; otherwise a file (?name=)
     const b = await body();
     const d = db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL AND stored IS NOT NULL').get(+b.doc_id)
-      || fail(404, 'Documento non trovato (i link esterni non si possono allegare)');
+      || fail(404, 'Document not found (external links cannot be attached)');
     return { id: insertId(db.prepare(`INSERT INTO mail_attachments (entry_id, doc_id, filename, mime, size, created_by, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)`).run(e.id, d.id, d.filename || 'documento', d.mime, d.size, user.id, t)) };
   }
@@ -75,7 +75,7 @@ route('POST', '/api/entries/:id/attachments', async ({ req, params, query, user,
 }, { area: 'mail' });
 
 function getAttachment(id, user) {
-  const a = db.prepare('SELECT * FROM mail_attachments WHERE id = ?').get(+id) || fail(404, 'Allegato non trovato');
+  const a = db.prepare('SELECT * FROM mail_attachments WHERE id = ?').get(+id) || fail(404, 'Attachment not found');
   entryFor(a.entry_id, user, 'read');
   return a;
 }
@@ -90,7 +90,7 @@ route('GET', '/api/attachments/:id/file', ({ res, params, user }) => {
   const a = getAttachment(params.id, user);
   const stored = a.stored || db.prepare('SELECT stored FROM documents WHERE id = ?').get(a.doc_id)?.stored;
   const file = stored && path.join(UPLOAD_DIR, stored);
-  if (!file || !fs.existsSync(file)) fail(404, 'File mancante');
+  if (!file || !fs.existsSync(file)) fail(404, 'File missing');
   sendFile(res, file, a.filename, 'application/octet-stream');
 }, { area: 'mail' });
 
@@ -123,7 +123,7 @@ function buildEml(p) {
     'Content-Transfer-Encoding: base64',
     '',
     b64(Buffer.from(p.body)),
-  ].filter(l => l !== null); // niente riga Cc se vuota (una riga vuota chiuderebbe le intestazioni)
+  ].filter(l => l !== null); // no Cc line if empty (an empty line would end the headers)
   for (const f of p.files) {
     out.push(`--${boundary}`, `Content-Type: ${f.mime}; name="${f.name}"`, `Content-Disposition: attachment; filename="${f.name}"`,
       'Content-Transfer-Encoding: base64', '', b64(fs.readFileSync(f.file)));
@@ -146,21 +146,21 @@ route('GET', '/api/entries/:id/eml', ({ res, params, user }) => {
   res.end(data);
 }, { area: 'mail' });
 
-// ---------- pacchetto per l'helper locale ----------
+// ---------- package for the local helper ----------
 route('POST', '/api/entries/:id/send', ({ params, user }) => {
   const e = entryFor(params.id, user, 'read');
   db.prepare('DELETE FROM mail_tokens WHERE expires_at < ?').run(now());
-  // Il token porta il numero del workspace (<id>x<casuale>): l'helper non ha sessione per saperlo.
+  // The token carries the workspace number (<id>x<random>): the helper has no session to know it.
   const token = `${currentWorkspace()}x${crypto.randomBytes(24).toString('base64url')}`;
   db.prepare('INSERT INTO mail_tokens (token_hash, entry_id, expires_at) VALUES (?, ?, ?)')
     .run(sha(token), e.id, new Date(Date.now() + TOKEN_MINUTES * 60e3).toISOString());
   return { token };
 }, { area: 'mail', level: 'read' });
 
-// Questi endpoint non usano la sessione (l'helper non ha i cookie del browser): basta il token.
+// These endpoints do not use the session (the helper has no browser cookies): the token is enough.
 function byToken(token) {
   const t = db.prepare('SELECT entry_id FROM mail_tokens WHERE token_hash = ? AND expires_at > ?').get(sha(token), now())
-    || fail(404, 'Link scaduto: premi di nuovo "Manda"');
+    || fail(404, 'Link expired: press "Send" again');
   return mailParts(db.prepare('SELECT * FROM entries WHERE id = ?').get(t.entry_id));
 }
 
@@ -174,7 +174,7 @@ route('GET', '/api/mailpkg/:token/manifest', ({ res, params }) => {
   res.end(`${lines.join('\n')}\n`);
 }, { auth: 'none' });
 
-// Corpo in HTML: Thunderbird lo usa sia in composizione HTML che testo semplice, mantenendo gli a capo.
+// HTML body: Thunderbird uses it both in HTML and in plain-text composition, keeping line breaks.
 route('GET', '/api/mailpkg/:token/body', ({ res, params }) => {
   const p = byToken(params.token);
   const esc = p.body.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\r?\n/g, '<br>\n');
@@ -183,6 +183,6 @@ route('GET', '/api/mailpkg/:token/body', ({ res, params }) => {
 }, { auth: 'none' });
 
 route('GET', '/api/mailpkg/:token/file/:n', ({ res, params }) => {
-  const f = byToken(params.token).files[+params.n - 1] || fail(404, 'Allegato inesistente');
+  const f = byToken(params.token).files[+params.n - 1] || fail(404, 'No such attachment');
   sendFile(res, f.file, f.name, f.mime);
 }, { auth: 'none' });

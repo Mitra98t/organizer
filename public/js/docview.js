@@ -1,26 +1,27 @@
-// Visualizzatore di documenti con note: PDF (PDF.js), immagini, disegni DXF (cad.js, come immagini), testo e
-// modelli 3D (model3d.js), più una barra
-// laterale di note. Le note con pagina e coordinate (0..1) sono segnaposto su un punto del file (nei modelli 3D
-// anche z, page = 1); le altre sono note generali.
+// Document viewer with notes: PDF (PDF.js), images, DXF drawings (cad.js, as images), text, tables and 3D models
+// (model3d.js), plus a side bar of notes.
+// Notes with a page and coordinates (0..1) are pins on a point of the file (in 3D models also z, page = 1); the
+// others are general notes.
 //
-// L'app ridisegna le viste a ogni sincronizzazione: ridisegnare un PDF ogni volta sarebbe lento, quindi
-// il visualizzatore (canvas compresi) resta in memoria e viene solo riagganciato; si aggiornano i segnaposto.
-// Più visualizzatori possono essere aperti insieme (revisione affiancata, #/review?d=1,2,3).
+// The app redraws the views at every sync: redrawing a PDF every time would be slow, so the viewer (canvases
+// included) stays in memory and is only re-attached; the pins are updated.
+// Several viewers can be open together (side-by-side review, #/review?d=1,2,3).
 import { backlinksBox } from './views.js';
-import { h, icon, S, ui, api, act, render, richText, mdText, fmtTime, fmtSize, userName, toast, trashIt, autosize, itemAttrs, save, docFileUrl, dkAttrs, kindPicker, docName, renameDoc, can, roClass, isReadOnly, shareBox } from './core.js';
+import { h, icon, S, ui, api, act, render, richText, mdText, fmtTime, fmtSize, userName, toast, trashIt, autosize, itemAttrs, save, docFileUrl, dkAttrs, kindLabel, kindPicker, docName, renameDoc, can, roClass, isReadOnly, shareBox } from './core.js';
 import { moveDoc } from './pickers.js';
 import { today } from './parse.js';
+import { tr, trn } from './i18n.js';
 
 const PDFJS = new URL('../vendor/pdfjs/', import.meta.url).href;
-// Risorse di PDF.js: font standard, tabelle dei caratteri (cMaps: senza, il testo con font asiatici, frequenti
-// nei datasheet, non si legge), profili colore e decodificatori di immagini.
+// PDF.js resources: standard fonts, character maps (cMaps: without them, text in Asian fonts, frequent in
+// datasheets, cannot be read), colour profiles and image decoders.
 const PDF_RES = { standardFontDataUrl: `${PDFJS}standard_fonts/`, cMapUrl: `${PDFJS}cmaps/`, cMapPacked: true, iccUrl: `${PDFJS}iccs/`, wasmUrl: `${PDFJS}wasm/` };
 const TEXT_MAX = 512 * 1024;
 const TABLE_MAX = 8 * 1024 * 1024;
-const TABLE_ROWS = 5000; // oltre, il resto si legge scaricando il file
+const TABLE_ROWS = 5000; // beyond that, the rest is read by downloading the file
 const TABLE_EXT = /\.(csv|tsv|scsv)$/i;
 let pdfjsLib = null;
-const viewers = new Map(); // id documento → visualizzatore aperto
+const viewers = new Map(); // document id → open viewer
 
 function loadPdfjs() {
   pdfjsLib ||= import('../vendor/pdfjs/pdf.min.mjs').then(m => {
@@ -30,8 +31,8 @@ function loadPdfjs() {
   return pdfjsLib;
 }
 
-// Link che puntano a un PDF: si caricano dal vivo attraverso il server (vedi server/remote.js).
-// Il file di un documento; per l'anteprima di un allegato (d.blob) è già qui (e la CSP non lascia leggere i blob:).
+// Links pointing to a PDF: loaded live through the server (see server/remote.js).
+// A document's file; for the preview of an attachment (d.blob) it is already here (and the CSP does not allow reading blob:).
 const fileOf = d => (d.blob ? Promise.resolve(new Response(d.blob)) : fetch(docFileUrl(d), { credentials: 'same-origin' }));
 const isPdfLink = d => d.url && /\.pdf$/i.test((() => { try { return new URL(d.url).pathname; } catch { return ''; } })());
 
@@ -52,9 +53,9 @@ export function kindOf(d) {
 
 const pinnable = v => v.kind === 'pdf' || v.kind === 'image' || v.kind === 'cad' || v.kind === 'model';
 
-// ---------- anteprima piccola (scheda al passaggio del mouse nella pagina Documenti) ----------
-// PDF: la prima pagina disegnata una volta e tenuta in memoria; immagini: il file; testo: le prime righe.
-const thumbs = new Map(); // "id:sha256" → Promise di un elemento
+// ---------- small preview (card on hover in the Documents page) ----------
+// PDF: the first page drawn once and kept in memory; images: the file; text: the first lines.
+const thumbs = new Map(); // "id:sha256" → Promise of an element
 export function docThumb(d, width = 300) {
   const kind = kindOf(d);
   const key = `${d.id}:${d.sha256 || d.url}`;
@@ -97,7 +98,7 @@ export function docThumb(d, width = 300) {
   return Promise.resolve(null);
 }
 
-// ---------- visualizzatore (persistente) ----------
+// ---------- viewer (persistent) ----------
 function getViewer(d) {
   if (viewers.has(d.id)) return viewers.get(d.id);
   const v = { id: d.id, kind: kindOf(d), preview: !!d.src, zoom: 1, scroll: 0, pages: [], draft: null, status: 'loading' };
@@ -107,27 +108,27 @@ function getViewer(d) {
   v.pageLabel = h('span.dv-pl');
   v.el = h('div.dv-main',
     h('div.dv-toolbar',
-      v.kind === 'model' && h('button.btn.sm.ghost', { onclick: () => v.stage?.reset() }, 'Vista iniziale'),
+      v.kind === 'model' && h('button.btn.sm.ghost', { onclick: () => v.stage?.reset() }, tr('Initial view')),
       v.kind !== 'model' && pinnable(v) && [
-        h('button.icon-btn', { title: 'Riduci', onclick: () => setZoom(v, v.zoom / 1.25) }, '−'),
+        h('button.icon-btn', { title: tr('Zoom out'), onclick: () => setZoom(v, v.zoom / 1.25) }, '−'),
         v.zoomLabel = h('span.dv-zoom', '100%'),
-        h('button.icon-btn', { title: 'Ingrandisci', onclick: () => setZoom(v, v.zoom * 1.25) }, '+'),
-        h('button.btn.sm.ghost', { onclick: () => setZoom(v, 1) }, 'Adatta'),
+        h('button.icon-btn', { title: tr('Zoom in'), onclick: () => setZoom(v, v.zoom * 1.25) }, '+'),
+        h('button.btn.sm.ghost', { onclick: () => setZoom(v, 1) }, tr('Fit')),
         v.pageLabel,
       ],
       h('span.grow'),
       h('span.muted.dv-hint', v.preview ? '' : v.kind === 'model'
-        ? 'Trascina per ruotare, tasto destro per spostare, rotella per lo zoom. Clicca sul modello per una nota in quel punto'
-        : v.kind === 'pdf' ? 'Clicca per una nota in quel punto o seleziona del testo per una nota su quel testo; trascina un segnaposto per spostarlo'
-          : pinnable(v) ? 'Clicca sul documento per aggiungere una nota in quel punto, trascina un segnaposto per spostarlo' : ''),
-      searchable(v) && h('button.icon-btn', { title: `Cerca nel documento (${MOD}F)`, onclick: () => openSearch(v) }, icon('search'))),
+        ? tr('Drag to rotate, right button to pan, wheel to zoom. Click on the model for a note at that point')
+        : v.kind === 'pdf' ? tr('Click for a note at that point or select some text for a note on that text; drag a pin to move it')
+          : pinnable(v) ? tr('Click on the document to add a note at that point, drag a pin to move it') : ''),
+      searchable(v) && h('button.icon-btn', { title: tr('Search in the document ({key}F)', { key: MOD }), onclick: () => openSearch(v) }, icon('search'))),
     searchBar(v),
     v.scroller,
     v.kind === 'pdf' && (v.selBtn = h('button.btn.sm.primary.dv-selbtn', {
       hidden: true,
-      onpointerdown: ev => ev.preventDefault(), // la selezione deve restare
+      onpointerdown: ev => ev.preventDefault(), // the selection must stay
       onclick: () => { const sel = selectionIn(v); if (sel) textDraft(v, sel); },
-    }, icon('log'), 'Nota sul testo')));
+    }, icon('log'), tr('Note on the text'))));
   v.el.addEventListener('pointerdown', ev => { lastActive = v; v.pointer = ev.pointerType; });
   if (v.kind === 'pdf') v.pagesEl.addEventListener('pointerup', ev => textPointerUp(v, ev));
   if (v.kind !== 'model' && pinnable(v)) pinchZoom(v);
@@ -144,7 +145,7 @@ function getViewer(d) {
   return v;
 }
 
-// In PDF.js 6 il documento si chiude dal "loading task" (il proxy del documento non ha più destroy()).
+// In PDF.js 6 the document is closed from the "loading task" (the document proxy no longer has destroy()).
 const closePdf = v => v.task?.destroy().catch(() => {});
 
 function destroyViewer(v) {
@@ -156,7 +157,7 @@ function destroyViewer(v) {
   viewers.delete(v.id);
 }
 
-// Documenti richiesti dalla pagina attuale: quelli non più mostrati si chiudono.
+// Documents requested by the current page: those no longer shown are closed.
 function wantedDocs() {
   const att = location.hash.match(/^#\/allegato\/(\d+)\?n=(\d+)/);
   if (att) return [`att:${att[1]}:${att[2]}`];
@@ -176,20 +177,20 @@ function fail(v, msg) {
   v.status = 'error';
   const d = S.data.docById.get(v.id);
   v.pagesEl.replaceChildren(h('div.empty', h('p', msg),
-    d?.url && h('a.btn', { href: d.url, target: '_blank', rel: 'noopener noreferrer' }, icon('link'), 'Apri il link originale')));
+    d?.url && h('a.btn', { href: d.url, target: '_blank', rel: 'noopener noreferrer' }, icon('link'), tr('Open the original link'))));
 }
 
 async function openPdf(v, d) {
-  v.pagesEl.replaceChildren(h('div.empty', 'Caricamento del PDF…'));
+  v.pagesEl.replaceChildren(h('div.empty', tr('Loading the PDF…')));
   try {
     const pdfjs = v.pdfjs = await loadPdfjs();
-    // PDF da link: lo scarica il server; si legge prima la risposta per mostrare il motivo di un errore.
+    // PDF from a link: the server downloads it; the answer is read first to show the reason of an error.
     let data;
-    if (d.blob) data = new Uint8Array(await d.blob.arrayBuffer()); // anteprima di un allegato: PDF.js non legge i blob:
+    if (d.blob) data = new Uint8Array(await d.blob.arrayBuffer()); // attachment preview: PDF.js does not read blob:
     else if (d.url) {
-      v.pagesEl.replaceChildren(h('div.empty', 'Scarico il PDF dal link…'));
+      v.pagesEl.replaceChildren(h('div.empty', tr('Downloading the PDF from the link…')));
       const r = await fetch(`api/docs/${d.id}/remote`, { credentials: 'same-origin' });
-      if (!r.ok) return fail(v, (await r.json().catch(() => null))?.error || `Errore ${r.status}`);
+      if (!r.ok) return fail(v, (await r.json().catch(() => null))?.error || tr('Error {status}', { status: r.status }));
       data = new Uint8Array(await r.arrayBuffer());
     }
     v.task = pdfjs.getDocument({
@@ -200,7 +201,7 @@ async function openPdf(v, d) {
       disableStream: true,
     });
     v.pdf = await v.task.promise;
-    if (viewers.get(v.id) !== v) return closePdf(v); // nel frattempo il documento è stato chiuso
+    if (viewers.get(v.id) !== v) return closePdf(v); // the document was closed meanwhile
     const wraps = [];
     for (let n = 1; n <= v.pdf.numPages; n++) {
       const page = await v.pdf.getPage(n);
@@ -219,7 +220,7 @@ async function openPdf(v, d) {
     ready(v);
   } catch (e) {
     console.warn(e);
-    fail(v, `Impossibile aprire il PDF: ${e.message}`);
+    fail(v, tr('Cannot open the PDF: {error}', { error: e.message }));
   }
 }
 
@@ -230,15 +231,15 @@ function openImage(v, d) {
     v.pagesEl.replaceChildren(wrap);
     ready(v);
   };
-  img.onerror = () => fail(v, 'Impossibile caricare l\'immagine');
+  img.onerror = () => fail(v, tr('Cannot load the image'));
 }
 
-// DXF: il disegno diventa un'immagine SVG (cad.js) e da lì in poi è un'immagine come le altre.
+// DXF: the drawing becomes an SVG image (cad.js) and from then on it is an image like the others.
 async function cadImage(d) {
   const [cad, text] = await Promise.all([
     import('./cad.js'),
     fileOf(d).then(r => {
-      if (!r.ok) throw new Error(`errore ${r.status}`);
+      if (!r.ok) throw new Error(tr('error {status}', { status: r.status }));
       return r.text();
     }),
   ]);
@@ -246,8 +247,8 @@ async function cadImage(d) {
 }
 
 async function openCad(v, d) {
-  if (d.size > CAD_MAX) return fail(v, `Disegno troppo grande per l'anteprima (${fmtSize(d.size)}): scaricalo.`);
-  v.pagesEl.replaceChildren(h('div.empty', 'Disegno il DXF…'));
+  if (d.size > CAD_MAX) return fail(v, tr('Drawing too large for the preview ({size}): download it.', { size: fmtSize(d.size) }));
+  v.pagesEl.replaceChildren(h('div.empty', tr('Drawing the DXF…')));
   try {
     const { url, width, height } = await cadImage(d);
     if (viewers.get(v.id) !== v) return URL.revokeObjectURL(url);
@@ -257,36 +258,36 @@ async function openCad(v, d) {
     ready(v);
   } catch (e) {
     console.warn(e);
-    fail(v, `Impossibile leggere il DXF: ${e.message}`);
+    fail(v, tr('Cannot read the DXF: {error}', { error: e.message }));
   }
 }
 
 async function openText(v, d) {
-  if (d.size > TEXT_MAX) return fail(v, `File di testo troppo grande per l'anteprima (${fmtSize(d.size)}): scaricalo.`);
+  if (d.size > TEXT_MAX) return fail(v, tr('Text file too large for the preview ({size}): download it.', { size: fmtSize(d.size) }));
   try {
     const r = await fileOf(d);
-    if (!r.ok) throw new Error(`errore ${r.status}`);
+    if (!r.ok) throw new Error(tr('error {status}', { status: r.status }));
     v.rawText = await r.text();
     v.pagesEl.replaceChildren(v.textEl = h('pre.dv-text', v.rawText));
     v.status = 'ready';
   } catch (e) {
-    fail(v, `Impossibile leggere il file: ${e.message}`);
+    fail(v, tr('Cannot read the file: {error}', { error: e.message }));
   }
 }
 
-// ---------- tabelle (CSV, TSV) ----------
-// Il file come testo: UTF-8, oppure Windows-1252 se non lo è (i CSV salvati da Excel).
+// ---------- tables (CSV, TSV) ----------
+// The file as text: UTF-8, or Windows-1252 if it is not (CSVs saved by Excel).
 async function fetchText(d) {
   const r = await fileOf(d);
-  if (!r.ok) throw new Error(`errore ${r.status}`);
+  if (!r.ok) throw new Error(tr('error {status}', { status: r.status }));
   const buf = await r.arrayBuffer();
   let t;
   try { t = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch { t = new TextDecoder('windows-1252').decode(buf); }
   return t.replace(/^\uFEFF/, '');
 }
 
-// Separatore: tab per .tsv, ";" per .scsv, altrimenti quello che compare di più nella prima riga (fuori dalle
-// virgolette) fra , ; tab e |. Le virgolette seguono la RFC 4180: "" dentro un campo è una virgoletta.
+// Separator: tab for .tsv, ";" for .scsv, otherwise the one appearing most in the first line (outside quotes) among
+// , ; tab and |. Quotes follow RFC 4180: "" inside a field is a quote.
 function parseCsv(text, filename = '', limit = Infinity) {
   let sep = /\.tsv$/i.test(filename) ? '\t' : /\.scsv$/i.test(filename) ? ';' : null;
   if (!sep) {
@@ -311,14 +312,14 @@ function parseCsv(text, filename = '', limit = Infinity) {
   return rows;
 }
 
-// Prima riga come intestazione (resta in vista scorrendo), righe zebrate, numero di riga a sinistra. La tabella è
-// larga quanto le sue colonne: con tante colonne si scorre di lato e il numero di riga resta in vista.
+// First row as the header (it stays in view while scrolling), zebra rows, row number on the left. The table is as
+// wide as its columns: with many columns it scrolls sideways and the row number stays in view.
 function csvTable(rows) {
   const cols = Math.max(...rows.map(r => r.length));
   const pad = r => [...r, ...Array(cols - r.length).fill('')];
   const cells = [];
   const tr = (r, i, tag) => {
-    // Il testo sta in un div: è lui ad avere la larghezza massima (sulle celle di tabella non è affidabile).
+    // The text sits in a div: it is the one with the maximum width (on table cells it is not reliable).
     const divs = pad(r).map(x => h('div.c', x));
     cells.push(divs);
     return h('tr', h(`${tag}.n`, i || ''), ...divs.map(d => h(tag, d)));
@@ -329,38 +330,38 @@ function csvTable(rows) {
 }
 
 async function openTable(v, d) {
-  if (d.size > TABLE_MAX) return fail(v, `Tabella troppo grande per l'anteprima (${fmtSize(d.size)}): scaricala.`);
+  if (d.size > TABLE_MAX) return fail(v, tr('Table too large for the preview ({size}): download it.', { size: fmtSize(d.size) }));
   try {
     const text = await fetchText(d);
     const all = parseCsv(text, d.filename, TABLE_ROWS + 2);
-    if (!all.length) return fail(v, 'Il file è vuoto.');
+    if (!all.length) return fail(v, tr('The file is empty.'));
     v.rows = all.slice(0, TABLE_ROWS + 1);
     const { table, cells } = csvTable(v.rows);
     v.cells = cells;
     v.textEl = table;
     v.pagesEl.replaceChildren(h('div.dv-table-wrap', table,
-      all.length > v.rows.length && h('p.muted.dv-table-more', `Mostro le prime ${TABLE_ROWS} righe: scarica il file per vederle tutte.`)));
+      all.length > v.rows.length && h('p.muted.dv-table-more', tr('Showing the first {n} rows: download the file to see them all.', { n: TABLE_ROWS }))));
     v.status = 'ready';
   } catch (e) {
-    fail(v, `Impossibile leggere il file: ${e.message}`);
+    fail(v, tr('Cannot read the file: {error}', { error: e.message }));
   }
 }
 
-// ---------- modelli 3D ----------
-// Un clic (senza trascinare: trascinare ruota la vista) su un punto del modello prepara una nota lì.
+// ---------- 3D models ----------
+// A click (without dragging: dragging rotates the view) on a point of the model prepares a note there.
 async function openModel(v, d) {
   const status = msg => v.pagesEl.replaceChildren(h('div.empty', msg));
-  status('Caricamento del modello…');
+  status(tr('Loading the model…'));
   try {
     const [m3, buf] = await Promise.all([
       import('./model3d.js'),
       fileOf(d).then(r => {
-        if (!r.ok) throw new Error(`errore ${r.status}`);
+        if (!r.ok) throw new Error(tr('error {status}', { status: r.status }));
         return r.arrayBuffer();
       }),
     ]);
     const obj = await m3.parseModel(buf, d.filename, status);
-    if (viewers.get(v.id) !== v) return; // nel frattempo il documento è stato chiuso
+    if (viewers.get(v.id) !== v) return; // the document was closed meanwhile
     v.pins3d = h('div.dv-pins');
     v.stageEl = h('div.dv-model', { onpointerdown: ev => { v.down = { x: ev.clientX, y: ev.clientY, b: ev.button }; } });
     v.stageEl.addEventListener('pointerup', ev => clickModel(v, ev));
@@ -371,7 +372,7 @@ async function openModel(v, d) {
     ready(v);
   } catch (e) {
     console.warn(e);
-    fail(v, `Impossibile aprire il modello: ${e.message}`);
+    fail(v, tr('Cannot open the model: {error}', { error: e.message }));
   }
 }
 
@@ -381,7 +382,7 @@ function clickModel(v, ev) {
   if (!down || down.b !== 0 || Math.hypot(ev.clientX - down.x, ev.clientY - down.y) > 4) return;
   if (isReadOnly(v.stageEl) || ev.target.closest('.dv-pin')) return;
   const p = v.stage.pick(ev.clientX, ev.clientY);
-  if (!p) return; // clic fuori dal modello
+  if (!p) return; // click outside the model
   for (const o of viewers.values()) o.draft = null;
   v.draft = { page: 1, ...p, fresh: true };
   openNotes(v);
@@ -389,8 +390,8 @@ function clickModel(v, ev) {
   render();
 }
 
-// Segnaposto proiettati sullo schermo a ogni movimento della vista; quelli coperti dal modello (calcolati a
-// vista ferma, è il conto più lento) restano visibili ma attenuati.
+// Pins projected on the screen at every movement of the view; those hidden by the model (computed with the view at
+// rest, it is the slowest calculation) stay visible but faded.
 function updatePins3d(v, settled) {
   if (!v.stage || v.dragging) return;
   const list = numbered(v.id);
@@ -404,7 +405,7 @@ function updatePins3d(v, settled) {
   };
   const pins = list.map(({ n, num }) => place(pinDrag3d(v, n, h('button.dv-pin', {
     class: [ui.docNote === n.id && 'on', n.resolved_at && 'resolved', v.hiddenPins.has(n.id) && 'back'].filter(Boolean).join(' ') || null,
-    title: `${n.text}\n(trascina per spostare)`,
+    title: `${n.text}\n${tr('(drag to move)')}`,
     onclick: ev => {
       ev.stopPropagation();
       if (ev.currentTarget.dragged) return;
@@ -416,7 +417,7 @@ function updatePins3d(v, settled) {
   v.pins3d.replaceChildren(...pins);
 }
 
-// Come pinDrag, ma il segnaposto scorre sulla superficie del modello (fuori dal modello resta dov'era).
+// Like pinDrag, but the pin slides on the model's surface (outside the model it stays where it was).
 function pinDrag3d(v, n, pin) {
   pin.addEventListener('pointerdown', ev => {
     if (ev.button !== 0 || isReadOnly(pin)) return;
@@ -469,7 +470,7 @@ function newPage(v, num, w, h0, extra) {
   if (extra.img) wrap.append(extra.img);
   else wrap.append(extra.canvas = h('canvas'));
   wrap.append(hits, marks);
-  // PDF: sopra il disegno, il testo vero della pagina (trasparente) per selezionarlo.
+  // PDF: above the drawing, the page's real text (transparent) to select it.
   if (extra.page) wrap.append(extra.textEl = h('div.textLayer'));
   wrap.append(pins);
   v.pages.push({ num, w, h: h0, wrap, pins, hits, marks, ...extra });
@@ -483,17 +484,17 @@ function ready(v) {
   applyPendingScroll(v);
 }
 
-// Larghezza = spazio disponibile × zoom; l'altezza segue le proporzioni della pagina.
+// Width = available space × zoom; the height follows the page's proportions.
 function layout(v) {
   if (v.stage) {
     v.stage.resize();
     return;
   }
   if (!v.pages.length || !v.scroller.isConnected) return;
-  const avail = Math.max(200, v.scroller.clientWidth - 16); // 8 px di margine per lato
+  const avail = Math.max(200, v.scroller.clientWidth - 16); // 8 px of margin per side
   for (const p of v.pages) {
     p.cssW = Math.round(avail * v.zoom);
-    p.wrap.style.setProperty('--total-scale-factor', p.cssW / p.w); // dimensione del testo selezionabile
+    p.wrap.style.setProperty('--total-scale-factor', p.cssW / p.w); // size of the selectable text
     p.wrap.style.width = `${p.cssW}px`;
     p.wrap.style.height = `${Math.round(p.cssW * p.h / p.w)}px`;
     if (p.visible && !v.quickZoom) renderPage(v, p);
@@ -510,7 +511,7 @@ function renderPage(v, p) {
   renderText(v, p);
   p.task?.cancel();
   const viewport = p.page.getViewport({ scale });
-  // Si disegna su un canvas nuovo e si sostituisce a fine render: niente pagina bianca durante lo zoom.
+  // Drawn on a new canvas and swapped at the end of the render: no white page while zooming.
   const canvas = document.createElement('canvas');
   canvas.width = Math.floor(viewport.width);
   canvas.height = Math.floor(viewport.height);
@@ -522,7 +523,7 @@ function renderPage(v, p) {
   }).catch(e => { if (e?.name !== 'RenderingCancelledException') console.warn(e); });
 }
 
-// Strato di testo di PDF.js: si costruisce la prima volta che la pagina si vede, poi si adatta allo zoom.
+// PDF.js text layer: built the first time the page is seen, then adapted to the zoom.
 function renderText(v, p) {
   const viewport = p.page.getViewport({ scale: p.cssW / p.w });
   if (p.textLayer) return p.textLayer.update({ viewport });
@@ -530,7 +531,7 @@ function renderText(v, p) {
   p.textLayer.render().then(() => p.textEl.append(h('div.endOfContent'))).catch(e => { if (e?.name !== 'AbortException') console.warn(e); });
 }
 
-const clampZoom = (v, z) => Math.min(v.kind === 'cad' ? 12 : 4, Math.max(0.4, z)); // nei disegni si va nei dettagli
+const clampZoom = (v, z) => Math.min(v.kind === 'cad' ? 12 : 4, Math.max(0.4, z)); // drawings go into the details
 
 function setZoom(v, z) {
   const ratio = v.scroller.scrollTop / Math.max(1, v.scroller.scrollHeight);
@@ -539,8 +540,8 @@ function setZoom(v, z) {
   v.scroller.scrollTop = ratio * v.scroller.scrollHeight;
 }
 
-// Zoom con pinch (trackpad o dita) e ctrl/⌘ + rotella, attorno al punto sotto il puntatore. Durante il gesto le
-// pagine si allargano e basta (il disegno si stira); si ridisegnano nitide quando ci si ferma.
+// Zoom with pinch (trackpad or fingers) and ctrl/⌘ + wheel, around the point under the pointer. During the gesture the
+// pages only widen (the drawing stretches); they are redrawn sharp when you stop.
 function zoomAround(v, z, cx, cy) {
   const s = v.scroller;
   const r = s.getBoundingClientRect();
@@ -558,7 +559,7 @@ function zoomAround(v, z, cx, cy) {
   v.zoomTimer = setTimeout(() => layout(v), 150);
 }
 
-// Safari manda il pinch come gesture*, gli altri browser come rotella con ctrl: si tiene uno dei due alla volta.
+// Safari sends the pinch as gesture*, the other browsers as a wheel with ctrl: one of the two is used at a time.
 function pinchZoom(v) {
   const s = v.scroller;
   s.addEventListener('wheel', ev => {
@@ -577,22 +578,22 @@ function updatePageLabel(v) {
   if (!v.pageLabel || v.pages.length < 2) return;
   const mid = v.scroller.scrollTop + v.scroller.clientHeight / 2;
   const p = v.pages.find(x => x.wrap.offsetTop + x.wrap.offsetHeight > mid) || v.pages.at(-1);
-  v.pageLabel.textContent = `pag. ${p.num} / ${v.pages.length}`;
+  v.pageLabel.textContent = tr('p. {n} / {total}', { n: p.num, total: v.pages.length });
 }
 
-// ---------- ricerca nel documento (⌘F / Ctrl+F) ----------
-// I PDF sono disegnati su canvas: la ricerca del browser non li vede. Il testo di ogni pagina si legge con
-// PDF.js (una volta sola), i risultati sono riquadri sopra la pagina in percentuale (seguono lo zoom).
-// Nei file di testo le occorrenze si evidenziano direttamente. Maiuscole e minuscole non contano.
+// ---------- search in the document (⌘F / Ctrl+F) ----------
+// PDFs are drawn on canvas: the browser's search does not see them. The text of each page is read with PDF.js (only
+// once), the results are boxes over the page in percent (they follow the zoom). In text files the occurrences are
+// highlighted directly. Upper and lower case do not matter.
 const MOD = /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl+';
 const searchable = v => v.kind === 'pdf' || v.kind === 'text' || v.kind === 'table';
-let lastActive = null; // nella revisione affiancata: il documento toccato per ultimo
+let lastActive = null; // in the side-by-side review: the document touched last
 
 function searchBar(v) {
   if (!searchable(v)) return null;
   const go = dir => { if (v.matches?.length) showMatch(v, (v.matchIndex + dir + v.matches.length) % v.matches.length); };
   v.searchInput = h('input.dv-search-in', {
-    type: 'search', placeholder: 'Cerca nel documento…', autocomplete: 'off', spellcheck: 'false',
+    type: 'search', placeholder: tr('Search in the document…'), autocomplete: 'off', spellcheck: 'false',
     oninput: () => { clearTimeout(v.searchTimer); v.searchTimer = setTimeout(() => runSearch(v), 180); },
     onkeydown: ev => {
       if (ev.key === 'Enter') { ev.preventDefault(); go(ev.shiftKey ? -1 : 1); }
@@ -602,9 +603,9 @@ function searchBar(v) {
   v.searchCount = h('span.muted.dv-search-n');
   v.searchBox = h('div.dv-search', { hidden: true },
     icon('search'), v.searchInput, v.searchCount,
-    h('button.icon-btn.sm', { title: 'Precedente (Maiusc+Invio)', onclick: () => go(-1) }, '↑'),
-    h('button.icon-btn.sm', { title: 'Successivo (Invio)', onclick: () => go(1) }, '↓'),
-    h('button.icon-btn.sm', { title: 'Chiudi (Esc)', onclick: () => closeSearch(v) }, icon('x')));
+    h('button.icon-btn.sm', { title: tr('Previous (Shift+Enter)'), onclick: () => go(-1) }, '↑'),
+    h('button.icon-btn.sm', { title: tr('Next (Enter)'), onclick: () => go(1) }, '↓'),
+    h('button.icon-btn.sm', { title: tr('Close (Esc)'), onclick: () => closeSearch(v) }, icon('x')));
   return v.searchBox;
 }
 
@@ -622,7 +623,7 @@ function closeSearch(v) {
   v.searchCount.textContent = '';
 }
 
-// Scorciatoia dalla tastiera: true se c'è un documento in cui cercare (altrimenti resta la ricerca del browser).
+// Keyboard shortcut: true if there is a document to search in (otherwise the browser's search stays).
 export function docSearchKey() {
   const open = wantedDocs().map(id => viewers.get(id)).filter(v => v && searchable(v));
   const v = open.includes(lastActive) ? lastActive : open[0];
@@ -631,13 +632,13 @@ export function docSearchKey() {
   return true;
 }
 
-// Testo di una pagina PDF con la posizione di ogni pezzo (coordinate della pagina a zoom 1).
+// Text of a PDF page with the position of each piece (page coordinates at zoom 1).
 async function pageText(p) {
   if (p.text) return p.text;
   const { Util } = await loadPdfjs();
   const vt = p.page.getViewport({ scale: 1 }).transform;
-  // Non getTextContent(): legge lo stream con "for await", che Safari (e l'app installata dal Dock) non ha
-  // sugli stream ("undefined is not a function"). Il lettore dello stream funziona ovunque.
+  // Not getTextContent(): it reads the stream with "for await", which Safari (and the app installed from the Dock)
+  // lacks on streams ("undefined is not a function"). The stream's reader works everywhere.
   const items = [];
   const reader = p.page.streamTextContent().getReader();
   for (let r = await reader.read(); !r.done; r = await reader.read()) items.push(...r.value.items);
@@ -657,8 +658,8 @@ async function pageText(p) {
   return p.text;
 }
 
-// Testo da confrontare: minuscolo, senza accenti, trattini tipografici come "-", spazi di ogni tipo (anche
-// quelli non separabili, frequenti nei PDF) come uno spazio solo. at[i] = posizione nel testo originale.
+// Text to compare: lower case, without accents, typographic dashes as "-", spaces of every kind (also the
+// non-breaking ones, frequent in PDFs) as a single space. at[i] = position in the original text.
 function normalize(str) {
   let norm = '';
   const at = [];
@@ -672,7 +673,7 @@ function normalize(str) {
   return { norm, at };
 }
 
-// Riquadri di un'occorrenza [from, to): uno per ogni pezzo di testo che tocca (anche su più righe).
+// Boxes of an occurrence [from, to): one for each piece of text it touches (also over several lines).
 function rectsOf(text, from, to) {
   return text.spans.filter(s => s.end > from && s.start < to).map(s => {
     const len = Math.max(1, s.end - s.start);
@@ -709,29 +710,29 @@ async function runSearch(v) {
       try {
         text = await pageText(p);
       } catch (e) {
-        console.warn(`Testo della pagina ${p.num} illeggibile`, e);
+        console.warn(`Text of page ${p.num} unreadable`, e);
         failed++;
         why ||= String(e?.message || e).slice(0, 160);
         continue;
       }
-      if (seq !== v.searchSeq) return; // nel frattempo si è scritto altro
+      if (seq !== v.searchSeq) return; // something else was typed meanwhile
       empty &&= text.empty;
       for (let i = text.lower.indexOf(q); i >= 0; i = text.lower.indexOf(q, i + q.length)) {
         v.matches.push({ page: p.num, rects: rectsOf(text, text.at[i], text.at[i + q.length]) });
       }
     }
-    // Senza risultati si dice perché, se il motivo è il PDF: senza testo (una scansione) o illeggibile.
-    v.noText = failed === v.pages.length ? `non riesco a leggere il testo di questo PDF (${why})`
-      : empty && !failed ? 'questo PDF non ha testo da cercare (è una scansione?)'
-        : failed ? `nessun risultato; ${failed} ${failed === 1 ? 'pagina illeggibile' : 'pagine illeggibili'} (${why})` : '';
+    // Without results, say why if the reason is the PDF: no text (a scan) or unreadable.
+    v.noText = failed === v.pages.length ? tr('cannot read the text of this PDF ({why})', { why })
+      : empty && !failed ? tr('this PDF has no text to search (is it a scan?)')
+        : failed ? tr('no results; {pages} ({why})', { pages: trn(failed, '1 unreadable page', '{n} unreadable pages'), why }) : '';
   }
   if (!v.matches.length) {
     drawMatches(v);
-    v.searchCount.textContent = v.noText || 'nessun risultato';
-    v.searchCount.title = v.searchCount.textContent; // il motivo può essere lungo
+    v.searchCount.textContent = v.noText || tr('no results');
+    v.searchCount.title = v.searchCount.textContent; // the reason may be long
     return;
   }
-  // Si parte dal primo risultato dalla pagina che si sta guardando in poi.
+  // Start from the first result from the page being looked at onwards.
   const here = v.kind === 'pdf' ? currentPage(v) : 1;
   const first = v.matches.findIndex(m => (m.page ?? 1) >= here);
   showMatch(v, Math.max(0, first));
@@ -811,29 +812,29 @@ function drawMatches(v) {
 }
 
 function clickPage(v, num, wrap, ev) {
-  if (isReadOnly(wrap)) return; // in sola lettura non si aggiungono note
-  if (ev.target.closest('.dv-pin') || v.textJust) return; // il rilascio ha appena preparato una nota sul testo
-  if (selectionIn(v)) return; // testo selezionato (sul telefono): la nota si fa dal pulsante
+  if (isReadOnly(wrap)) return; // read-only: no notes are added
+  if (ev.target.closest('.dv-pin') || v.textJust) return; // the release has just prepared a note on the text
+  if (selectionIn(v)) return; // text selected (on a phone): the note is made from the button
   const r = wrap.getBoundingClientRect();
   const x = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width));
   const y = Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height));
-  // Clic su un testo evidenziato: si apre la sua nota.
+  // Click on highlighted text: its note opens.
   const hit = numbered(v.id).find(({ n }) => marksOf(n).some(([pg, mx, my, mw, mh]) => pg === num && x >= mx && x <= mx + mw && y >= my && y <= my + mh));
   if (hit) {
     openNotes(v);
     return selectNote(hit.n.id, false);
   }
-  for (const o of viewers.values()) o.draft = null; // una nota in preparazione alla volta
+  for (const o of viewers.values()) o.draft = null; // one note being prepared at a time
   v.draft = { page: num, x, y, fresh: true };
   openNotes(v);
   ui.docNote = null;
   render();
 }
 
-// ---------- note su un pezzo di testo (PDF) ----------
-// Il testo selezionato (trascinando col mouse; sul telefono tenendo premuto e poi "Nota sul testo") diventa
-// una nota in preparazione con quel testo evidenziato: riquadri in 0..1 per pagina, come i segnaposto, e il
-// segnaposto alla fine della prima riga.
+// ---------- notes on a piece of text (PDF) ----------
+// The selected text (dragging with the mouse; on a phone with a long press and then "Note on the text") becomes a
+// note being prepared with that text highlighted: boxes in 0..1 per page, like the pins, and the pin at the end of
+// the first line.
 function selectionIn(v) {
   const sel = window.getSelection();
   if (!sel?.rangeCount || sel.isCollapsed) return null;
@@ -844,8 +845,8 @@ function selectionIn(v) {
   return marks.length ? { quote: quote.slice(0, 2000), marks } : null;
 }
 
-// Riquadri della selezione, pezzo per pezzo di testo (i rettangoli del range intero comprenderebbero
-// anche pagine intere), uniti per riga.
+// Boxes of the selection, piece by piece of text (the whole range's rectangles would include whole pages too),
+// merged by line.
 function rangeMarks(v, range) {
   const out = [];
   for (const p of v.pages) {
@@ -873,15 +874,15 @@ function rangeMarks(v, range) {
   return out.slice(0, 300);
 }
 
-const parsedMarks = new Map(); // JSON salvato → riquadri
+const parsedMarks = new Map(); // saved JSON → boxes
 function marksOf(n) {
   if (!n.marks) return [];
-  if (Array.isArray(n.marks)) return n.marks; // nota in preparazione
+  if (Array.isArray(n.marks)) return n.marks; // note being prepared
   if (!parsedMarks.has(n.marks)) parsedMarks.set(n.marks, (() => { try { return JSON.parse(n.marks); } catch { return []; } })());
   return parsedMarks.get(n.marks);
 }
 
-// Rilascio del mouse dopo una selezione (anche doppio o triplo clic su una parola o una riga).
+// Mouse release after a selection (also double or triple click on a word or a line).
 function textPointerUp(v, ev) {
   if (ev.pointerType === 'touch' || ev.button !== 0 || isReadOnly(v.pagesEl) || ev.target.closest('.dv-pin')) return;
   const sel = selectionIn(v);
@@ -889,11 +890,11 @@ function textPointerUp(v, ev) {
 }
 
 function textDraft(v, sel) {
-  // Segnaposto alla fine della prima riga evidenziata: così non copre il testo selezionato.
+  // Pin at the end of the first highlighted line: so it does not cover the selected text.
   const [page, x, y, w, hh] = sel.marks[0];
   for (const o of viewers.values()) o.draft = null;
   v.draft = { page, x: Math.min(1, x + w), y: Math.min(1, y + hh), quote: sel.quote, marks: sel.marks, fresh: true };
-  v.textJust = true; // il clic che segue il rilascio non deve preparare anche una nota in un punto
+  v.textJust = true; // the click following the release must not also prepare a note at a point
   setTimeout(() => { v.textJust = false; }, 0);
   window.getSelection().removeAllRanges();
   if (v.selBtn) v.selBtn.hidden = true;
@@ -902,10 +903,10 @@ function textDraft(v, sel) {
   render();
 }
 
-// Trascinando oltre la fine di una riga il puntatore finisce nel vuoto tra i pezzi di testo e la selezione
-// salterebbe a fine pagina: come nel visualizzatore di PDF.js, durante la selezione il riquadro "fine del
-// contenuto" copre la pagina e segue il punto in cui la selezione finisce.
-let selecting = null; // strato di testo in cui è iniziata la selezione
+// Dragging past the end of a line, the pointer ends up in the void between the pieces of text and the selection
+// would jump to the end of the page: as in PDF.js's viewer, during the selection the "end of content" box covers the
+// page and follows the point where the selection ends.
+let selecting = null; // text layer where the selection started
 document.addEventListener('pointerdown', ev => {
   const layer = ev.button === 0 && ev.target.closest?.('.textLayer');
   if (!layer) return;
@@ -916,7 +917,7 @@ document.addEventListener('pointerup', () => {
   if (!selecting) return;
   selecting.classList.remove('selecting');
   const end = selecting.querySelector('.endOfContent');
-  if (end) selecting.append(end); // torna in fondo
+  if (end) selecting.append(end); // back to the bottom
   selecting = null;
 });
 
@@ -933,7 +934,7 @@ function followSelection() {
   anchor.parentNode.insertBefore(end, back ? anchor : anchor.nextSibling);
 }
 
-// Sul telefono la selezione si fa tenendo premuto: compare il pulsante per farne una nota.
+// On a phone the selection is made with a long press: the button to make it a note appears.
 let selTimer = null;
 document.addEventListener('selectionchange', () => {
   followSelection();
@@ -945,9 +946,9 @@ document.addEventListener('selectionchange', () => {
   }, 200);
 });
 
-// ---------- spazio per il documento ----------
-// Barra delle note nascondibile e modalità "espandi" che toglie il resto dell'app.
-// Pagina singola: preferenza ricordata (ui.docNotesHidden). Revisione: ogni pannello ha la sua (v.paneNotes).
+// ---------- room for the document ----------
+// Hideable notes bar and "expand" mode that removes the rest of the app.
+// Single page: preference remembered (ui.docNotesHidden). Review: each pane has its own (v.paneNotes).
 const inReview = () => location.hash.startsWith('#/review');
 const notesShown = v => (inReview() ? !!v.paneNotes : !ui.docNotesHidden);
 
@@ -961,7 +962,7 @@ function openNotes(v) {
   relayoutSoon();
 }
 
-// Lo spazio del documento cambia: si reimpagina subito, senza aspettare il ResizeObserver.
+// The document's room changes: re-layout at once, without waiting for the ResizeObserver.
 function relayoutSoon() {
   setTimeout(() => { for (const v of viewers.values()) layout(v); }, 0);
 }
@@ -982,11 +983,11 @@ export function setDocFocus(on) {
   relayoutSoon();
 }
 
-// ---------- note ----------
+// ---------- notes ----------
 const notesOf = id => S.data.docNotesOf.get(id) || [];
 const visible = n => ui.docShowResolved || !n.resolved_at;
 
-// Numerazione dei segnaposto: per pagina, dall'alto in basso.
+// Pin numbering: per page, top to bottom.
 function numbered(docId) {
   return notesOf(docId).filter(n => n.page != null && visible(n))
     .sort((a, b) => a.page - b.page || a.y - b.y || a.x - b.x)
@@ -994,9 +995,9 @@ function numbered(docId) {
 }
 
 function updatePins(v) {
-  if (!pinnable(v) || v.status !== 'ready' || v.dragging) return; // durante un trascinamento non si ridisegna
+  if (!pinnable(v) || v.status !== 'ready' || v.dragging) return; // no redrawing while dragging
   if (v.kind === 'model') {
-    // Note aggiunte o spostate: si ricalcola quali sono coperte (non a ogni sincronizzazione: costa).
+    // Notes added or moved: recompute which ones are hidden (not at every sync: it is costly).
     const key = numbered(v.id).map(({ n }) => `${n.id}:${n.x},${n.y},${n.z}`).join();
     if (key !== v.pinKey) [v.pinKey, v.hiddenPins] = [key, null];
     return updatePins3d(v, false);
@@ -1008,11 +1009,11 @@ function updatePins(v) {
       const pin = h('button.dv-pin', {
         class: [ui.docNote === n.id && 'on', n.resolved_at && 'resolved'].filter(Boolean).join(' ') || null,
         style: `left:${n.x * 100}%;top:${n.y * 100}%`,
-        // Le note su un testo restano attaccate al testo: il segnaposto non si sposta.
-        title: n.marks ? `«${n.quote || ''}»\n${n.text}` : `${n.text}\n(trascina per spostare)`,
+        // Notes on a text stay attached to the text: the pin does not move.
+        title: n.marks ? `«${n.quote || ''}»\n${n.text}` : `${n.text}\n${tr('(drag to move)')}`,
         onclick: ev => {
           ev.stopPropagation();
-          if (ev.currentTarget.dragged) return; // fine di un trascinamento, non un clic
+          if (ev.currentTarget.dragged) return; // end of a drag, not a click
           openNotes(v);
           selectNote(n.id, false);
         },
@@ -1021,7 +1022,7 @@ function updatePins(v) {
     });
     if (v.draft?.page === p.num) pins.push(h('span.dv-pin.draft', { style: `left:${v.draft.x * 100}%;top:${v.draft.y * 100}%` }, '+'));
     p.pins.replaceChildren(...pins);
-    // Testi evidenziati (anche su più pagine).
+    // Highlighted texts (also over several pages).
     p.marks.replaceChildren(
       ...list.flatMap(({ n }) => marksOf(n).filter(m => m[0] === p.num).map(m => h('div.dv-mark', {
         class: [ui.docNote === n.id && 'on', n.resolved_at && 'resolved'].filter(Boolean).join(' ') || null, style: pct(m),
@@ -1030,16 +1031,16 @@ function updatePins(v) {
   }
 }
 
-// Segnaposto trascinabili: si spostano nel punto giusto, anche su un'altra pagina; vicino ai bordi il
-// documento scorre. Al rilascio si salva la nuova posizione; un clic senza movimento seleziona la nota.
+// Draggable pins: they move to the right point, also on another page; near the edges the document scrolls. On
+// release the new position is saved; a click without movement selects the note.
 function pinDrag(v, n, pin) {
   pin.addEventListener('pointerdown', ev => {
-    if (ev.button !== 0 || isReadOnly(pin)) return; // in sola lettura un clic seleziona e basta
+    if (ev.button !== 0 || isReadOnly(pin)) return; // read-only: a click only selects
     ev.stopPropagation();
     ev.preventDefault();
     pin.dragged = false;
     const r0 = pin.closest('.dv-page').getBoundingClientRect();
-    // Distanza tra il puntatore e la punta del segnaposto (il punto salvato), mantenuta durante il trascinamento.
+    // Distance between the pointer and the pin's tip (the saved point), kept during the drag.
     const off = { x: ev.clientX - (r0.left + n.x * r0.width), y: ev.clientY - (r0.top + n.y * r0.height) };
     const start = { x: ev.clientX, y: ev.clientY };
     let target = null;
@@ -1054,7 +1055,7 @@ function pinDrag(v, n, pin) {
       else if (e.clientY > sr.bottom - 40) v.scroller.scrollTop += 14;
       const ax = e.clientX - off.x;
       const ay = e.clientY - off.y;
-      // La pagina sotto la punta (o la più vicina, negli spazi tra le pagine).
+      // The page under the tip (or the closest one, in the gaps between pages).
       const dist = p => { const r = p.wrap.getBoundingClientRect(); return ay < r.top ? r.top - ay : ay > r.bottom ? ay - r.bottom : 0; };
       const p = v.pages.reduce((a, b) => (dist(b) < dist(a) ? b : a));
       const r = p.wrap.getBoundingClientRect();
@@ -1071,9 +1072,9 @@ function pinDrag(v, n, pin) {
       pin.classList.remove('dragging');
       v.dragging = false;
       if (!pin.dragged || !target) return;
-      Object.assign(n, target); // subito al suo posto, il server conferma con la sincronizzazione
+      Object.assign(n, target); // at its place at once, the server confirms with the sync
       act(() => api('PATCH', `/doc-notes/${n.id}`, target));
-      setTimeout(() => { pin.dragged = false; }, 0); // il click che segue il rilascio va ignorato
+      setTimeout(() => { pin.dragged = false; }, 0); // the click following the release must be ignored
     };
     pin.addEventListener('pointermove', move);
     pin.addEventListener('pointerup', end);
@@ -1082,8 +1083,8 @@ function pinDrag(v, n, pin) {
   return pin;
 }
 
-// Lo scorrimento verso una nota si applica dopo che il visualizzatore è stato riagganciato alla pagina
-// (durante il ridisegno lo scorrimento verrebbe interrotto): qui si prenota soltanto.
+// Scrolling to a note is applied after the viewer has been re-attached to the page (during the render the scroll
+// would be interrupted): here it is only booked.
 function scrollToNote(v, id) {
   v.pendingNote = id;
 }
@@ -1094,10 +1095,10 @@ function applyPendingScroll(v) {
   const n = notesOf(v.id).find(x => x.id === id);
   const p = n?.page != null && v.pages[n.page - 1];
   v.pendingNote = null;
-  if (v.stage && n?.z != null) return v.stage.focus(n); // modello 3D: si gira la vista verso il punto
+  if (v.stage && n?.z != null) return v.stage.focus(n); // 3D model: the view turns towards the point
   if (!p) return;
   v.scroll = Math.max(0, p.wrap.offsetTop + n.y * p.wrap.offsetHeight - v.scroller.clientHeight / 2);
-  v.scroller.scrollTop = v.scroll; // immediato: lo scorrimento animato si ferma se la scheda non è in primo piano
+  v.scroller.scrollTop = v.scroll; // immediate: the animated scroll stops if the tab is not in the foreground
   updatePageLabel(v);
 }
 
@@ -1118,12 +1119,12 @@ async function noteToTodo(d, n) {
   const link = `${location.origin}${location.pathname}#/d/${d.id}?n=${n.id}`;
   const r = await act(async () => {
     const e = await api('POST', '/entries', { text, today: today() });
-    // Negli aggiornamenti (non nei dettagli) perché lì i link sono cliccabili.
-    const quote = n.quote ? `, su «${n.quote.length > 80 ? `${n.quote.slice(0, 80)}…` : n.quote}»` : '';
-    await api('POST', `/entries/${e.id}/log`, { text: `Da ${d.label || d.filename}${n.page && kindOf(d) === 'pdf' ? `, pag. ${n.page}` : ''}${quote}: ${link}` });
+    // In the updates (not in the details) because there the links are clickable.
+    const quote = n.quote ? `, ${tr('on «{quote}»', { quote: n.quote.length > 80 ? `${n.quote.slice(0, 80)}…` : n.quote })}` : '';
+    await api('POST', `/entries/${e.id}/log`, { text: `${tr('From {doc}', { doc: d.label || d.filename })}${n.page && kindOf(d) === 'pdf' ? `, ${tr('p. {n}', { n: n.page })}` : ''}${quote}: ${link}` });
     return e;
   });
-  if (r) toast('Todo creata dalla nota', { action: { label: 'Agenda', fn: () => { location.hash = '#/agenda'; } } });
+  if (r) toast(tr('Todo created from the note'), { action: { label: tr('Agenda'), fn: () => { location.hash = '#/agenda'; } } });
 }
 
 function enterSave(save, cancel) {
@@ -1133,7 +1134,7 @@ function enterSave(save, cancel) {
       const text = ev.target.value.trim();
       if (text) save(text, ev.target);
     } else if (ev.key === 'Escape' && cancel) {
-      ev.preventDefault(); // l'Esc globale non deve anche tornare indietro
+      ev.preventDefault(); // the global Esc must not also go back
       cancel();
     }
   };
@@ -1153,8 +1154,8 @@ function noteCard(d, n, num) {
     onclick: ev => { if (!ev.target.closest('button, a, textarea')) selectNote(n.id); },
   },
   h('div.dnote-h',
-    num ? h('span.dv-pin.mini', num) : h('span.dnote-gen', icon('log'), 'generale'),
-    n.page != null && kindOf(d) === 'pdf' && h('span.muted', `pag. ${n.page}`),
+    num ? h('span.dv-pin.mini', num) : h('span.dnote-gen', icon('log'), tr('general')),
+    n.page != null && kindOf(d) === 'pdf' && h('span.muted', tr('p. {n}', { n: n.page })),
     h('span.grow'),
     h('span.muted', `${userName(n.created_by)} · ${fmtTime(n.created_at)}`)),
   n.quote && h('div.dnote-q', n.quote),
@@ -1167,14 +1168,14 @@ function noteCard(d, n, num) {
     : h('div.dnote-t.md', { ondblclick: () => { ui.docEdit = n.id; render(); } }, mdText(n.text)),
   h('div.dnote-a',
     h('button.chip', { onclick: () => act(() => api('PATCH', `/doc-notes/${n.id}`, { resolved: !n.resolved_at })) },
-      icon('check'), n.resolved_at ? 'riapri' : 'risolta'),
-    h('button.chip', { onclick: () => { ui.docEdit = n.id; render(); } }, 'modifica'),
+      icon('check'), n.resolved_at ? tr('reopen') : tr('resolved')),
+    h('button.chip', { onclick: () => { ui.docEdit = n.id; render(); } }, tr('edit')),
     h('button.chip', { onclick: () => noteToTodo(d, n) }, '→ todo'),
-    (n.created_by === me.id || me.is_admin) && h('button.icon-btn.sm', { title: 'Elimina', onclick: () => trashIt('docnote', `/doc-notes/${n.id}`, 'Nota') }, icon('trash'))),
-  // Le note sono private di chi le scrive: qui si vede (e chi l'ha scritta sceglie) con chi è condivisa.
+    (n.created_by === me.id || me.is_admin) && h('button.icon-btn.sm', { title: tr('Delete'), onclick: () => trashIt('docnote', `/doc-notes/${n.id}`, tr('Note')) }, icon('trash'))),
+  // Notes are private to whoever writes them: here one sees (and the author chooses) who it is shared with.
   shareBox('docnote', n),
-  // Nota selezionata: le voci che la citano con [[nota:…]].
-  ui.docNote === n.id && backlinksBox('nota', n.id, { title: 'Citata in', compact: true }));
+  // Selected note: the entries that mention it with [[nota:…]].
+  ui.docNote === n.id && backlinksBox('nota', n.id, { title: tr('Mentioned in'), compact: true }));
 }
 
 function notesPanel(d, v) {
@@ -1191,63 +1192,63 @@ function notesPanel(d, v) {
 
   return h('aside.dv-notes',
     h('div.dv-nh',
-      h('b', 'Note'), h('span.muted', String(all.length - (ui.docShowResolved ? 0 : resolved))),
+      h('b', tr('Notes')), h('span.muted', String(all.length - (ui.docShowResolved ? 0 : resolved))),
       h('span.grow'),
       resolved > 0 && h('button.chip', { class: ui.docShowResolved && 'on', onclick: () => { ui.docShowResolved = !ui.docShowResolved; render(); } },
-        `risolte ${resolved}`)),
+        tr('resolved {n}', { n: resolved }))),
     v.draft && h('div.dnote.draft',
-      h('div.dnote-h', h('span.dv-pin.mini.draft', '+'), h('span', v.draft.quote ? `Nuova nota sul testo, pag. ${v.draft.page}`
-        : v.kind === 'pdf' ? `Nuova nota a pag. ${v.draft.page}` : 'Nuova nota in questo punto')),
+      h('div.dnote-h', h('span.dv-pin.mini.draft', '+'), h('span', v.draft.quote ? tr('New note on the text, p. {n}', { n: v.draft.page })
+        : v.kind === 'pdf' ? tr('New note on p. {n}', { n: v.draft.page }) : tr('New note at this point'))),
       v.draft.quote && h('div.dnote-q', v.draft.quote),
       h('textarea.dnote-edit', { 'data-ac': 'text', 'data-ac-only': '#+',
-        rows: 3, placeholder: 'Cosa c\'è da ricordare qui? (+persona per condividerla; Invio salva, Esc annulla)', 'data-fk': `draft-${d.id}`,
+        rows: 3, placeholder: tr('What should be remembered here? (+person to share it; Enter saves, Esc cancels)'), 'data-fk': `draft-${d.id}`,
         oninput: autosize, onkeydown: enterSave(saveDraft, cancelDraft),
       }),
       h('div.dnote-a',
-        h('button.btn.sm.primary', { onclick: ev => { const t = ev.target.closest('.dnote').querySelector('textarea').value.trim(); if (t) saveDraft(t); } }, 'Salva'),
-        h('button.btn.sm.ghost', { onclick: cancelDraft }, 'Annulla'))),
+        h('button.btn.sm.primary', { onclick: ev => { const t = ev.target.closest('.dnote').querySelector('textarea').value.trim(); if (t) saveDraft(t); } }, tr('Save')),
+        h('button.btn.sm.ghost', { onclick: cancelDraft }, tr('Cancel')))),
     h('textarea.dv-general', { 'data-ac': 'text', 'data-ac-only': '#+',
-      rows: 1, placeholder: 'Nota generale sul file… (+persona per condividerla; Invio salva)', 'data-fk': `gnote-${d.id}`, oninput: autosize,
+      rows: 1, placeholder: tr('General note on the file… (+person to share it; Enter saves)'), 'data-fk': `gnote-${d.id}`, oninput: autosize,
       onkeydown: enterSave((text, el) => { el.value = ''; act(() => api('POST', `/docs/${d.id}/notes`, { text })); }),
     }),
     general.map(n => noteCard(d, n)),
-    pins.length > 0 && h('div.dv-sub', v.kind === 'model' ? 'Sul modello' : pinnable(v) ? 'Sul documento' : 'Posizionate'),
+    pins.length > 0 && h('div.dv-sub', v.kind === 'model' ? tr('On the model') : pinnable(v) ? tr('On the document') : tr('Positioned')),
     pins.map(({ n, num }) => noteCard(d, n, num)),
     !all.length && !v.draft && h('p.muted.dv-empty', pinnable(v)
-      ? `Nessuna nota. Clicca su un punto del ${v.kind === 'model' ? 'modello' : 'documento'} per lasciarne una lì${v.kind === 'pdf' ? ' o seleziona del testo per una nota su quel testo' : ''}, oppure scrivi una nota generale qui sopra.`
-      : 'Nessuna nota. Scrivi qui sopra una nota sul file.'),
-    // Mail (da mandare e mandate) che lo allegano o lo collegano, e le altre voci che lo citano.
-    backlinksBox('doc', d.id, { title: 'Collegato in', compact: true }));
+      ? (v.kind === 'model' ? tr('No notes. Click on a point of the model to leave one there, or write a general note above.') : v.kind === 'pdf' ? tr('No notes. Click on a point of the document to leave one there or select some text for a note on that text, or write a general note above.') : tr('No notes. Click on a point of the document to leave one there, or write a general note above.'))
+      : tr('No notes. Write a note on the file above.')),
+    // Mails (to send and sent) that attach or link it, and the other entries mentioning it.
+    backlinksBox('doc', d.id, { title: tr('Linked in'), compact: true }));
 }
 
-// Scheda al passaggio del mouse: tipo, nome, articolo, versione e un'anteprima piccola del file.
+// Hover card: kind, name, item, version and a small preview of the file.
 export function docPeek(d) {
   const D = S.data;
   const it = D.itemById.get(d.item_id);
   const n = notesOf(d.id).filter(x => !x.resolved_at).length;
-  const thumb = h('div.peek-thumb', h('span.muted', d.url ? '' : 'Anteprima…'));
-  docThumb(d).then(el => thumb.replaceChildren(el || h('span.muted', d.url ? d.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60) : 'Nessuna anteprima per questo file')));
+  const thumb = h('div.peek-thumb', h('span.muted', d.url ? '' : tr('Preview…')));
+  docThumb(d).then(el => thumb.replaceChildren(el || h('span.muted', d.url ? d.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60) : tr('No preview for this file'))));
   return [
-    h('div.peek-h', h('span.dk', dkAttrs(d.kind), d.kind), it && h('span.code', itemAttrs(it), it.code)),
+    h('div.peek-h', h('span.dk', dkAttrs(d.kind), kindLabel(d.kind)), it && h('span.code', itemAttrs(it), it.code)),
     h('div.peek-name', docName(d)),
     h('div.peek-grid',
-      d.version && h('div.peek-r', h('span.muted', 'Versione'), h('span.mono', d.version)),
+      d.version && h('div.peek-r', h('span.muted', tr('Version')), h('span.mono', d.version)),
       d.filename && d.label && h('div.peek-r', h('span.muted', 'File'), h('span', d.filename)),
-      d.size != null && h('div.peek-r', h('span.muted', 'Dimensione'), h('span', fmtSize(d.size))),
-      h('div.peek-r', h('span.muted', 'Caricato'), h('span', fmtTime(d.created_at))),
-      n > 0 && h('div.peek-r', h('span.muted', 'Note aperte'), h('span', String(n)))),
+      d.size != null && h('div.peek-r', h('span.muted', tr('Size')), h('span', fmtSize(d.size))),
+      h('div.peek-r', h('span.muted', tr('Uploaded')), h('span', fmtTime(d.created_at))),
+      n > 0 && h('div.peek-r', h('span.muted', tr('Open notes')), h('span', String(n)))),
     thumb,
   ];
 }
 
-// ---------- vista ----------
+// ---------- view ----------
 export function viewDoc(id, query = {}) {
   const D = S.data;
   const d = D.docById.get(+id);
-  if (!d) return h('div.empty', h('p', 'Documento non trovato (forse è nel cestino).'), h('a', { href: '#/magazzino' }, 'Torna al magazzino'));
+  if (!d) return h('div.empty', h('p', tr('Document not found (maybe it is in the trash).')), h('a', { href: '#/magazzino' }, tr('Back to the inventory')));
   const it = D.itemById.get(d.item_id);
   const v = getViewer(d);
-  // Link a una nota (?n=ID): la si seleziona e ci si scorre una volta sola, appena la nota è nei dati.
+  // Link to a note (?n=ID): it is selected and scrolled to only once, as soon as the note is in the data.
   const fromLink = query.n && +query.n;
   if (!fromLink) v.linkedNote = null;
   if (fromLink && v.linkedNote !== fromLink && notesOf(d.id).some(n => n.id === fromLink)) {
@@ -1258,9 +1259,9 @@ export function viewDoc(id, query = {}) {
   const focus = document.body.classList.contains('doc-focus');
   return h('div.view.docview', { class: roClass(can('documenti', 'write')) },
     h('div.head',
-      h('a.icon-btn', { href: it ? `#/i/${it.id}` : '#/magazzino', title: 'Torna all\'articolo (Esc)' }, icon('back')),
+      h('a.icon-btn', { href: it ? `#/i/${it.id}` : '#/magazzino', title: tr('Back to the item (Esc)') }, icon('back')),
       it && h('a.code', { href: `#/i/${it.id}`, ...itemAttrs(it) }, it.code),
-      // Il titolo si modifica direttamente: diventa il nome del documento nell'app (il file resta com'è).
+      // The title is edited directly: it becomes the document's name in the app (the file stays as it is).
       h('input.h-title.dv-title-in', {
         value: docName(d), title: d.filename ? `File: ${d.filename}` : d.url, 'data-fk': `dname-${d.id}`,
         onchange: ev => act(() => api('PATCH', `/docs/${d.id}`, { label: ev.target.value.trim() })),
@@ -1274,44 +1275,44 @@ export function viewDoc(id, query = {}) {
     docBody(d, v));
 }
 
-// ---------- pezzi comuni a pagina singola e revisione ----------
-// Tipo e versione modificabili anche dopo il caricamento (qui, nella scheda articolo e in Documenti).
+// ---------- pieces shared by the single page and the review ----------
+// Kind and version can be changed after the upload too (here, in the item page and in Documents).
 export function docMeta(d) {
   const patch = f => act(() => api('PATCH', `/docs/${d.id}`, f));
   return h('span.docmeta',
     kindPicker(d.kind, kind => patch({ kind })),
     h('input.ver-in', {
-      value: d.version || '', placeholder: 'versione', size: 7, title: 'Versione', 'data-fk': `dver-${d.id}`,
+      value: d.version || '', placeholder: tr('version'), size: 7, title: tr('Version'), 'data-fk': `dver-${d.id}`,
       onchange: ev => patch({ version: ev.target.value.trim() }),
       onkeydown: ev => { if (ev.key === 'Enter') ev.target.blur(); },
     }));
 }
 
-const fileButtons = d => [h('button.icon-btn', { title: 'Sposta o copia in un altro articolo', onclick: () => moveDoc(d) }, icon('copy')), d.url
-  ? h('a.icon-btn', { href: d.url, target: '_blank', rel: 'noopener noreferrer', title: `Apri il link originale: ${d.url}` }, icon('link'))
+const fileButtons = d => [h('button.icon-btn', { title: tr('Move or copy to another item'), onclick: () => moveDoc(d) }, icon('copy')), d.url
+  ? h('a.icon-btn', { href: d.url, target: '_blank', rel: 'noopener noreferrer', title: tr('Open the original link: {url}', { url: d.url }) }, icon('link'))
   : [
-  h('a.icon-btn', { href: docFileUrl(d, { inline: true }), target: '_blank', rel: 'noopener', title: 'Apri il file originale' }, icon('link')),
-  h('a.icon-btn', { href: docFileUrl(d), download: '', title: 'Scarica' }, icon('download')),
+  h('a.icon-btn', { href: docFileUrl(d, { inline: true }), target: '_blank', rel: 'noopener', title: tr('Open the original file') }, icon('link')),
+  h('a.icon-btn', { href: docFileUrl(d), download: '', title: tr('Download') }, icon('download')),
 ]];
 
-const notesChip = (d, v) => h('button.chip', { class: notesShown(v) && 'on', onclick: () => toggleNotes(v), title: 'Mostra o nascondi le note' },
-  icon('log'), `note ${notesOf(d.id).filter(visible).length}`);
+const notesChip = (d, v) => h('button.chip', { class: notesShown(v) && 'on', onclick: () => toggleNotes(v), title: tr('Show or hide the notes') },
+  icon('log'), tr('notes {n}', { n: notesOf(d.id).filter(visible).length }));
 
 const focusChip = focus => h('button.chip.only-desktop', {
-  class: focus && 'on', onclick: () => setDocFocus(!focus), title: focus ? 'Torna alla vista normale (Esc)' : 'Usa tutta la finestra',
-}, icon('cols'), focus ? 'riduci' : 'espandi');
+  class: focus && 'on', onclick: () => setDocFocus(!focus), title: focus ? tr('Back to the normal view (Esc)') : tr('Use the whole window'),
+}, icon('cols'), focus ? tr('shrink') : tr('expand'));
 
-// Corpo: anteprima (o messaggio per file senza anteprima) + note, e ripristino dello scorrimento dopo il riaggancio.
+// Body: preview (or message for files without a preview) + notes, and restoring the scroll after re-attaching.
 function docBody(d, v) {
   updatePins(v);
   const preview = v.kind === 'link'
-    ? h('div.dv-main', h('div.empty', h('p', 'Documento esterno'), h('a.btn', { href: d.url, target: '_blank', rel: 'noopener noreferrer' }, icon('link'), d.url)))
+    ? h('div.dv-main', h('div.empty', h('p', tr('External document')), h('a.btn', { href: d.url, target: '_blank', rel: 'noopener noreferrer' }, icon('link'), d.url)))
     : v.kind === 'none'
       ? h('div.dv-main', h('div.empty',
-        h('p', 'Anteprima non disponibile per questo tipo di file.'),
-        h('a.btn', { href: docFileUrl(d), download: '' }, icon('download'), `Scarica ${d.filename}`)))
+        h('p', tr('No preview for this kind of file.')),
+        h('a.btn', { href: docFileUrl(d), download: '' }, icon('download'), tr('Download {name}', { name: d.filename }))))
       : v.el;
-  // Il visualizzatore viene staccato e riattaccato: lo scorrimento va ripristinato dopo l'inserimento.
+  // The viewer is detached and re-attached: the scroll must be restored after the insertion.
   queueMicrotask(() => {
     if (v.scroller.isConnected && Math.abs(v.scroller.scrollTop - v.scroll) > 1) {
       v.scroller.scrollTop = v.scroll;
@@ -1327,33 +1328,33 @@ function docBody(d, v) {
   return h('div.dv', { class: shown ? null : 'no-notes' }, preview, shown && notesPanel(d, v));
 }
 
-// Anteprima di un file che non è un documento (allegato ricevuto, vedi mail.js): solo da guardare, senza note.
-// d.id è la chiave dell'anteprima (come in wantedDocs), d.src il file già scaricato.
+// Preview of a file that is not a document (received attachment, see mail.js): only to look at, without notes.
+// d.id is the preview's key (as in wantedDocs), d.src the file already downloaded.
 export function previewBody(d) {
   const v = getViewer(d);
   queueMicrotask(() => { if (v.scroller.isConnected && Math.abs(v.scroller.scrollTop - v.scroll) > 1) v.scroller.scrollTop = v.scroll; });
   return h('div.dv.no-notes.ro', v.el);
 }
 
-// ---------- revisione affiancata ----------
+// ---------- side-by-side review ----------
 const reviewHash = ids => (ids.length ? `#/review?d=${ids.join(',')}` : '#/documenti');
 
 export function viewReview(_id, query = {}) {
   const D = S.data;
   const ids = [...new Set(String(query.d || '').split(',').map(Number))].filter(id => D.docById.has(id)).slice(0, 3);
-  if (!ids.length) return h('div.empty', h('p', 'Nessun documento da rivedere.'), h('a', { href: '#/documenti' }, 'Scegli i documenti'));
+  if (!ids.length) return h('div.empty', h('p', tr('No document to review.')), h('a', { href: '#/documenti' }, tr('Pick the documents')));
   const focus = document.body.classList.contains('doc-focus');
   const addable = D.docs.filter(d => !ids.includes(d.id) && D.itemById.has(d.item_id));
 
   return h('div.view.review', { class: roClass(can('documenti', 'write')) },
     h('div.head',
-      h('a.icon-btn', { href: '#/documenti', title: 'Documenti (Esc)' }, icon('back')),
-      h('h2.dv-title', 'Revisione'),
-      h('span.muted', `${ids.length} documenti affiancati`),
+      h('a.icon-btn', { href: '#/documenti', title: tr('Documents (Esc)') }, icon('back')),
+      h('h2.dv-title', tr('Review')),
+      h('span.muted', tr('{n} documents side by side', { n: ids.length })),
       h('span.grow'),
       ids.length < 3 && addable.length > 0 && h('select.sm', {
         onchange: ev => { if (ev.target.value) location.hash = reviewHash([...ids, +ev.target.value]); },
-      }, h('option', { value: '' }, '+ affianca un documento…'),
+      }, h('option', { value: '' }, tr('+ put a document side by side…')),
       addable.map(d => h('option', { value: d.id }, `${D.itemById.get(d.item_id).code} · ${d.label || d.filename || d.url}`))),
       focusChip(focus)),
     h('div.rv', { style: `--n:${ids.length}` }, ids.map(id => {
@@ -1363,17 +1364,17 @@ export function viewReview(_id, query = {}) {
       return h('section.rv-pane',
         h('div.rv-h',
           it && h('a.code', { href: `#/i/${it.id}`, ...itemAttrs(it) }, it.code),
-          h('a.rv-title', { href: `#/d/${d.id}`, title: 'Apri da solo' }, docName(d)),
-          h('button.icon-btn.sm', { title: 'Rinomina', onclick: () => renameDoc(d) }, icon('edit')),
+          h('a.rv-title', { href: `#/d/${d.id}`, title: tr('Open on its own') }, docName(d)),
+          h('button.icon-btn.sm', { title: tr('Rename'), onclick: () => renameDoc(d) }, icon('edit')),
           docMeta(d),
           h('span.grow'),
           notesChip(d, v),
-          h('button.icon-btn.sm', { title: 'Togli dalla revisione', onclick: () => { location.hash = reviewHash(ids.filter(x => x !== id)); } }, icon('x'))),
+          h('button.icon-btn.sm', { title: tr('Remove from the review'), onclick: () => { location.hash = reviewHash(ids.filter(x => x !== id)); } }, icon('x'))),
         docBody(d, v));
     })));
 }
 
-// Esc dal visualizzatore: prima chiude la nota in preparazione.
+// Esc from the viewer: first it closes the note being prepared.
 export function docCancelDraft() {
   const v = [...viewers.values()].find(x => x.draft);
   if (!v) return false;

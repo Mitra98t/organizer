@@ -1,12 +1,14 @@
-// Magazzino: articoli per codice, categorie, composizione (cosa contiene cosa), stato.
+// Inventory: items by code, categories, composition (what contains what), status.
 import { c, fail, table, heading, rich, fmtSize, fmtTime } from './term.js';
 import { itemRef, projectRef, entryProjects } from './data.js';
 import { printTree, printBacklinks } from './cmd-entries.js';
+import { tr } from './i18n.js';
 
-const STATUS_IN = { ok: '', '': '', valutazione: 'evaluation', evaluation: 'evaluation', outdated: 'outdated', superato: 'outdated', discarded: 'discarded', scartato: 'discarded' };
-const STATUS_LABEL = { evaluation: c.blue('in valutazione'), outdated: c.yellow('outdated'), discarded: c.red('scartato') };
+// English and Italian words both work.
+const STATUS_IN = { ok: '', '': '', evaluation: 'evaluation', valutazione: 'evaluation', outdated: 'outdated', superato: 'outdated', discarded: 'discarded', scartato: 'discarded' };
+const STATUS_LABEL = { evaluation: c.blue(tr('being evaluated')), outdated: c.yellow(tr('outdated')), discarded: c.red(tr('discarded')) };
 
-// Opzioni comuni a "add" e "set" → campi dell'API.
+// Options shared by "add" and "set" → API fields.
 const FIELD_OPTS = {
   name: { type: 'string', short: 'n' }, cat: { type: 'string', short: 'c' }, fw: { type: 'string' }, loc: { type: 'string', short: 'l' },
   qty: { type: 'string', short: 'q' }, url: { type: 'string' }, notes: { type: 'string' }, status: { type: 'string', short: 's' },
@@ -17,10 +19,10 @@ function fields(o) {
   for (const [opt, key] of [['name', 'name'], ['cat', 'category'], ['fw', 'firmware'], ['loc', 'location'], ['url', 'url'], ['notes', 'notes']]) {
     if (o[opt] !== undefined) f[key] = o[opt];
   }
-  if (o.qty !== undefined) f.qty = o.qty === '' || o.qty === '-' ? null : Number.isInteger(+o.qty) ? +o.qty : fail('Quantità: un numero intero ("-" la toglie)');
+  if (o.qty !== undefined) f.qty = o.qty === '' || o.qty === '-' ? null : Number.isInteger(+o.qty) ? +o.qty : fail(tr('Quantity: a whole number ("-" removes it)'));
   if (o.status !== undefined) {
     f.status = STATUS_IN[o.status.toLowerCase()];
-    if (f.status === undefined) fail('Stato: ok, valutazione, outdated o scartato');
+    if (f.status === undefined) fail(tr('Status: ok, evaluation, outdated or discarded'));
   }
   return f;
 }
@@ -31,8 +33,8 @@ const done = (code, what) => console.log(`${c.green('✓')} ${c.cyan(code)}${wha
 
 export default {
   ls: {
-    usage: 'item [FILTRO] [-c CATEGORIA]',
-    summary: 'magazzino diviso per categoria; il filtro cerca in codice, nome, posizione e note',
+    usage: tr('item [FILTER] [-c CATEGORY]'),
+    summary: tr('inventory split by category; the filter searches code, name, location and notes'),
     options: { cat: { type: 'string', short: 'c' } },
     async run(ctx, pos, o) {
       const D = await ctx.data();
@@ -40,21 +42,21 @@ export default {
       const list = D.items.filter(i => (!o.cat || i.category.toLowerCase() === o.cat.toLowerCase())
         && (!q || `${i.code} ${(D.aliasesOf.get(i.id) || []).join(' ')} ${i.name} ${i.category} ${i.location} ${i.notes} ${i.firmware}`.toLowerCase().includes(q)));
       if (ctx.json) return ctx.out(list);
-      if (!list.length) return console.log(c.dim('Nessun articolo'));
+      if (!list.length) return console.log(c.dim(tr('No items')));
       const cats = [...new Set(list.map(i => i.category))].sort((a, b) => (!a) - (!b) || a.localeCompare(b));
       for (const cat of cats) {
-        heading(cat || 'senza categoria');
+        heading(cat || tr('no category'));
         table(list.filter(i => i.category === cat).map(itemRow), { right: [] });
       }
     },
   },
 
   show: {
-    usage: 'item show CODICE',
-    summary: 'scheda dell\'articolo: dettagli, composizione, documenti, progetti e voci collegate',
+    usage: tr('item show CODE'),
+    summary: tr('the item\'s page: details, composition, documents, projects and linked entries'),
     async run(ctx, [ref]) {
       const D = await ctx.data();
-      const it = itemRef(D, ref ?? fail('Quale articolo?'));
+      const it = itemRef(D, ref ?? fail(tr('Which item?')));
       const docs = D.docs.filter(d => d.item_id === it.id);
       const children = (D.childrenOf.get(it.id) || []).map(id => D.itemById.get(id)).filter(Boolean);
       const parents = (D.parentsOf.get(it.id) || []).map(id => D.itemById.get(id)).filter(Boolean);
@@ -65,43 +67,43 @@ export default {
       if (ctx.json) return ctx.out({ ...it, aliases: D.aliasesOf.get(it.id) || [], docs, children, parents, entries, mails, projects: [...projects.values()].filter(Boolean) });
       console.log(`${c.bold(c.cyan(it.code))} ${it.name}${it.status ? ` ${STATUS_LABEL[it.status]}` : ''}`);
       const alts = D.aliasesOf.get(it.id) || [];
-      if (alts.length) console.log(c.dim(`anche: ${alts.join(' · ')}`));
+      if (alts.length) console.log(c.dim(tr('also: {codes}', { codes: alts.join(' · ') })));
       console.log(c.dim(`${ctx.api().base}/#/i/${it.id}`));
       table([
-        it.category && ['categoria', it.category],
+        it.category && [tr('category'), it.category],
         it.firmware && ['firmware', it.firmware],
-        it.location && ['posizione', it.location],
-        it.qty != null && ['quantità', String(it.qty)],
+        it.location && [tr('location'), it.location],
+        it.qty != null && [tr('quantity'), String(it.qty)],
         it.url && ['link', it.url],
-        projects.size && ['progetti', [...projects.values()].filter(Boolean).map(p => c.magenta(`@${p.tag}`)).join(' ')],
-        parents.length && ['fa parte di', parents.map(p => c.cyan(p.code)).join(' ')],
+        projects.size && [tr('projects'), [...projects.values()].filter(Boolean).map(p => c.magenta(`@${p.tag}`)).join(' ')],
+        parents.length && [tr('part of'), parents.map(p => c.cyan(p.code)).join(' ')],
       ].filter(Boolean).map(([k, v]) => [c.dim(k), v]), { right: [] });
       if (it.notes) {
-        heading('Note');
+        heading(tr('Notes'));
         console.log(rich(it.notes));
       }
       if (children.length) {
-        heading('Contiene');
+        heading(tr('Contains'));
         table(children.map(itemRow), { right: [] });
       }
       if (docs.length) {
-        heading('Documenti');
+        heading(tr('Documents'));
         table(docs.map(d => [c.dim(d.id), d.kind, d.version ? `v${d.version}` : '', d.label || d.filename || d.url, c.dim(d.url ? 'link' : fmtSize(d.size)), c.dim(fmtTime(d.created_at))]));
       }
       if (entries.length) {
-        heading('Voci aperte');
+        heading(tr('Open entries'));
         printTree(D, entries);
       }
-      printBacklinks(D, mails, 'Nelle mail', { mailsOnly: true });
+      printBacklinks(D, mails, tr('In the mails'), { mailsOnly: true });
     },
   },
 
   add: {
-    usage: 'item add CODICE [NOME…] [-c CATEGORIA] [--fw VER] [-l POSIZIONE] [-q N] [--url URL] [-p PROGETTO]',
-    summary: 'nuovo articolo (con -p lo collega anche a un progetto)',
+    usage: tr('item add CODE [NAME…] [-c CATEGORY] [--fw VER] [-l LOCATION] [-q N] [--url URL] [-p PROJECT]'),
+    summary: tr('new item (with -p it links it to a project too)'),
     options: { ...FIELD_OPTS, project: { type: 'string', short: 'p' } },
     async run(ctx, [code, ...name], o) {
-      if (!code) fail('Manca il codice');
+      if (!code) fail(tr('The code is missing'));
       const f = fields(o);
       if (name.length) f.name = name.join(' ');
       const project = o.project && projectRef(await ctx.data(), o.project);
@@ -112,83 +114,83 @@ export default {
   },
 
   set: {
-    usage: 'item set CODICE [--code NUOVO] [-n NOME] [-c CATEGORIA] [--fw VER] [-l POSIZIONE] [-q N] [--url URL] [--notes TESTO] [-s ok|valutazione|outdated|scartato]',
-    summary: 'modifica un articolo (cambiando il codice si aggiornano anche i #riferimenti nelle voci)',
+    usage: tr('item set CODE [--code NEW] [-n NAME] [-c CATEGORY] [--fw VER] [-l LOCATION] [-q N] [--url URL] [--notes TEXT] [-s ok|evaluation|outdated|discarded]'),
+    summary: tr('edits an item (changing the code also updates the #references in the entries)'),
     options: { ...FIELD_OPTS, code: { type: 'string' } },
     async run(ctx, [ref], o) {
-      const it = itemRef(await ctx.data(), ref ?? fail('Quale articolo?'));
+      const it = itemRef(await ctx.data(), ref ?? fail(tr('Which item?')));
       const f = fields(o);
       if (o.code !== undefined) f.code = o.code.replace(/^#/, '');
-      if (!Object.keys(f).length) fail('Niente da cambiare: org item set --help');
+      if (!Object.keys(f).length) fail(tr('Nothing to change: org item set --help'));
       await ctx.api().patch(`/items/${it.id}`, f);
       done(f.code ?? it.code);
     },
   },
 
   mv: {
-    usage: 'item mv CODICE… CATEGORIA',
-    summary: 'sposta articoli in un\'altra categoria ("-" = senza categoria)',
+    usage: tr('item mv CODE… CATEGORY'),
+    summary: tr('moves items to another category ("-" = no category)'),
     async run(ctx, pos) {
-      const cat = pos.length > 1 ? pos.pop() : fail('Uso: org item mv CODICE… CATEGORIA');
+      const cat = pos.length > 1 ? pos.pop() : fail(tr('Usage: org item mv CODE… CATEGORY'));
       const D = await ctx.data();
       for (const ref of pos) {
         const it = itemRef(D, ref);
         await ctx.api().patch(`/items/${it.id}`, { category: cat === '-' ? '' : cat });
-        done(it.code, `→ ${cat === '-' ? 'senza categoria' : cat}`);
+        done(it.code, `→ ${cat === '-' ? tr('no category') : cat}`);
       }
     },
   },
 
   alias: {
-    usage: 'item alias CODICE [ALTERNATIVO…] [--rm ALTERNATIVO]',
-    summary: 'codici alternativi di un articolo: senza altro li elenca, poi li aggiunge; --rm ne toglie uno',
+    usage: tr('item alias CODE [ALTERNATIVE…] [--rm ALTERNATIVE]'),
+    summary: tr('alternative codes of an item: alone it lists them, with codes it adds them; --rm removes one'),
     options: { rm: { type: 'string', multiple: true } },
     async run(ctx, [ref, ...alts], o) {
       const D = await ctx.data();
-      const it = itemRef(D, ref ?? fail('Quale articolo?'));
+      const it = itemRef(D, ref ?? fail(tr('Which item?')));
       for (const a of alts) await ctx.api().post(`/items/${it.id}/aliases`, { code: a });
       for (const a of o.rm ?? []) await ctx.api().del(`/items/${it.id}/aliases/${encodeURIComponent(a.replace(/^#/, ''))}`);
       if (!alts.length && !o.rm) {
         const list = D.aliasesOf.get(it.id) || [];
         if (ctx.json) return ctx.out(list);
-        return console.log(list.length ? list.join('\n') : c.dim(`${it.code} non ha codici alternativi`));
+        return console.log(list.length ? list.join('\n') : c.dim(tr('{code} has no alternative codes', { code: it.code })));
       }
-      done(it.code, 'aggiornato');
+      done(it.code, tr('updated'));
     },
   },
 
   link: {
-    usage: 'item link CODICE FIGLIO…',
-    summary: 'composizione: CODICE contiene i FIGLI (creati se non esistono)',
+    usage: tr('item link CODE CHILD…'),
+    summary: tr('composition: CODE contains the CHILDren (created if they do not exist)'),
     async run(ctx, [ref, ...kids]) {
-      const it = itemRef(await ctx.data(), ref ?? fail('Quale articolo?'));
-      if (!kids.length) fail('Cosa contiene?');
+      const it = itemRef(await ctx.data(), ref ?? fail(tr('Which item?')));
+      if (!kids.length) fail(tr('What does it contain?'));
       for (const code of kids) await ctx.api().post(`/items/${it.id}/children`, { code });
-      done(it.code, `contiene ${kids.map(k => c.cyan(k.replace(/^#/, ''))).join(' ')}`);
+      done(it.code, tr('contains {codes}', { codes: kids.map(k => c.cyan(k.replace(/^#/, ''))).join(' ') }));
     },
   },
 
   unlink: {
-    usage: 'item unlink CODICE FIGLIO…',
-    summary: 'toglie articoli dalla composizione',
+    usage: tr('item unlink CODE CHILD…'),
+    summary: tr('removes items from the composition'),
     async run(ctx, [ref, ...kids]) {
       const D = await ctx.data();
-      const it = itemRef(D, ref ?? fail('Quale articolo?'));
+      const it = itemRef(D, ref ?? fail(tr('Which item?')));
       for (const k of kids) await ctx.api().del(`/items/${it.id}/children/${itemRef(D, k).id}`);
-      done(it.code, 'aggiornato');
+      done(it.code, tr('updated'));
     },
   },
 
   rm: {
-    usage: 'item rm CODICE…',
-    summary: 'sposta nel cestino (con i suoi documenti)',
+    usage: tr('item rm CODE…'),
+    summary: tr('moves to the trash (with its documents)'),
     async run(ctx, pos) {
       const D = await ctx.data();
-      if (!pos.length) fail('Quale articolo?');
+      if (!pos.length) fail(tr('Which item?'));
       for (const ref of pos) {
         const it = itemRef(D, ref);
         await ctx.api().del(`/items/${it.id}`);
-        console.log(`${c.dim('cestino ←')} ${it.code}  ${c.dim(`(org restore item ${it.id})`)}`);
+        console.log(`${c.dim(`${tr('trash')} ←`)} ${it.code}  ${c.dim(`(org restore item ${it.id})`)}`);
       }
     },
   },

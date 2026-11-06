@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-// Dati in una cartella temporanea: va impostata prima di importare i moduli del server.
+// Data in a temporary folder: it must be set before importing the server's modules.
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'organizer-test-'));
 process.env.DATA_DIR = dir;
 const { db, withWorkspace, closeAll } = await import('../server/db.js');
@@ -14,30 +14,30 @@ const { acc, createWorkspace, addMember, removeMember, roleIn, workspacesOf } = 
 const newAccount = name => Number(acc.prepare("INSERT INTO users (username, name, pass, created_at) VALUES (?, ?, 'x', '2026-01-01')")
   .run(name, name).lastInsertRowid);
 
-test('i dati di due workspace restano separati', () => {
+test('the data of two workspaces stays separate', () => {
   const anna = newAccount('anna');
   const a = createWorkspace('Lab', anna);
-  const b = createWorkspace('Casa', anna);
+  const b = createWorkspace('Home', anna);
   assert.equal(a.file, 'organizer.db');
   assert.equal(b.file, `ws-${b.id}.db`);
   const add = (ws, title) => withWorkspace(ws, () => db.prepare(
     "INSERT INTO entries (kind, title, created_by, created_at, updated_at) VALUES ('todo', ?, ?, '2026-01-01', '2026-01-01')").run(title, anna));
-  add(a, 'solo in Lab');
-  add(b, 'solo in Casa');
+  add(a, 'only in Lab');
+  add(b, 'only at Home');
   const titles = ws => withWorkspace(ws, () => db.prepare('SELECT title FROM entries').all().map(r => r.title));
-  assert.deepEqual(titles(a), ['solo in Lab']);
-  assert.deepEqual(titles(b), ['solo in Casa']);
-  assert.deepEqual(workspacesOf(anna).map(w => [w.name, w.role]), [['Casa', 'admin'], ['Lab', 'admin']]);
+  assert.deepEqual(titles(a), ['only in Lab']);
+  assert.deepEqual(titles(b), ['only at Home']);
+  assert.deepEqual(workspacesOf(anna).map(w => [w.name, w.role]), [['Home', 'admin'], ['Lab', 'admin']]);
 });
 
-test('ruoli diversi per workspace e almeno un admin', () => {
+test('different roles per workspace and at least one admin', () => {
   const owner = newAccount('owner');
   const guest = newAccount('guest');
-  const ws = createWorkspace('Officina', owner);
+  const ws = createWorkspace('Workshop', owner);
   addMember(ws, guest, 'member');
   assert.equal(roleIn(ws.id, guest), 'member');
-  assert.throws(() => removeMember(ws, owner), /unico admin/);
-  // La copia dei membri nel workspace serve a nomi e chiavi esterne; chi esce resta come ex membro.
+  assert.throws(() => removeMember(ws, owner), /only admin/);
+  // The copy of the members in the workspace serves names and foreign keys; whoever leaves stays as a former member.
   removeMember(ws, guest);
   const mirror = withWorkspace(ws, () => db.prepare('SELECT member FROM users WHERE id = ?').get(guest));
   assert.equal(mirror.member, 0);

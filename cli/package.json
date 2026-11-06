@@ -1,7 +1,7 @@
 {
   "name": "organizer-cli",
-  "version": "0.23.0",
-  "description": "Organizer dal terminale: voci, progetti, magazzino, documenti e mail",
+  "version": "0.24.0",
+  "description": "Organizer from the terminal: entries, projects, inventory, documents and mail",
   "type": "module",
   "bin": {
     "org": "bin/org.js"
@@ -12,5 +12,6 @@
   ],
   "engines": {
     "node": ">=22"
-  }
+  },
+  "license": "AGPL-3.0-only"
 }

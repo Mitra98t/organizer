@@ -1,173 +1,177 @@
-# API di Organizer
+# Organizer API
 
-Le stesse API REST che usa l'app, aperte ai programmi esterni: la CLI (`cli/`), bot (Telegram, Matrix…), script, integrazioni. Tutto è JSON su HTTP, senza dipendenze lato client.
+The same REST API the app uses, open to external programs: the CLI (`cli/`), bots (Telegram, Matrix…), scripts, integrations. Everything is JSON over HTTP, with no client-side dependencies.
 
-Versione delle API: **1** (`GET /api/info`). Il numero cambia solo se un client esistente smetterebbe di funzionare; campi nuovi nelle risposte possono arrivare in qualunque momento, quindi ignora quelli che non conosci.
+API version: **1** (`GET /api/info`). The number changes only if an existing client would stop working; new fields in the responses can arrive at any time, so ignore those you do not know.
 
-## Autenticazione
+Some identifiers are Italian words, kept for compatibility with existing data: the permission areas (`voci`, `progetti`…), the link kinds (`[[voce:ID]]`, `[[progetto:ID]]`…) and the built-in document kinds (`schema`, `manuale`, `foto`, `altro`). Their meaning is given where they appear.
 
-Ogni programma usa un **token personale**: ha gli stessi permessi della persona che l'ha creato, in tutti i suoi workspace.
+**Language**: error messages and notifications are in English, or in Italian when the request says so: the `X-Lang: it` header (the app and the CLI send it), otherwise the browser's `Accept-Language`.
 
-- **Dall'app**: Impostazioni → *CLI e token API* → **Crea token**. Il token (`org_…`) si vede una volta sola; da lì si vede quando è stato usato l'ultima volta e si revoca.
-- **Con utente e password** (lo fa `org login`):
+## Authentication
+
+Each program uses a **personal token**: it has the same permissions as the person who created it, in all their workspaces.
+
+- **From the app**: Settings → *CLI and tokens* → **Create token**. The token (`org_…`) is shown only once; from there you see when it was last used and revoke it.
+- **With user and password** (this is what `org login` does):
   ```bash
   curl -X POST http://localhost:8080/api/auth/token \
     -H 'X-Requested-With: organizer' -H 'Content-Type: application/json' \
-    -d '{"username":"fede","password":"…","name":"script backup"}'
-  # → {"id":3,"name":"script backup","token":"org_…","user":{…}}
+    -d '{"username":"fede","password":"…","name":"backup script"}'
+  # → {"id":3,"name":"backup script","token":"org_…","user":{…}}
   ```
-  Stesso limite di tentativi del login (10 errori in 15 minuti).
+  Same attempts limit as the login (10 errors in 15 minutes).
 
-Poi a ogni richiesta:
+Then on every request:
 
 ```
 Authorization: Bearer org_…
-X-Workspace: 2          (facoltativo)
+X-Workspace: 2          (optional)
 ```
 
-- **Workspace**: ogni workspace ha i suoi dati. `X-Workspace` dice su quale lavorare (gli id da `GET /api/workspaces`); senza, vale l'ultimo usato dalla persona nell'app, che quindi può cambiare. **Un bot dovrebbe sempre mandarlo.** Un workspace di cui non si fa parte → `403`.
-- Un token non valido o revocato → `401` su qualunque endpoint.
-- Con il token non serve l'header `X-Requested-With`: è la protezione CSRF dell'app, che usa un cookie. Le richieste senza token (come `/api/auth/token`) invece lo devono avere.
-- I token si revocano dall'app, con `DELETE /api/tokens/:id`, e tutti insieme quando un admin reimposta la password della persona. Un token non può crearne altri.
+- **Workspace**: each workspace has its own data. `X-Workspace` says which one to work on (the ids from `GET /api/workspaces`); without it, the one the person last used in the app applies, so it can change. **A bot should always send it.** A workspace one is not part of → `403`.
+- An invalid or revoked token → `401` on any endpoint.
+- With the token the `X-Requested-With` header is not needed: it is the CSRF protection of the app, which uses a cookie. Requests without a token (like `/api/auth/token`) must have it.
+- Tokens are revoked from the app, with `DELETE /api/tokens/:id`, and all together when an admin resets the person's password. A token cannot create other tokens.
 
-## Permessi
+## Permissions
 
-Ogni membro di un workspace ha un livello per area: `none` (non la vede), `read`, `write`. Aree: `voci` (todo e note), `mail`, `progetti`, `magazzino`, `documenti`, `contatti`, `chat`. Gli admin hanno sempre tutto; chi non ha impostazioni ha scrittura ovunque. Le regole (e le dipendenze: per scrivere le mail serve leggere contatti, documenti, magazzino e progetti, ecc.) stanno in `public/js/perms.js`, condiviso tra app e server.
+Each member of a workspace has a level per area: `none` (does not see it), `read`, `write`. Areas: `voci` (todos and notes), `mail`, `progetti` (projects), `magazzino` (inventory), `documenti` (documents), `contatti` (contacts), `chat`. Admins always have everything; someone with no settings has write access everywhere. The rules (and the dependencies: writing mails requires reading contacts, documents, inventory and projects, and so on) are in `public/js/perms.js`, shared by app and server.
 
-- `/api/sync` restituisce `perms` (i tuoi; `null` = tutto) e manda solo i dati delle aree che puoi leggere; agli admin anche `memberPerms` (`{ idUtente: perms | null }`).
-- Una richiesta fuori dai permessi risponde `403` con il motivo ("Non hai il permesso di modificare l'area Mail…"). Le voci appartengono all'area del loro tipo (le mail a `mail`, todo e note a `voci`).
-- Senza scrittura su progetti e magazzino, `@nuovo` in una voce non crea il progetto (403) e `#NUOVO` non crea l'articolo (resta testo).
-- `PATCH /api/admin/users/:id` `{ perms: { mail: "read", chat: "none", canali: "write", … } }` (solo admin; `perms: null` = accesso pieno, senza gestione dei canali): le aree non indicate restano in scrittura e le dipendenze si completano alzando ciò che serve. `canali` (gestire i canali della chat) è `none` se non indicato.
+- `/api/sync` returns `perms` (yours; `null` = everything) and sends only the data of the areas you can read; to admins also `memberPerms` (`{ userId: perms | null }`).
+- A request outside the permissions answers `403` with the reason ("You are not allowed to change the Mail area in this workspace"). Entries belong to the area of their kind (mails to `mail`, todos and notes to `voci`).
+- Without write access to projects and inventory, `@new` in an entry does not create the project (403) and `#NEW` does not create the item (it stays text).
+- `PATCH /api/admin/users/:id` `{ perms: { mail: "read", chat: "none", canali: "write", … } }` (admins only; `perms: null` = full access, without managing channels): areas not given stay at write and the dependencies are completed by raising what is needed. `canali` (managing chat channels) is `none` if not given.
 
-## Visibilità e condivisione
+## Visibility and sharing
 
-Magazzino e documenti sono di tutto il workspace. Voci, progetti, contatti e note sui documenti sono privati di chi li crea (anche per gli admin) e si condividono:
-- nel testo: `+utente` (lo vede anche lui), `++utente` (lo vede e gli si assegna la voce), `+all` (tutti); valgono per `POST /api/entries`, il titolo in `PATCH /api/entries/:id`, `share: ["utente", "all"]` in `POST /api/projects` e il testo delle note sui documenti;
-- `PUT /api/shares/:tipo/:id` `{users: [id…], all: true|false}` sostituisce l'elenco (solo chi l'ha creato); tipo: `entry`, `project`, `contact`, `docnote`.
+Inventory and documents belong to the whole workspace. Entries, projects, contacts and notes on documents are private to whoever creates them (admins included) and are shared:
+- in the text: `+user` (they see it too), `++user` (they see it and the entry is assigned to them), `+all` (everyone); they work for `POST /api/entries`, the title in `PATCH /api/entries/:id`, `share: ["user", "all"]` in `POST /api/projects` and the text of notes on documents;
+- `PUT /api/shares/:type/:id` `{users: [id…], all: true|false}` replaces the list (only the creator); type: `entry`, `project`, `contact`, `docnote`.
 
-`POST /api/entries` accetta anche `client_id` (generato dal client: se la voce con quel `client_id` esiste già, restituisce quella invece di crearne un'altra) e `done` (`true` o la data: la todo arriva già fatta), per le voci create offline.
+`POST /api/entries` also accepts `client_id` (generated by the client: if the entry with that `client_id` already exists, it returns that one instead of creating another) and `done` (`true` or the date: the todo arrives already done), for entries created offline.
 
-`POST /api/refs` `{refs: [["voce", 12], ["progetto", 3]…]}` → `{"voce:12": {status: "ok", kind, title, done} | {status: "hidden"} | {status: "gone"}}`: per i collegamenti `[[tipo:ID]]` che non sono nei dati (archiviati, non condivisi, eliminati). Di quelli non condivisi si dice solo che ci sono. Tipi: `voce`, `doc`, `progetto`, `contatto`, `mail` (una conversazione: `ok` con `title` e `topic` solo per chi la riceve).
+`POST /api/refs` `{refs: [["voce", 12], ["progetto", 3]…]}` → `{"voce:12": {status: "ok", kind, title, done} | {status: "hidden"} | {status: "gone"}}`: for the `[[kind:ID]]` links that are not in the data (archived, not shared, deleted). Of those not shared it only says they exist. Kinds: `voce` (entry), `doc`, `progetto` (project), `contatto` (contact), `mail` (a conversation: `ok` with `title` and `topic` only for whoever receives it).
 
-In `/api/sync` ogni oggetto ha `shared_all`, e `shares` elenca `{kind, obj_id, user_id}` di ciò che vedi. Una voce la vede anche l'assegnatario, una sotto-attività chi vede la voce sopra.
+In `/api/sync` each object has `shared_all`, and `shares` lists `{kind, obj_id, user_id}` of what you see. An entry is also seen by its assignee, a subtask by whoever sees the entry above it.
 
-## Convenzioni
+## Conventions
 
-- Corpo delle richieste e risposte in JSON (`Content-Type: application/json`), salvo upload e download di file.
-- Errori: status HTTP e `{"error": "messaggio leggibile"}`. `400` dati non validi, `401` non autenticato, `403` non permesso, `404` non trovato (o non visibile a te), `409` conflitto (es. codice già usato), `413` troppo grande, `429` troppi tentativi.
-- `204` senza corpo quando non c'è niente da restituire; le creazioni rispondono `{"id": …}`.
-- Date: le scadenze sono `AAAA-MM-GG`; gli istanti sono ISO 8601 UTC (`2026-10-27T14:37:49.124Z`).
-- **`today`**: dove si accettano date relative (`!domani`, `"ven"`), passa la data di oggi del tuo fuso (`"today": "2026-10-27"`), altrimenti vale quella del server.
-- Eliminare sposta nel **cestino** (recuperabile per 30 giorni, vedi sotto).
+- Request and response bodies in JSON (`Content-Type: application/json`), except file uploads and downloads.
+- Errors: HTTP status and `{"error": "readable message"}`. `400` invalid data, `401` not authenticated, `403` not allowed, `404` not found (or not visible to you), `409` conflict (e.g. code already used), `413` too large, `429` too many attempts.
+- `204` without a body when there is nothing to return; creations answer `{"id": …}`.
+- Dates: due dates are `YYYY-MM-DD`; instants are ISO 8601 UTC (`2026-10-27T14:37:49.124Z`).
+- **`today`**: where relative dates are accepted (`!tomorrow`, `"fri"`), pass today's date in your time zone (`"today": "2026-10-27"`), otherwise the server's applies.
+- Deleting moves to the **trash** (recoverable for 30 days, see below).
 
-## Leggere
+## Reading
 
 | | |
 |---|---|
-| `GET /api/info` | `{app, version, api}`, senza autenticazione |
-| `GET /api/export` | `.zip` con `organizer-export.json` e `files/`: il magazzino e i documenti del workspace e quello che ha creato chi lo chiede (aree che può leggere) |
-| `POST /api/import` | corpo: lo `.zip` di un'esportazione → riepilogo (`articoli`, `articoliUniti`, `documenti`, `voci`, `progetti`, `progettiUniti`, `contatti`, `contattiUniti`, `note`, `conversazioni`, `saltati`); aggiunge senza sovrascrivere, solo nelle aree in cui può scrivere |
-| `GET /api/me` | account, workspace attivo (`id`, `name`, `role`) ed elenco dei workspace |
-| `PATCH /api/me` | `{name}`, `{password, current}` o `{mailIgnore: [...]}`: le regole per i contatti "da salvare" da non proporre (indirizzi interi o pezzi di indirizzo o nome; in `/api/sync` come `mailIgnore`) |
-| `GET /api/workspaces` | i tuoi workspace: `[{id, name, role}]` |
-| `GET /api/sync` | **tutti i dati del workspace** in una risposta (sotto) |
-| `GET /api/entries/:id` | una voce con `projects`, `items`, `logs`, `subtasks`, `attachments`; anche se archiviata |
-| `GET /api/archive?q=testo` | voci fatte da più di 30 giorni (fino a 200), filtrate per testo |
-| `GET /api/trash` | contenuto del cestino |
-| `GET /api/events` | notifiche in tempo reale (Server-Sent Events) |
+| `GET /api/info` | `{app, version, api}`, without authentication |
+| `GET /api/export` | `.zip` with `organizer-export.json` and `files/`: the workspace's inventory and documents and what the requester created (areas they can read) |
+| `POST /api/import` | body: the `.zip` of an export → summary (`articoli` new items, `articoliUniti` items already present, `documenti`, `voci` entries, `progetti`, `progettiUniti`, `contatti`, `contattiUniti`, `note`, `conversazioni`, `saltati` skipped areas); adds without overwriting, only in the areas where they can write |
+| `GET /api/me` | account, active workspace (`id`, `name`, `role`) and list of workspaces |
+| `PATCH /api/me` | `{name}`, `{password, current}` or `{mailIgnore: [...]}`: the rules for "to save" contacts not to suggest (whole addresses or pieces of address or name; in `/api/sync` as `mailIgnore`) |
+| `GET /api/workspaces` | your workspaces: `[{id, name, role}]` |
+| `GET /api/sync` | **all the workspace data** in one response (below) |
+| `GET /api/entries/:id` | an entry with `projects`, `items`, `logs`, `subtasks`, `attachments`; even if archived |
+| `GET /api/archive?q=text` | entries done more than 30 days ago (up to 200), filtered by text |
+| `GET /api/trash` | contents of the trash |
+| `GET /api/events` | real-time notifications (Server-Sent Events) |
 
-`/api/sync` restituisce: `me`, `users` (`member: 1` per i membri attuali), `workspace`, `workspaces`, `projects`, `entries` (aperte e fatte negli ultimi 30 giorni), `logs`, `entryItems`, `entryProjects` (progetti oltre al principale `project_id`), `items`, `itemAliases` (codici alternativi: `item_id`, `code`), `itemLinks` (composizione `parent_id` → `child_id`), `projectItems`, `docs`, `contacts`, `categoryColors`, `docNotes`, `attachments`, `chat` (ultimi 100 messaggi), `chatReadId`, `chatUnread`, `trashCount`, `rev`. Supporta `ETag`/`If-None-Match` (→ `304` se non è cambiato niente).
+`/api/sync` returns: `me`, `users` (`member: 1` for current members), `workspace`, `workspaces`, `projects`, `entries` (open and done in the last 30 days), `logs`, `entryItems`, `entryProjects` (projects besides the main `project_id`), `items`, `itemAliases` (alternative codes: `item_id`, `code`), `itemLinks` (composition `parent_id` → `child_id`), `projectItems`, `docs`, `contacts`, `categoryColors`, `docNotes`, `attachments`, `chat` (last 100 messages), `chatReadId`, `chatUnread`, `trashCount`, `rev`. It supports `ETag`/`If-None-Match` (→ `304` if nothing changed).
 
-`/api/events` manda un evento `change` (`data: {"rev": …, "by": idUtente}`) a ogni modifica nel workspace e un commento `: ping` ogni 25 secondi. Il modo semplice per reagire: a ogni `change`, rileggere `/api/sync` (con l'ETag).
+`/api/events` sends a `change` event (`data: {"rev": …, "by": userId}`) on every change in the workspace and a `: ping` comment every 25 seconds. The simple way to react: on each `change`, read `/api/sync` again (with the ETag).
 
-## Collegamenti
+## Links
 
-In qualunque testo (titoli, note, aggiornamenti, testo delle mail, appunti, chat) si collega qualcosa con un token:
+In any text (titles, notes, updates, mail text, project notes, chat) something is linked with a token:
 
-| token | collega |
+| token | links |
 |---|---|
-| `[[voce:ID]]` | una voce (todo, mail o nota) |
-| `[[doc:ID]]` | un documento |
-| `[[progetto:ID]]` | un progetto (senza aggiungere la voce al progetto, come farebbe `@tag` nel titolo) |
-| `[[nota:ID]]` | una nota su un documento (anche su un pezzo di testo di un PDF); privata come la nota: chi non la vede legge "non hai permessi sufficienti" |
-| `[[contatto:ID]]` | un contatto |
-| `#CODICE` | un articolo di magazzino |
+| `[[voce:ID]]` | an entry (todo, mail or note) |
+| `[[doc:ID]]` | a document |
+| `[[progetto:ID]]` | a project (without adding the entry to the project, as `@tag` in the title would) |
+| `[[nota:ID]]` | a note on a document (also on a piece of a PDF's text); private like the note: whoever cannot see it sees "not enough permissions" |
+| `[[contatto:ID]]` | a contact |
+| `#CODE` | an inventory item |
 
-L'app li mostra come link con il nome attuale; nelle mail mandate (`.eml`, helper Thunderbird) diventano il nome in testo semplice. Nel testo di una mail un codice di magazzino scritto senza `#` conta come collegamento all'articolo.
+The app shows them as links with the current name; in sent mails (`.eml`, Thunderbird) they become the name in plain text. In a mail's text an inventory code written without `#` counts as a link to the item.
 
-`GET /api/backlinks/:tipo/:id` (tipo: `voce`, `doc`, `progetto`, `contatto`, `articolo`): le voci che collegano l'elemento, anche archiviate, con `id`, `kind`, `title`, `due`, `done_at`, `contact`, `mail_subject`, `project_id`, `parent_id`, `updated_at`. Una mail con `done_at` è mandata, senza è da mandare. Oltre ai token contano: per un articolo `#CODICE` nelle voci; per un documento gli allegati delle mail; per un contatto le mail al suo indirizzo.
+`GET /api/backlinks/:kind/:id` (kind: `voce`, `doc`, `progetto`, `contatto`, `articolo` = item): the entries that link the element, archived ones too, with `id`, `kind`, `title`, `due`, `done_at`, `contact`, `mail_subject`, `project_id`, `parent_id`, `updated_at`. A mail with `done_at` is sent, without it is to send. Besides the tokens these count: for an item `#CODE` in the entries; for a document the mail attachments; for a contact the mails to their address.
 
-## Voci (todo, mail, note)
+## Entries (todos, mails, notes)
 
-Una voce ha `kind` (`todo`, `mail`, `note`), `title`, `notes`, `due`, `done_at`, `project_id` (principale), `parent_id` (sotto-attività), `assignee_id`, `contact`, `mail_cc`, `mail_subject`, `pinned`, `private`.
+An entry has `kind` (`todo`, `mail`, `note`), `title`, `notes`, `due`, `done_at`, `project_id` (main), `parent_id` (subtask), `assignee_id`, `contact`, `mail_cc`, `mail_subject`, `pinned`, `private`.
 
-**`POST /api/entries`**: si crea dal testo, con la sintassi della barra rapida, che il server interpreta:
+**`POST /api/entries`**: it is created from the text, with the quick bar syntax, which the server interprets:
 
 ```json
-{ "text": "flash fw 2.3.1 #SCH-042 @rover !ven +marco", "today": "2026-10-27" }
+{ "text": "flash fw 2.3.1 #SCH-042 @rover !fri +marco", "today": "2026-10-27" }
 ```
 
-| token | significato |
+| token | meaning |
 |---|---|
-| `t:` `m:` `n:` all'inizio | tipo (predefinito: `kind` della richiesta, altrimenti `todo`) |
-| `!oggi` `!domani` `!ven` `!3g` `!2s` `!1m` `!fm` `!25/11` `!2026-11-25` | scadenza (per le note: quando è successo) |
-| `@tag` | progetto, creato se non esiste; più `@` = più progetti, il primo è il principale |
-| `#CODICE` | articolo di magazzino, creato se non esiste; resta nel testo |
-| `+utente` | assegnatario |
-| `>chi` | destinatario della mail (un'email, o un nome della rubrica) |
+| `t:` `m:` `n:` at the start | kind (default: the request's `kind`, otherwise `todo`) |
+| `!today` `!tomorrow` `!fri` `!3d` `!2w` `!1m` `!eom` `!25/11` `!2026-11-25` | due date (for notes: when it happened); the Italian words work too (`!oggi`, `!domani`, `!ven`, `!3g`, `!2s`, `!fm`) |
+| `@tag` | project, created if it does not exist; several `@` = several projects, the first one is the main one |
+| `#CODE` | inventory item, created if it does not exist; it stays in the text |
+| `+user` | assignee |
+| `>who` | the mail's recipient (an email, or a name from the address book) |
 
-Altri campi facoltativi: `kind`, `parent_id`, `project_id`, `assignee_id`, `private`. Risposta `{"id"}`.
+Other optional fields: `kind`, `parent_id`, `project_id`, `assignee_id`, `private`. Response `{"id"}`.
 
-**`PATCH /api/entries/:id`**, tutti facoltativi:
-- `title`: accetta gli stessi token (`!lun` sposta la scadenza, `@tag` aggiunge un progetto);
-- `notes`, `kind`, `done` (true/false), `pinned`, `private` (solo chi l'ha creata);
-- `due`: `"2026-11-25"`, una data della barra rapida (`"ven"`, `"3g"`, `"25/11"`), `"no"` o `null` per toglierla. Uno spostamento lascia traccia nello storico;
-- `assignee_id` (o `null`), `project_id` (o `null`);
-- per le mail: `contact` (A), `mail_cc`, `mail_subject` (`null` = segue il titolo);
-- `awaiting` (true/false): la mail mandata aspetta una risposta. Segnando una mail come fatta (`done: true`) diventa automaticamente `awaiting_reply = 1`; `awaiting: false` chiude il thread (nello storico resta "risposta arrivata"). Le mail in attesa stanno in `/api/sync` anche dopo 30 giorni.
+**`PATCH /api/entries/:id`**, all optional:
+- `title`: accepts the same tokens (`!mon` moves the due date, `@tag` adds a project);
+- `notes`, `kind`, `done` (true/false), `pinned`, `private` (only the creator);
+- `due`: `"2026-11-25"`, a quick bar date (`"fri"`, `"3d"`, `"25/11"`), `"none"` or `null` to remove it. A postponement leaves a trace in the history;
+- `assignee_id` (or `null`), `project_id` (or `null`);
+- for mails: `contact` (To), `mail_cc`, `mail_subject` (`null` = follows the title);
+- `awaiting` (true/false): the sent mail awaits a reply. Marking a mail as done (`done: true`) automatically sets `awaiting_reply = 1`; `awaiting: false` closes the thread (the history keeps "reply received"). Mails awaiting reply stay in `/api/sync` even after 30 days.
 
-Altro:
+More:
 
 | | |
 |---|---|
-| `POST /api/entries/:id/log` `{text}` | aggiornamento nello storico; `!data` e `+utente` nel testo modificano la voce |
-| `DELETE /api/logs/:id` | toglie un aggiornamento (proprio, o qualunque se admin) |
-| `POST /api/entries/:id/projects` `{project_id}` | aggiunge un progetto (se non ce n'è uno principale, lo diventa) |
-| `DELETE /api/entries/:id/projects/:pid` | toglie un progetto (togliendo il principale, lo diventa il successivo) |
-| `DELETE /api/entries/:id` | nel cestino, con le sotto-attività |
+| `POST /api/entries/:id/log` `{text}` | update in the history; `!date` and `+user` in the text change the entry |
+| `DELETE /api/logs/:id` | removes an update (one's own, or any if admin) |
+| `POST /api/entries/:id/projects` `{project_id}` | adds a project (if there is no main one, it becomes the main one) |
+| `DELETE /api/entries/:id/projects/:pid` | removes a project (removing the main one, the next one becomes main) |
+| `DELETE /api/entries/:id` | to the trash, with the subtasks |
 
-## Progetti
+## Projects
 
-Campi: `name`, `tag` (quello di `@tag`), `status` (`open`, `paused`, `closed`), `notes`, `parent_id`, `hue` (colore 0–359 o `null` = automatico), `private`.
-
-| | |
-|---|---|
-| `POST /api/projects` `{name, tag?, parent_id?, private?}` | → `{id, tag}`; senza `tag` lo ricava dal nome |
-| `PATCH /api/projects/:id` | uno o più campi sopra; un progetto non può finire dentro un suo sottoprogetto |
-| `POST /api/projects/:id/items` `{code}` | collega a mano un articolo (creato se non esiste) |
-| `DELETE /api/projects/:id/items/:itemId` | scollega |
-| `DELETE /api/projects/:id` | nel cestino (solo chi l'ha creato o un admin) |
-
-## Magazzino
-
-Campi di un articolo: `code` (unico; lettere, numeri e `. _ - /`), `name`, `category`, `firmware`, `location`, `qty` (intero o `null`), `url`, `notes`, `status` (`""`, `evaluation` = in valutazione, `outdated`, `discarded`).
+Fields: `name`, `tag` (the one of `@tag`), `status` (`open`, `paused`, `closed`), `notes`, `parent_id`, `hue` (colour 0–359 or `null` = automatic), `private`.
 
 | | |
 |---|---|
-| `POST /api/items` `{code, …campi, project_id?}` | nuovo articolo |
-| `PATCH /api/items/:id` | campi; cambiando `code` si aggiornano anche i `#CODICE` nel testo delle voci |
-| `POST /api/items/:id/aliases` `{code}` | aggiunge un codice alternativo (unico: non può essere il codice, principale o alternativo, di un altro articolo) |
-| `DELETE /api/items/:id/aliases/:code` | toglie un codice alternativo |
-| `POST /api/items/:id/children` `{code}` | composizione: l'articolo contiene `code` (creato se non esiste) |
-| `DELETE /api/items/:id/children/:childId` | toglie dalla composizione |
-| `PUT /api/categories/color` `{name, hue}` | colore di una categoria (`hue: null` = automatico) |
-| `DELETE /api/items/:id` | nel cestino |
+| `POST /api/projects` `{name, tag?, parent_id?, private?}` | → `{id, tag}`; without `tag` it derives it from the name |
+| `PATCH /api/projects/:id` | one or more of the fields above; a project cannot end up inside one of its subprojects |
+| `POST /api/projects/:id/items` `{code}` | links an item by hand (created if it does not exist) |
+| `DELETE /api/projects/:id/items/:itemId` | unlinks |
+| `DELETE /api/projects/:id` | to the trash (only the creator or an admin) |
 
-## Documenti
+## Inventory
 
-Tipi (`kind`): `firmware`, `datasheet`, `schema`, `footprint`, `manuale`, `foto`, `altro`, più quelli aggiunti dal workspace (`docKinds` in `/api/sync`, l'elenco completo; `customDocKinds` quelli aggiunti). `POST /api/doc-kinds` `{name}` ne aggiunge uno (una parola, minuscolo); `DELETE /api/doc-kinds/:nome` lo elimina e i suoi documenti diventano `altro`. Un tipo sconosciuto diventa `altro`.
+An item's fields: `code` (unique; letters, digits and `. _ - /`), `name`, `category`, `firmware`, `location`, `qty` (integer or `null`), `url`, `notes`, `status` (`""`, `evaluation` = being evaluated, `outdated`, `discarded`).
 
-**Caricare un file**: il corpo della richiesta è il file così com'è, i dati vanno nella query string. Il `Content-Type` del corpo diventa il tipo del file (`application/pdf` per vederlo nel visualizzatore).
+| | |
+|---|---|
+| `POST /api/items` `{code, …fields, project_id?}` | new item |
+| `PATCH /api/items/:id` | fields; changing `code` also updates the `#CODE`s in the entries' text |
+| `POST /api/items/:id/aliases` `{code}` | adds an alternative code (unique: it cannot be another item's code, main or alternative) |
+| `DELETE /api/items/:id/aliases/:code` | removes an alternative code |
+| `POST /api/items/:id/children` `{code}` | composition: the item contains `code` (created if it does not exist) |
+| `DELETE /api/items/:id/children/:childId` | removes from the composition |
+| `PUT /api/categories/color` `{name, hue}` | a category's colour (`hue: null` = automatic) |
+| `DELETE /api/items/:id` | to the trash |
+
+## Documents
+
+Kinds (`kind`): `firmware`, `datasheet`, `schema` (schematic), `footprint`, `manuale` (manual), `foto` (photo), `altro` (other), plus those added by the workspace (`docKinds` in `/api/sync`, the full list; `customDocKinds` the added ones). `POST /api/doc-kinds` `{name}` adds one (one word, lowercase); `DELETE /api/doc-kinds/:name` deletes it and its documents become `altro`. An unknown kind becomes `altro`.
+
+**Uploading a file**: the request body is the file as it is, the data goes in the query string. The body's `Content-Type` becomes the file's type (`application/pdf` to see it in the viewer).
 
 ```bash
 curl -X POST "http://localhost:8080/api/items/7/docs?kind=firmware&version=1.1&name=fw_1.1.bin" \
@@ -175,153 +179,153 @@ curl -X POST "http://localhost:8080/api/items/7/docs?kind=firmware&version=1.1&n
   --data-binary @fw_1.1.bin
 ```
 
-Parametri: `kind`, `name` (nome del file), `version`, `label` (nome mostrato). Un `firmware` con versione aggiorna il campo `firmware` dell'articolo. Limite: 200 MB (`MAX_UPLOAD_MB`).
+Parameters: `kind`, `name` (file name), `version`, `label` (shown name). A `firmware` with a version updates the item's `firmware` field. Limit: 200 MB (`MAX_UPLOAD_MB`).
 
-**Collegare un link** (repo, wiki, PDF online): stesso endpoint, **senza** `name` nella query string, con corpo JSON `{"url": "https://…", "kind": "datasheet", "label": "…", "version": "…"}`. È `name` a distinguere un file da un link: un file `.json` si carica con `Content-Type: application/json` e `?name=…` come qualunque altro file.
+**Linking a link** (repo, wiki, online PDF): same endpoint, **without** `name` in the query string, with a JSON body `{"url": "https://…", "kind": "datasheet", "label": "…", "version": "…"}`. `name` is what tells a file from a link: a `.json` file is uploaded with `Content-Type: application/json` and `?name=…` like any other file.
 
 | | |
 |---|---|
-| `GET /api/docs/:id/file` | scarica; il nome nel `Content-Disposition` è `label` più l'estensione originale (`?inline=1` per vederlo nel browser) |
-| `GET /api/items/:id/docs.zip` | tutti i file dell'articolo in un `.zip` (`CODICE-documenti.zip`), con i nomi come nel download singolo; due nomi uguali diventano `nome (2).ext`; 404 se l'articolo non ha file |
-| `GET /api/docs/:id/remote` | il PDF di un link esterno, scaricato dal server (solo indirizzi pubblici, max 60 MB) |
-| `PATCH /api/docs/:id` `{label?, kind?, version?, item_id?}` | rinomina, cambia tipo o versione; `item_id` lo sposta in un altro articolo (con le note) |
-| `POST /api/docs/:id/copy` `{item_id}` | copia in un altro articolo: file nuovo, senza note → `{id}` |
-| `DELETE /api/docs/:id` | nel cestino |
-| `POST /api/docs/:id/notes` `{text, page?, x?, y?, z?, quote?, marks?}` | nota: senza `page` è generale, con `page`/`x`/`y` (0..1) è un segnaposto (`z` nei modelli 3D); `quote` e `marks` (`[[pagina, x, y, w, h], …]` in 0..1, max 300) per una nota su un pezzo di testo di un PDF |
-| `PATCH /api/doc-notes/:id` `{text?, resolved?, page?, x?, y?, z?}` · `DELETE /api/doc-notes/:id` | modifica, risolve, sposta; nel cestino |
+| `GET /api/docs/:id/file` | downloads; the name in the `Content-Disposition` is `label` plus the original extension (`?inline=1` to see it in the browser) |
+| `GET /api/items/:id/docs.zip` | all the item's files in a `.zip` (`CODE-documents.zip`), with the names as in the single download; two equal names become `name (2).ext`; 404 if the item has no files |
+| `GET /api/docs/:id/remote` | the PDF of an external link, downloaded by the server (public addresses only, max 60 MB) |
+| `PATCH /api/docs/:id` `{label?, kind?, version?, item_id?}` | renames, changes kind or version; `item_id` moves it to another item (with the notes) |
+| `POST /api/docs/:id/copy` `{item_id}` | copies to another item: new file, without notes → `{id}` |
+| `DELETE /api/docs/:id` | to the trash |
+| `POST /api/docs/:id/notes` `{text, page?, x?, y?, z?, quote?, marks?}` | note: without `page` it is general, with `page`/`x`/`y` (0..1) it is a pin (`z` in 3D models); `quote` and `marks` (`[[page, x, y, w, h], …]` in 0..1, max 300) for a note on a piece of a PDF's text |
+| `PATCH /api/doc-notes/:id` `{text?, resolved?, page?, x?, y?, z?}` · `DELETE /api/doc-notes/:id` | edits, resolves, moves; to the trash |
 
 ## Mail
 
-Una mail è una voce con `kind: "mail"`. Il server non spedisce niente: la mail si apre già compilata nel client di posta.
+A mail is an entry with `kind: "mail"`. The server sends nothing: the mail opens already filled in in the mail client.
 
 | | |
 |---|---|
-| `POST /api/entries/:id/attachments?name=file.pdf` | allega un file (corpo grezzo, come i documenti) |
-| `POST /api/entries/:id/attachments` `{doc_id}` | allega un documento del magazzino (senza `name` nella query string) |
-| `DELETE /api/attachments/:id` | toglie un allegato |
-| `GET /api/attachments/:id/file` | scarica un allegato |
-| `GET /api/entries/:id/eml` | la mail come `.eml` (destinatari, oggetto, testo, allegati) |
-| `POST /api/entries/:id/send` | `{token}` per l'helper Thunderbird: `organizer-mail://open?server=…&token=…` (15 minuti) |
-| `POST /api/entries/:id/compose` | apre la mail nell'estensione di Thunderbird collegata (409 se non ce n'è una) |
-| `GET /api/mail/threads/:id` | una conversazione (personale) con i messaggi interi (`direction` `out`/`in`, `message_id`, `in_reply_to`, `refs`, `from_addr`, `to_addr`, `cc`, `subject`, `body`, `attachments`, `date`, `read_at`) e `entries`, le mail scritte in Organizer che ne fanno parte. In `/api/sync`: `mailTopics`, `mailThreads` (con `topic_id`, `hue`, `starred`, `archived_at`), `mailMsgs` (senza il testo intero) e `threadLinks` |
-| `GET /api/mail/topics/:id` | un topic con tutte le sue conversazioni (`threads`, come sopra) |
-| `PATCH /api/mail/threads/:id` | `{read, archived, subject, starred, hue, topic}`: `archived: true` archivia e segna letto; `hue` 0..359 o `null` (automatico); `topic` sposta in un altro topic (id) o in uno nuovo (`"new"`) → `{topic}` |
+| `POST /api/entries/:id/attachments?name=file.pdf` | attaches a file (raw body, like documents) |
+| `POST /api/entries/:id/attachments` `{doc_id}` | attaches an inventory document (without `name` in the query string) |
+| `DELETE /api/attachments/:id` | removes an attachment |
+| `GET /api/attachments/:id/file` | downloads an attachment |
+| `GET /api/entries/:id/eml` | the mail as `.eml` (recipients, subject, text, attachments) |
+| `POST /api/entries/:id/send` | `{token}` for the Thunderbird helper: `organizer-mail://open?server=…&token=…` (15 minutes) |
+| `POST /api/entries/:id/compose` | opens the mail in the connected Thunderbird extension (409 if there is none) |
+| `GET /api/mail/threads/:id` | a (personal) conversation with the full messages (`direction` `out`/`in`, `message_id`, `in_reply_to`, `refs`, `from_addr`, `to_addr`, `cc`, `subject`, `body`, `attachments`, `date`, `read_at`) and `entries`, the mails written in Organizer that are part of it. In `/api/sync`: `mailTopics`, `mailThreads` (with `topic_id`, `hue`, `starred`, `archived_at`), `mailMsgs` (without the full text) and `threadLinks` |
+| `GET /api/mail/topics/:id` | a topic with all its conversations (`threads`, as above) |
+| `PATCH /api/mail/threads/:id` | `{read, archived, subject, starred, hue, topic}`: `archived: true` archives and marks read; `hue` 0..359 or `null` (automatic); `topic` moves to another topic (id) or to a new one (`"new"`) → `{topic}` |
 | `PATCH /api/mail/topics/:id` | `{title, starred, hue}` |
-| `POST /api/mail/topics/:id/links` | `{kind, id}`: collega il topic intero (in `/api/sync`: `topicLinks`); `DELETE /api/mail/topics/:id/links/:kind/:id` lo scollega |
-| `POST /api/mail/topics/:id/merge` | `{into}`: tutte le conversazioni passano nell'altro topic |
-| `POST /api/mail/topics/:id/move` | `{ws}`: il topic va in un altro workspace dell'utente (dove può scrivere mail), con conversazioni, messaggi e mail scritte in Organizer; i collegamenti manuali si perdono, quelli automatici si ricalcolano → `{ws, name, topic}` |
-| `POST /api/mail/messages/:id/open` | chiede all'estensione (1.7) di aprire il messaggio in Thunderbird |
-| `DELETE /api/mail/topics/:id` | ogni conversazione del topic nel cestino |
+| `POST /api/mail/topics/:id/links` | `{kind, id}`: links the whole topic (in `/api/sync`: `topicLinks`); `DELETE /api/mail/topics/:id/links/:kind/:id` unlinks it |
+| `POST /api/mail/topics/:id/merge` | `{into}`: all the conversations move to the other topic |
+| `POST /api/mail/topics/:id/move` | `{ws}`: the topic goes to another workspace of the user (where they can write mails), with conversations, messages and mails written in Organizer; manual links are lost, automatic ones are recomputed → `{ws, name, topic}` |
+| `POST /api/mail/messages/:id/open` | asks the extension (1.7) to open the message in Thunderbird |
+| `DELETE /api/mail/topics/:id` | every conversation of the topic to the trash |
 | `PATCH /api/mail/messages/:id` | `{read}` |
-| `GET /api/mail/search?q=` | id delle conversazioni (le proprie, le più recenti, fino a 30) in cui ogni parola si trova in oggetto, testo, indirizzi o nome in rubrica dei partecipanti |
-| `DELETE /api/mail/threads/:id` | nel cestino, con le mail di Organizer della conversazione (tipo `thread` in `/api/trash`: `POST /api/trash/thread/:id/restore`, `DELETE /api/trash/thread/:id`) |
-| `POST /api/mail/threads/:id/links` | `{kind, id}` con `kind` tra `articolo`, `doc`, `progetto`, `contatto`, `voce`: collega la conversazione |
-| `DELETE /api/mail/threads/:id/links/:kind/:id` | toglie un collegamento, anche automatico: resta nascosto e non torna |
-| `POST /api/mail/threads/:id/draft` | `{id}` di una nuova mail nella conversazione (a chi ha scritto per ultimo) |
-| `POST /api/mail/topics/:id/draft` | `{id}` di una mail vuota in una conversazione nuova del topic |
-| `POST /api/mail/messages/:id/reply` | `{all}` (rispondi a tutti) → `{id}` della nuova mail di risposta a quel messaggio, nel suo thread |
-| `POST /api/mail/attachments/save` | `{id, n, item_id, kind}`: salva l'allegato n del messaggio `id` come documento dell'articolo; se è appena stato visto in anteprima lo salva subito (`saved: true`), altrimenti lo chiede all'estensione |
-| `GET /api/mail/messages/:id` | un messaggio ricevuto: `thread_id`, `topic_id`, oggetto, mittente, data, allegati |
-| `GET /api/mail/messages/:id/attachments/:n` | il file dell'allegato n, per l'anteprima: lo chiede all'estensione (1.6 o successiva) e aspetta fino a un minuto; poi resta in memoria per 30 minuti |
+| `GET /api/mail/search?q=` | ids of the conversations (one's own, the most recent, up to 30) where each word is found in subject, text, addresses or address-book name of the participants |
+| `DELETE /api/mail/threads/:id` | to the trash, with the conversation's Organizer mails (type `thread` in `/api/trash`: `POST /api/trash/thread/:id/restore`, `DELETE /api/trash/thread/:id`) |
+| `POST /api/mail/threads/:id/links` | `{kind, id}` with `kind` among `articolo` (item), `doc`, `progetto`, `contatto`, `voce`: links the conversation |
+| `DELETE /api/mail/threads/:id/links/:kind/:id` | removes a link, automatic ones too: it stays hidden and does not come back |
+| `POST /api/mail/threads/:id/draft` | `{id}` of a new mail in the conversation (to whoever wrote last) |
+| `POST /api/mail/topics/:id/draft` | `{id}` of an empty mail in a new conversation of the topic |
+| `POST /api/mail/messages/:id/reply` | `{all}` (reply all) → `{id}` of the new reply mail to that message, in its thread |
+| `POST /api/mail/attachments/save` | `{id, n, item_id, kind}`: saves attachment n of message `id` as a document of the item; if it was just seen in preview it saves it right away (`saved: true`), otherwise it asks the extension for it |
+| `GET /api/mail/messages/:id` | a received message: `thread_id`, `topic_id`, subject, sender, date, attachments |
+| `GET /api/mail/messages/:id/attachments/:n` | the file of attachment n, for the preview: it asks the extension (1.6 or later) and waits up to a minute; then it stays in memory for 30 minutes |
 
-Le mail sono personali: le voci `kind: "mail"` le vedono solo chi le ha create e l'assegnatario, anche per gli admin.
+Mails are personal: entries with `kind: "mail"` are seen only by their creator and their assignee, admins included.
 
-L'estensione di Thunderbird (cartella `thunderbird/`) usa queste, con un token; valgono per tutti i workspace dell'utente:
+The Thunderbird extension (`thunderbird/` folder) uses these, with a token; they work for all the user's workspaces:
 
 | | |
 |---|---|
-| `GET /api/mail/stream` | flusso di eventi (`outbox`, `watch`); finché è aperto l'estensione risulta collegata (`mailExt` in `/api/sync`) |
-| `GET /api/mail/outbox` | mail da aprire: `ws`, `id`, `to`, `cc`, `subject`, `body`, `reply_to` (Message-ID), `files` |
-| `POST /api/mail/outbox/:ws/:id/claim` | la prende (409 se l'ha già presa un altro Thunderbird) |
-| `GET /api/mail/outbox/:ws/:id/file/:n` | allegato n |
-| `POST /api/mail/sent` | `{ws, outbox_id, message_id, from, to, cc, subject, date}`: mandata, in attesa di risposta (il messaggio entra nel thread) |
-| `GET /api/mail/watch` | Message-ID dei messaggi nei thread della persona |
-| `POST /api/mail/incoming` | `{message_id, in_reply_to, references, from, to, cc, subject, date, body, attachments, direction, inbox, history, import, backfill, thread, ws}` → `{matched, thread, missing}`. Entra nella conversazione a cui risponde (riferimenti, poi `thread`, poi stesso oggetto e una persona in comune entro 60 giorni); se non ce n'è una, con `inbox`, `import`, `backfill` o `history` ne apre una nuova in un topic suo, nel workspace `ws` (quello dell'account di posta) o in quello predefinito. `direction: "out"` per una mail mandata da Thunderbird. `missing`: Message-ID dei messaggi precedenti che il thread non ha; l'estensione li ripassa con `history: true` e `thread` (entrano già letti, senza riattivare il thread). `import: true` per un thread portato a mano: entra già letto ma tra gli attivi, anche senza `inbox` e anche se il messaggio era in un thread nel cestino |
-| `GET /api/mail/workspaces` | i workspace in cui può andare la posta: `id`, `name`, `default` (per le opzioni dell'estensione) |
-| `GET /api/mail/opens` | i Message-ID da aprire in Thunderbird (evento `open` sul flusso); leggerli li toglie |
-| `GET /api/mail/backfill` | `{since}`: da quando caricare la posta al primo collegamento (l'ultimo mese), `null` se già fatto; le mail si mandano a `/api/mail/incoming` con `backfill: true` (già lette, senza notifiche) |
-| `POST /api/mail/backfill/done` | caricamento finito |
-| `POST /api/mail/identities` | `{addresses}`: i propri indirizzi, esclusi da "rispondi a tutti" |
-| `GET /api/mail/fetches` | allegati da caricare: `id`, `ws`, `preview`, `item_id`, `kind`, `message_id`, `part`, `name`; i documenti si caricano con `POST /api/items/:id/docs` e l'header `X-Workspace`, le anteprime (`preview`, solo con l'header `X-Organizer-Ext` 1.6 o successivo) con `POST /api/mail/fetches/:id/file` |
-| `POST /api/mail/fetches/:id/claim`, `/done` | presa in carico e fine (anche se non riuscita; `{error}` per dire all'anteprima perché) |
-| `POST /api/mail/fetches/:id/file` | il file di un'anteprima (corpo grezzo, max 60 MB) |
-| `GET /api/mail/thunderbird.xpi` | l'estensione, impostata per il server da cui si scarica |
+| `GET /api/mail/stream` | stream of events (`outbox`, `watch`); while it is open the extension counts as connected (`mailExt` in `/api/sync`) |
+| `GET /api/mail/outbox` | mails to open: `ws`, `id`, `to`, `cc`, `subject`, `body`, `reply_to` (Message-ID), `files` |
+| `POST /api/mail/outbox/:ws/:id/claim` | takes it (409 if another Thunderbird already took it) |
+| `GET /api/mail/outbox/:ws/:id/file/:n` | attachment n |
+| `POST /api/mail/sent` | `{ws, outbox_id, message_id, from, to, cc, subject, date}`: sent, awaiting reply (the message enters the thread) |
+| `GET /api/mail/watch` | Message-IDs of the messages in the person's threads |
+| `POST /api/mail/incoming` | `{message_id, in_reply_to, references, from, to, cc, subject, date, body, attachments, direction, inbox, history, import, backfill, thread, ws}` → `{matched, thread, missing}`. It enters the conversation it replies to (references, then `thread`, then same subject and a person in common within 60 days); if there is none, with `inbox`, `import`, `backfill` or `history` it opens a new one in a topic of its own, in workspace `ws` (the mail account's) or in the default one. `direction: "out"` for a mail sent from Thunderbird. `missing`: Message-IDs of the earlier messages the thread does not have; the extension passes them again with `history: true` and `thread` (they enter already read, without reactivating the thread). `import: true` for a thread brought by hand: it enters already read but among the active ones, even without `inbox` and even if the message was in a thread in the trash |
+| `GET /api/mail/workspaces` | the workspaces mail can go to: `id`, `name`, `default` (for the extension's options) |
+| `GET /api/mail/opens` | the Message-IDs to open in Thunderbird (`open` event on the stream); reading them removes them |
+| `GET /api/mail/backfill` | `{since}`: from when to load mail at the first connection (the last month), `null` if already done; mails are sent to `/api/mail/incoming` with `backfill: true` (already read, without notifications) |
+| `POST /api/mail/backfill/done` | loading finished |
+| `POST /api/mail/identities` | `{addresses}`: one's own addresses, excluded from "reply all" |
+| `GET /api/mail/fetches` | attachments to upload: `id`, `ws`, `preview`, `item_id`, `kind`, `message_id`, `part`, `name`; documents are uploaded with `POST /api/items/:id/docs` and the `X-Workspace` header, previews (`preview`, only with the `X-Organizer-Ext` header 1.6 or later) with `POST /api/mail/fetches/:id/file` |
+| `POST /api/mail/fetches/:id/claim`, `/done` | taken in charge and finished (even if it failed; `{error}` to tell the preview why) |
+| `POST /api/mail/fetches/:id/file` | the file of a preview (raw body, max 60 MB) |
+| `GET /api/mail/thunderbird.xpi` | the extension, set up for the server it is downloaded from |
 
-## Contatti
+## Contacts
 
-Campi: `name`, `email`, `phone`, `company`, `role`, `timeslot` (fascia oraria), `notes`. `POST /api/contacts`, `PATCH /api/contacts/:id`, `DELETE /api/contacts/:id`. Nelle voci `>nome` diventa l'email del contatto, se il nome è univoco.
+Fields: `name`, `email`, `phone`, `company`, `role`, `timeslot` (time slot), `notes`. `POST /api/contacts`, `PATCH /api/contacts/:id`, `DELETE /api/contacts/:id`. In entries `>name` becomes the contact's email, if the name is unique.
 
 ## Chat
 
-Una chat per workspace, a canali. Un canale: `id`, `name`, `everyone` (tutti i membri leggono e scrivono) oppure `members` `[{user_id, can_write}]`. In `/api/sync`: `chatChannels` (con `member`, `can_write`, `unread`, `read_id`; chi gestisce i canali li riceve tutti), `chat` (gli ultimi 100 messaggi di ogni canale in cui sei), `chatUnread`, `canManageChannels`. Un messaggio: `id`, `channel_id`, `user_id`, `text`, `created_at`, `edited_at`. Senza `channel` vale il primo canale in cui sei.
+One chat per workspace, with channels. A channel: `id`, `name`, `everyone` (all members read and write) or `members` `[{user_id, can_write}]`. In `/api/sync`: `chatChannels` (with `member`, `can_write`, `unread`, `read_id`; whoever manages the channels receives them all), `chat` (the last 100 messages of each channel you are in), `chatUnread`, `canManageChannels`. A message: `id`, `channel_id`, `user_id`, `text`, `created_at`, `edited_at`. Without `channel` the first channel you are in applies.
 
-I collegamenti stanno nel testo e l'app li mostra come link con il nome attuale: `#CODICE` (articolo), `@tag` (progetto), `+utente` (persona), `[[doc:ID]]` (documento), `[[voce:ID]]` (todo, mail o nota), `[[contatto:ID]]`.
-
-| | |
-|---|---|
-| `GET /api/chat?channel=ID&limit=50` | ultimi messaggi del canale (per id o nome), in ordine cronologico (max 500) |
-| `GET /api/chat?before=ID` | i precedenti a ID (per scorrere indietro) |
-| `GET /api/chat?after=ID` | i successivi a ID (per un bot: a ogni evento `change` di `/api/events`) |
-| `POST /api/chat` `{text, channel}` | scrive (max 4000 caratteri) → `{id, channel_id}`; 403 dove si può solo leggere |
-| `PATCH /api/chat/:id` `{text}` | modifica un proprio messaggio |
-| `DELETE /api/chat/:id` | elimina (i propri, o qualunque se admin o gestore dei canali) |
-| `POST /api/chat/read` `{id, channel}` | letto fino a `id` nel canale |
-| `POST /api/chat/channels` `{name, everyone, members}` | crea un canale (admin o permesso `canali`) |
-| `PATCH /api/chat/channels/:id` | nome, `everyone`, `members` |
-| `DELETE /api/chat/channels/:id` | elimina il canale |
-
-## Notifiche
-
-In `/api/sync`: `notifications` (le ultime 40, di tutti i workspace: `id`, `workspace_id`, `kind` `mention`/`mail`/`chat`, `title`, `body`, `url`, `created_at`, `read_at`), `notifUnread`, `pushDevices`; nei canali `muted`.
+Links are in the text and the app shows them as links with the current name: `#CODE` (item), `@tag` (project), `+user` (person), `[[doc:ID]]` (document), `[[voce:ID]]` (todo, mail or note), `[[contatto:ID]]` (contact).
 
 | | |
 |---|---|
-| `POST /api/notifications/read` | `{ids}`, `{url}` (quelle che portano lì) o `{all: true}` |
-| `GET /api/notifications/:id` | dove porta (`url`, `workspace_id`) e la segna letta |
-| `POST /api/chat/channels/:id/mute` | `{muted}`: nel canale solo le notifiche delle citazioni |
-| `GET /api/push/key` | chiave pubblica VAPID per `pushManager.subscribe` |
-| `POST /api/push/subscribe` | l'iscrizione (`endpoint`, `keys.p256dh`, `keys.auth`) di un dispositivo |
+| `GET /api/chat?channel=ID&limit=50` | the channel's latest messages (by id or name), in chronological order (max 500) |
+| `GET /api/chat?before=ID` | those before ID (to scroll back) |
+| `GET /api/chat?after=ID` | those after ID (for a bot: on each `change` event of `/api/events`) |
+| `POST /api/chat` `{text, channel}` | writes (max 4000 characters) → `{id, channel_id}`; 403 where one can only read |
+| `PATCH /api/chat/:id` `{text}` | edits one's own message |
+| `DELETE /api/chat/:id` | deletes (one's own, or any if admin or channel manager) |
+| `POST /api/chat/read` `{id, channel}` | read up to `id` in the channel |
+| `POST /api/chat/channels` `{name, everyone, members}` | creates a channel (admin or `canali` permission) |
+| `PATCH /api/chat/channels/:id` | name, `everyone`, `members` |
+| `DELETE /api/chat/channels/:id` | deletes the channel |
+
+## Notifications
+
+In `/api/sync`: `notifications` (the last 40, of all workspaces: `id`, `workspace_id`, `kind` `mention`/`mail`/`chat`, `title`, `body`, `url`, `created_at`, `read_at`), `notifUnread`, `pushDevices`; in the channels `muted`. Titles and texts are in the recipient's language (the one their app last used).
+
+| | |
+|---|---|
+| `POST /api/notifications/read` | `{ids}`, `{url}` (those that lead there) or `{all: true}` |
+| `GET /api/notifications/:id` | where it leads (`url`, `workspace_id`) and marks it read |
+| `POST /api/chat/channels/:id/mute` | `{muted}`: in the channel only the notifications of mentions |
+| `GET /api/push/key` | public VAPID key for `pushManager.subscribe` |
+| `POST /api/push/subscribe` | a device's subscription (`endpoint`, `keys.p256dh`, `keys.auth`) |
 | `POST /api/push/unsubscribe` | `{endpoint}` |
-| `POST /api/push/test` | una notifica di prova ai propri dispositivi |
+| `POST /api/push/test` | a test notification to one's own devices |
 
 ## Feedback
 
 | | |
 |---|---|
 | `POST /api/feedback` `{text, page, version, client}` | → `{id}` |
-| `POST /api/feedback/:id/files?name=…` | un'immagine (corpo grezzo, PNG/JPEG/GIF/WebP, max 15 MB, 6 per feedback), entro un'ora |
-| `GET /api/feedback?status=open\|all` | elenco con `files` (solo chi gestisce l'istanza) |
+| `POST /api/feedback/:id/files?name=…` | an image (raw body, PNG/JPEG/GIF/WebP, max 15 MB, 6 per feedback), within an hour |
+| `GET /api/feedback?status=open\|all` | list with `files` (only whoever runs the instance) |
 | `PATCH /api/feedback/:id` `{status: "open"\|"done"}` | |
-| `GET /api/feedback/files/:id` | l'immagine |
+| `GET /api/feedback/files/:id` | the image |
 
-Un ponte verso Telegram: segui `/api/events`, a ogni `change` leggi `/api/chat?after=ULTIMO` e inoltra; nella direzione opposta `POST /api/chat`. Dal terminale c'è `org chat -f`.
+A bridge to Telegram: follow `/api/events`, on each `change` read `/api/chat?after=LAST` and forward; in the other direction `POST /api/chat`. From the terminal there is `org chat -f`.
 
-## Cestino
+## Trash
 
 | | |
 |---|---|
 | `GET /api/trash` | `{days, entries, projects, items, docs, contacts, docNotes}` |
-| `POST /api/trash/:tipo/:id/restore` | ripristina; tipo: `entry`, `project`, `item`, `doc`, `contact`, `docnote` |
-| `DELETE /api/trash/:tipo/:id` | elimina per sempre (chi l'ha creato o eliminato, o un admin) |
+| `POST /api/trash/:type/:id/restore` | restores; type: `entry`, `project`, `item`, `doc`, `contact`, `docnote` |
+| `DELETE /api/trash/:type/:id` | deletes for good (whoever created or deleted it, or an admin) |
 
-## Token
+## Tokens
 
 | | |
 |---|---|
-| `GET /api/tokens` | i tuoi token: `id`, `name`, `hint` (ultime 4 lettere), `created_at`, `last_used_at`, `current` (quello in uso) |
-| `POST /api/tokens` `{name}` | nuovo token (solo dall'app, non con un token) |
-| `POST /api/auth/token` `{username, password, name}` | nuovo token con le credenziali |
-| `DELETE /api/tokens/:id` | revoca |
+| `GET /api/tokens` | your tokens: `id`, `name`, `hint` (last 4 characters), `created_at`, `last_used_at`, `current` (the one in use) |
+| `POST /api/tokens` `{name}` | new token (only from the app, not with a token) |
+| `POST /api/auth/token` `{username, password, name}` | new token with the credentials |
+| `DELETE /api/tokens/:id` | revokes |
 
-## Esempio: un bot che risponde "cosa scade oggi?"
+## Example: a bot that answers "what is due today?"
 
 ```js
-// Node 22, nessuna dipendenza. ORGANIZER_URL, ORGANIZER_TOKEN, ORGANIZER_WS nell'ambiente.
+// Node 22, no dependencies. ORGANIZER_URL, ORGANIZER_TOKEN, ORGANIZER_WS in the environment.
 const { ORGANIZER_URL: url, ORGANIZER_TOKEN: token, ORGANIZER_WS: ws } = process.env;
 const headers = { Authorization: `Bearer ${token}`, 'X-Workspace': ws };
 
 async function dueToday() {
-  const today = new Date().toLocaleDateString('sv'); // AAAA-MM-GG nel fuso locale
+  const today = new Date().toLocaleDateString('sv'); // YYYY-MM-DD in the local time zone
   const d = await (await fetch(`${url}/api/sync`, { headers })).json();
   return d.entries.filter(e => !e.done_at && e.kind !== 'note' && e.due && e.due <= today).map(e => `• ${e.title}`);
 }
@@ -336,4 +340,4 @@ async function add(text) {
 }
 ```
 
-Per tutto il resto la CLI è un esempio completo: `cli/lib/client.js` (richieste) e `cli/lib/data.js` (lettura di `/api/sync`). Con `org api METODO PERCORSO [JSON]` si prova qualunque endpoint dal terminale.
+For everything else the CLI is a complete example: `cli/lib/client.js` (requests) and `cli/lib/data.js` (reading `/api/sync`). With `org api METHOD PATH [JSON]` you can try any endpoint from the terminal.

@@ -1,16 +1,17 @@
-// Parser della riga di inserimento rapido. Condiviso tra browser e server (nessuna dipendenza).
+// Parser for the quick-entry line. Shared by the browser and the server (no dependencies).
 //
-//   fix bootloader #SCH-042 @rover !ven +marco
-//   m: preventivo schede >fornitore@ditta.it !domani
-//   n: la SCH-042 rev B vuole il fw >= 2.3 #SCH-042
+//   fix bootloader #SCH-042 @rover !fri +marco
+//   m: quote for boards >supplier@company.example !tomorrow
+//   n: rev B of SCH-042 needs fw >= 2.3 #SCH-042
 //
-// Token riconosciuti (solo a inizio parola):
-//   t: m: n:   prefisso tipo (todo, mail, nota)
-//   !data      scadenza: oggi, domani, dopodomani, ieri, lun..dom, 3g, 2s, 1m, fm, 25/11, 2026-11-25, no
-//   @tag       progetto (creato se non esiste)
-//   +utente    assegnatario
-//   >chi       destinatario (mail)
-//   #CODICE    articolo di magazzino (resta nel testo, creato se non esiste)
+// Recognised tokens (only at the start of a word). Dates understand English and Italian words:
+//   t: m: n:   kind prefix (todo, mail, note)
+//   !date      due date: today, tomorrow, yesterday, mon..sun, 3d, 2w, 1m, eom, 25/11, 2026-11-25, no
+//              (Italian: oggi, domani, dopodomani, ieri, lun..dom, 3g, 2s, fm)
+//   @tag       project (created if missing)
+//   +user      shared with; ++user also assigned
+//   >who       recipient (mail)
+//   #CODE      inventory item (stays in the text, created if missing)
 
 const pad = n => String(n).padStart(2, '0');
 export const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -19,27 +20,34 @@ export const addDays = (s, n) => { const d = fromYmd(s); d.setDate(d.getDate() +
 export const today = () => ymd(new Date());
 export const isYmd = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
-const WEEKDAYS = ['domenica', 'lunedi', 'martedi', 'mercoledi', 'giovedi', 'venerdi', 'sabato'];
+// Weekdays from Sunday, in both languages: a prefix of at least three letters is enough (fri, ven).
+const WEEKDAYS = [
+  ['sunday', 'domenica'], ['monday', 'lunedi'], ['tuesday', 'martedi'], ['wednesday', 'mercoledi'],
+  ['thursday', 'giovedi'], ['friday', 'venerdi'], ['saturday', 'sabato'],
+];
 const KIND_PREFIX = { t: 'todo', todo: 'todo', m: 'mail', mail: 'mail', n: 'note', nota: 'note', note: 'note' };
+const WORDS = {
+  today: 0, oggi: 0,
+  tomorrow: 1, tmr: 1, domani: 1, dmn: 1,
+  dopodomani: 2,
+  yesterday: -1, ieri: -1,
+};
 
 function validDate(y, m, d) {
   const dt = new Date(y, m - 1, d);
   return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d ? ymd(dt) : undefined;
 }
 
-// Ritorna 'YYYY-MM-DD', null (= togli la scadenza) oppure undefined (non è una data).
-// Con past=true (note del diario) giorni della settimana e date senza anno guardano indietro.
+// Returns 'YYYY-MM-DD', null (= remove the due date) or undefined (not a date).
+// With past=true (journal notes) weekdays and dates without a year look backwards.
 export function parseDate(tok, base = today(), { past = false } = {}) {
   const t = String(tok).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   const ref = fromYmd(base);
-  if (t === 'oggi') return base;
-  if (t === 'domani' || t === 'dmn') return addDays(base, 1);
-  if (t === 'dopodomani') return addDays(base, 2);
-  if (t === 'ieri') return addDays(base, -1);
-  if (t === 'no' || t === 'x') return null;
-  if (t === 'fm' || t === 'finemese') return ymd(new Date(ref.getFullYear(), ref.getMonth() + 1, 0));
+  if (t in WORDS) return addDays(base, WORDS[t]);
+  if (t === 'no' || t === 'none' || t === 'x') return null;
+  if (t === 'eom' || t === 'fm' || t === 'finemese') return ymd(new Date(ref.getFullYear(), ref.getMonth() + 1, 0));
 
-  const wd = t.length >= 3 ? WEEKDAYS.findIndex(w => w.startsWith(t)) : -1;
+  const wd = t.length >= 3 ? WEEKDAYS.findIndex(names => names.some(w => w.startsWith(t))) : -1;
   if (wd >= 0) {
     return past
       ? addDays(base, -((ref.getDay() - wd + 7) % 7 || 7))
@@ -47,14 +55,16 @@ export function parseDate(tok, base = today(), { past = false } = {}) {
   }
 
   let m;
-  if ((m = t.match(/^(\d{1,3})([gsm])$/))) {
+  // 3d / 3g days, 2w / 2s weeks, 1m months.
+  if ((m = t.match(/^(\d{1,3})([dgswm])$/))) {
     const n = +m[1];
-    if (m[2] === 'g') return addDays(base, n);
-    if (m[2] === 's') return addDays(base, n * 7);
+    if (m[2] === 'd' || m[2] === 'g') return addDays(base, n);
+    if (m[2] === 'w' || m[2] === 's') return addDays(base, n * 7);
     const d = new Date(ref.getFullYear(), ref.getMonth() + n, 1);
     const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
     return ymd(new Date(d.getFullYear(), d.getMonth(), Math.min(ref.getDate(), last)));
   }
+  // Day first: 25/11, 25.11.26, 25-11-2026.
   if ((m = t.match(/^(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2}|\d{4}))?$/))) {
     const d = +m[1], mo = +m[2];
     if (m[3]) return validDate(m[3].length === 2 ? 2000 + +m[3] : +m[3], mo, d);
@@ -77,8 +87,8 @@ export function extractCodes(text) {
 
 export function parseQuick(text, { today: base = today(), kind = 'todo' } = {}) {
   let s = String(text || '').trim();
-  // shares: +persona (la vede anche lei); shareAll: +all (la vedono tutti); assignee: ++persona (la vede e
-  // gliela assegni). Senza nessuno dei tre la voce è privata di chi la scrive.
+  // shares: +person (they see it too); shareAll: +all (everyone sees it); assignee: ++person (they see it and
+  // it is assigned to them). Without any of the three the entry is private to whoever writes it.
   const out = { kind, kindExplicit: false, title: '', due: undefined, project: null, projects: [], assignee: null, shares: [], shareAll: false, contact: null, codes: [] };
 
   const pm = s.match(/^([a-z]+)\s*:\s*/i);
@@ -95,7 +105,7 @@ export function parseQuick(text, { today: base = today(), kind = 'todo' } = {}) 
       const d = parseDate(m[1], base, { past: out.kind === 'note' });
       if (d !== undefined) { out.due = d; continue; }
     } else if ((m = w.match(/^@([\p{L}\d_][\p{L}\d_-]*)[.,;:]?$/u))) {
-      // Più @progetti: il primo è il principale (out.project), tutti stanno in out.projects.
+      // Several @projects: the first is the main one (out.project), all of them are in out.projects.
       if (!out.projects.some(t => t.toLowerCase() === m[1].toLowerCase())) out.projects.push(m[1]);
       out.project ||= m[1];
       continue;
@@ -117,8 +127,8 @@ export function parseQuick(text, { today: base = today(), kind = 'todo' } = {}) 
   return out;
 }
 
-// Barra in alto nella pagina Magazzino:  SCH-060 scheda relè /scheda @rover
-// (primo termine = codice, /categoria, @progetto a cui collegarlo, il resto è la descrizione)
+// Top bar on the Inventory page:  SCH-060 relay board /board @rover
+// (first word = code, /category, @project to link it to, the rest is the description)
 export const CODE_OK = /^[A-Za-z0-9](?:[\w.\-/]*[A-Za-z0-9_])?$/;
 
 export function parseItemLine(text) {
@@ -136,7 +146,7 @@ export function parseItemLine(text) {
   return out;
 }
 
-// Barra in alto nella pagina Progetti:  Firmware motori @rover +marco  (→ sottoprogetto di @rover, condiviso)
+// Top bar on the Projects page:  Motor firmware @rover +marco  (→ subproject of @rover, shared)
 export function parseProjectLine(text) {
   const out = { name: '', parent: null, share: [] };
   const rest = [];
@@ -151,11 +161,11 @@ export function parseProjectLine(text) {
   return out;
 }
 
-// +all (o +tutti) vuol dire "tutti": per questo "all" non può essere un nome utente.
+// +all (or +tutti) means "everyone": that is why "all" cannot be a username.
 export const ALL = 'all';
 export const shareToken = name => (/^(all|tutti)$/i.test(name) ? ALL : name);
 
-// +persona e +all in un testo libero (note sui documenti): i nomi e il testo senza.
+// +person and +all in free text (notes on documents): the names, and the text without them.
 export function parseShares(text) {
   const out = { text: '', names: [], all: false };
   const keep = [];

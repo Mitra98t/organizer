@@ -1,6 +1,6 @@
-// Notifiche push (Web Push) senza dipendenze: cifratura del messaggio (RFC 8291, aes128gcm) e firma VAPID
-// (RFC 8292). Le chiavi VAPID si creano la prima volta e restano in DATA_DIR/vapid.json: cambiandole, i
-// dispositivi già iscritti smettono di ricevere e vanno riattivati.
+// Push notifications (Web Push) without dependencies: message encryption (RFC 8291, aes128gcm) and VAPID signature
+// (RFC 8292). The VAPID keys are created the first time and stay in DATA_DIR/vapid.json: if they change, devices
+// already subscribed stop receiving and must be turned on again.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -8,7 +8,7 @@ import { DATA_DIR } from './db.js';
 
 const b64u = buf => Buffer.from(buf).toString('base64url');
 const unb64u = s => Buffer.from(String(s), 'base64url');
-// Mittente nella firma VAPID: PUSH_SUBJECT se c'è, altrimenti l'indirizzo HTTPS da cui il dispositivo si è iscritto.
+// Sender in the VAPID signature: PUSH_SUBJECT if set, otherwise the HTTPS address the device subscribed from.
 const SUBJECT = process.env.PUSH_SUBJECT || '';
 
 function vapidKeys() {
@@ -24,7 +24,7 @@ function vapidKeys() {
 }
 const VAPID = vapidKeys();
 const vapidPrivate = crypto.createPrivateKey({ key: VAPID, format: 'jwk' });
-// Chiave pubblica "grezza" (0x04 || x || y): è quella che l'app passa a pushManager.subscribe.
+// "Raw" public key (0x04 || x || y): the one the app passes to pushManager.subscribe.
 export const vapidPublic = b64u(Buffer.concat([Buffer.from([4]), unb64u(VAPID.x), unb64u(VAPID.y)]));
 
 function vapidHeader(endpoint, origin) {
@@ -36,7 +36,7 @@ function vapidHeader(endpoint, origin) {
   return `vapid t=${head}.${claims}.${b64u(sig)}, k=${vapidPublic}`;
 }
 
-// Il messaggio cifrato per quel dispositivo (un solo blocco, come vuole aes128gcm per i messaggi brevi).
+// The message encrypted for that device (a single block, as aes128gcm wants for short messages).
 function encrypt(sub, payload) {
   const uaPublic = unb64u(sub.p256dh);
   const authSecret = unb64u(sub.auth);
@@ -56,7 +56,7 @@ function encrypt(sub, payload) {
   return Buffer.concat([header, asPublic, body]);
 }
 
-// Manda; restituisce lo stato HTTP (201 = consegnato al servizio push; 404/410 = iscrizione scaduta).
+// Sends; returns the HTTP status (201 = delivered to the push service; 404/410 = expired subscription).
 export async function sendPush(sub, data, { ttl = 86400, urgency = 'normal' } = {}) {
   const r = await fetch(sub.endpoint, {
     method: 'POST',
@@ -73,7 +73,7 @@ export async function sendPush(sub, data, { ttl = 86400, urgency = 'normal' } = 
   return r.status;
 }
 
-// Per i test: decifra con la chiave privata del "dispositivo" (lo stesso schema, al contrario).
+// For tests: decrypts with the "device" private key (the same scheme, in reverse).
 export function decryptForTest(body, uaPrivate, uaPublic, authSecret) {
   const salt = body.subarray(0, 16);
   const idlen = body.readUInt8(20);

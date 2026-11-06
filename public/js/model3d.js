@@ -1,29 +1,30 @@
-// Anteprima dei modelli 3D: STL e 3MF con i loader di three.js, STEP convertito in triangoli da OpenCascade
-// (occt-import-js) in un worker. Si carica solo quando si apre un modello: three.js pesa.
+// 3D model preview: STL and 3MF with three.js's loaders, STEP converted into triangles by OpenCascade
+// (occt-import-js) in a worker. Loaded only when a model is opened: three.js is heavy.
 //
-// I punti delle note sono x, y, z in 0..1 dentro il riquadro che contiene il modello: non dipendono dalle unità
-// del file e il server li controlla come le coordinate delle pagine.
+// The notes' points are x, y, z in 0..1 inside the box containing the model: they do not depend on the file's
+// units and the server checks them like page coordinates.
 import * as THREE from '../vendor/three/three.module.js';
 import { OrbitControls } from '../vendor/three/addons/OrbitControls.js';
 import { STLLoader } from '../vendor/three/addons/STLLoader.js';
 import { ThreeMFLoader } from '../vendor/three/addons/3MFLoader.js';
+import { tr } from './i18n.js';
 
 export const MODEL_EXT = /\.(stl|3mf|stp|step)$/i;
 
 const material = color => new THREE.MeshStandardMaterial({ color, roughness: 0.65, metalness: 0.05, side: THREE.DoubleSide });
 const GREY = 0x9aa4b0;
-const ISO = () => new THREE.Vector3(1, -1.4, 0.9); // vista iniziale: davanti, a destra, dall'alto
+const ISO = () => new THREE.Vector3(1, -1.4, 0.9); // initial view: front, right, from above
 
 function readStep(buffer) {
   return new Promise((resolve, reject) => {
     const w = new Worker(new URL('./step-worker.js', import.meta.url));
     w.onmessage = ev => { w.terminate(); ev.data.error ? reject(new Error(ev.data.error)) : resolve(ev.data.meshes); };
-    w.onerror = ev => { w.terminate(); reject(new Error(ev.message || 'conversione non riuscita')); };
+    w.onerror = ev => { w.terminate(); reject(new Error(ev.message || tr('conversion failed'))); };
     w.postMessage(buffer, [buffer]);
   });
 }
 
-// File → oggetto three.js. onStatus riceve i messaggi da mostrare durante le conversioni lunghe.
+// File → three.js object. onStatus gets the messages to show during long conversions.
 export async function parseModel(buffer, name, onStatus) {
   const ext = name.match(MODEL_EXT)?.[1].toLowerCase();
   if (ext === 'stl') {
@@ -37,7 +38,7 @@ export async function parseModel(buffer, name, onStatus) {
     group.traverse(o => { if (o.material) for (const m of [o.material].flat()) m.side = THREE.DoubleSide; });
     return group;
   }
-  onStatus?.('Converto lo STEP in triangoli… (può volerci un po\')');
+  onStatus?.(tr('Converting the STEP into triangles… (this may take a while)'));
   const group = new THREE.Group();
   for (const m of await readStep(buffer)) {
     const geo = new THREE.BufferGeometry();
@@ -50,17 +51,17 @@ export async function parseModel(buffer, name, onStatus) {
   return group;
 }
 
-// Scena con il modello al centro: ruota (sinistro), sposta (destro), zoom (rotella o pizzico).
-// Si ridisegna solo quando la vista cambia. onView(settled) segue ogni movimento; settled = vista ferma.
+// Scene with the model in the centre: rotate (left), pan (right), zoom (wheel or pinch).
+// Redrawn only when the view changes. onView(settled) follows every movement; settled = view at rest.
 export function createStage(host, onView) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(window.devicePixelRatio || 1);
   host.append(renderer.domElement);
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 1000);
-  camera.up.set(0, 0, 1); // STL, 3MF e STEP hanno quasi sempre l'asse Z verso l'alto
+  camera.up.set(0, 0, 1); // STL, 3MF and STEP almost always have the Z axis up
   scene.add(new THREE.HemisphereLight(0xffffff, 0x707884, 1.4));
-  // Luce che segue la camera: la faccia guardata è sempre illuminata.
+  // Light following the camera: the face being looked at is always lit.
   const sun = new THREE.DirectionalLight(0xffffff, 1.6);
   sun.position.set(0.4, 0.6, 0);
   sun.target.position.set(0, 0, -1);
@@ -71,7 +72,7 @@ export function createStage(host, onView) {
   let model = null;
   let box = new THREE.Box3();
   let settleTimer;
-  let touched = false; // finché la vista non è stata mossa, a ogni ridimensionamento si riadatta al modello
+  let touched = false; // until the view has been moved, every resize fits the model again
 
   const draw = () => renderer.render(scene, camera);
   const changed = () => {
@@ -95,7 +96,7 @@ export function createStage(host, onView) {
   };
   const radius = () => Math.max(box.getBoundingSphere(new THREE.Sphere()).radius, 1e-6);
 
-  // Distanza a cui il modello entra nel riquadro, in altezza e in larghezza.
+  // Distance at which the model fits the box, in height and in width.
   function aim(dir) {
     const vfov = THREE.MathUtils.degToRad(camera.fov);
     const fov = Math.min(vfov, 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect));
@@ -109,7 +110,7 @@ export function createStage(host, onView) {
     changed();
   }
 
-  // Raggio dallo schermo: la superficie colpita, o null fuori dal modello.
+  // Ray from the screen: the surface hit, or null outside the model.
   function hit(clientX, clientY) {
     if (!model) return null;
     const r = renderer.domElement.getBoundingClientRect();
@@ -120,7 +121,7 @@ export function createStage(host, onView) {
   return {
     setModel(obj) {
       model = obj;
-      // Centrato nell'origine: rotazione e luce girano attorno al modello.
+      // Centred on the origin: rotation and light turn around the model.
       box.setFromObject(obj);
       obj.position.sub(box.getCenter(new THREE.Vector3()));
       obj.updateMatrixWorld(true);
@@ -147,12 +148,12 @@ export function createStage(host, onView) {
       const i = hit(clientX, clientY);
       return i && toUnit(i.point);
     },
-    // Posizione sullo schermo (px dentro host) di un punto salvato; behind = dietro la camera.
+    // Screen position (px inside host) of a saved point; behind = behind the camera.
     toScreen(p) {
       const v = toWorld(p).project(camera);
       return { left: ((v.x + 1) / 2) * host.clientWidth, top: ((1 - v.y) / 2) * host.clientHeight, behind: v.z > 1 };
     },
-    // Il punto è coperto da un'altra parte del modello? (un raggio per punto: si chiede a vista ferma)
+    // Is the point hidden by another part of the model? (one ray per point: asked when the view is at rest)
     hidden(p) {
       if (!model) return false;
       const target = toWorld(p);
@@ -161,7 +162,7 @@ export function createStage(host, onView) {
       const first = ray.intersectObject(model, true)[0];
       return !!first && first.distance < dist - radius() * 0.01;
     },
-    // Gira la vista per guardare il punto dal suo lato, alla stessa distanza.
+    // Turn the view to look at the point from its side, at the same distance.
     focus(p) {
       touched = true;
       const dir = toWorld(p);

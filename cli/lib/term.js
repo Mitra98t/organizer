@@ -1,15 +1,16 @@
-// Tutto ciò che riguarda il terminale: colori, tabelle, date, domande, editor, apertura di file e link.
+// Everything about the terminal: colours, tables, dates, questions, editor, opening files and links.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline/promises';
 import { spawn, spawnSync } from 'node:child_process';
+import { tr, LANG } from './i18n.js';
 
-// Errore "previsto" (input sbagliato, elemento inesistente): si stampa il messaggio, senza stack.
+// "Expected" error (wrong input, missing element): the message is printed, without a stack.
 export class UserError extends Error {}
 export const fail = msg => { throw new UserError(msg); };
 
-// ---------- colori ----------
+// ---------- colours ----------
 const COLOR = process.stdout.isTTY && !process.env.NO_COLOR && process.env.TERM !== 'dumb';
 const sgr = (on, off) => s => (COLOR ? `\x1b[${on}m${s}\x1b[${off}m` : String(s));
 export const c = {
@@ -17,10 +18,10 @@ export const c = {
   blue: sgr(34, 39), magenta: sgr(35, 39), cyan: sgr(36, 39),
 };
 
-// #CODICI in evidenza, come i link nell'app.
+// #CODES highlighted, like the links in the app.
 export const rich = s => String(s ?? '').replace(/(^|[\s(\[,;:])(#[A-Za-z0-9](?:[\w.\-/]*[A-Za-z0-9_])?)/g, (_, pre, code) => pre + c.cyan(code));
 
-// ---------- tabelle ----------
+// ---------- tables ----------
 const ANSI = /\x1b\[[0-9;]*m/g;
 const width = s => [...String(s).replace(ANSI, '')].length;
 const pad = (s, n, right = false) => {
@@ -28,7 +29,7 @@ const pad = (s, n, right = false) => {
   return right ? fill + s : s + fill;
 };
 
-// Colonne allineate; l'ultima resta libera (titoli lunghi vanno a capo). right: indici delle colonne a destra.
+// Aligned columns; the last one stays free (long titles wrap). right: indexes of the right-aligned columns.
 export function table(rows, { right = [0] } = {}) {
   if (!rows.length) return;
   const n = Math.max(...rows.map(r => r.length));
@@ -41,19 +42,19 @@ export function table(rows, { right = [0] } = {}) {
 
 export const heading = s => console.log(`\n${c.bold(s)}`);
 
-// ---------- date e dimensioni ----------
+// ---------- dates and sizes ----------
 const pad2 = n => String(n).padStart(2, '0');
 export const ymd = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 export const today = () => ymd(new Date());
 const fromYmd = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
-const DAYS = ['dom', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab'];
+const DAYS = LANG === 'it' ? ['dom', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab'] : ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
-// Scadenza come nell'agenda: oggi/domani/ieri, altrimenti "ven 31/10"; rosso se passata, giallo se vicina.
+// Due date as in the agenda: today/tomorrow/yesterday, otherwise "fri 31/10"; red if past, yellow if close.
 export function fmtDue(due, { done = false } = {}) {
   if (!due) return '';
   const d = fromYmd(due);
   const diff = Math.round((d - fromYmd(today())) / 864e5);
-  const text = diff === 0 ? 'oggi' : diff === 1 ? 'domani' : diff === -1 ? 'ieri'
+  const text = diff === 0 ? tr('today') : diff === 1 ? tr('tomorrow') : diff === -1 ? tr('yesterday')
     : `${DAYS[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}${d.getFullYear() !== new Date().getFullYear() ? `/${d.getFullYear() % 100}` : ''}`;
   if (done) return c.dim(text);
   return diff < 0 ? c.red(text) : diff <= 1 ? c.yellow(text) : text;
@@ -76,10 +77,10 @@ export async function ask(question) {
   }
 }
 
-// Password senza eco.
+// Password without echo.
 export function askHidden(question) {
   const { stdin, stderr } = process;
-  if (!stdin.isTTY) fail('Per la password serve un terminale (oppure usa --password-stdin)');
+  if (!stdin.isTTY) fail(tr('The password needs a terminal (or use --password-stdin)'));
   return new Promise((resolve, reject) => {
     let pw = '';
     const end = err => {
@@ -93,7 +94,7 @@ export function askHidden(question) {
     const onData = chunk => {
       for (const ch of chunk) {
         if (ch === '\r' || ch === '\n') return end();
-        if (ch === '\u0003' || ch === '\u0004') return end(new UserError('Annullato'));
+        if (ch === '\u0003' || ch === '\u0004') return end(new UserError(tr('Cancelled')));
         if (ch === '\u007f' || ch === '\b') pw = pw.slice(0, -1);
         else if (ch >= ' ') pw += ch;
       }
@@ -112,7 +113,7 @@ export async function readStdin() {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-// Apre $VISUAL/$EDITOR su un file temporaneo con il testo dato e restituisce il testo salvato.
+// Opens $VISUAL/$EDITOR on a temporary file with the given text and returns the saved text.
 export function editText(initial, name = 'organizer.txt') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'org-'));
   const file = path.join(dir, name);
@@ -120,19 +121,19 @@ export function editText(initial, name = 'organizer.txt') {
     fs.writeFileSync(file, initial);
     const editor = process.env.VISUAL || process.env.EDITOR || 'vi';
     const r = spawnSync(`${editor} "${file}"`, { stdio: 'inherit', shell: true });
-    if (r.status !== 0) fail(`L'editor (${editor}) è uscito con un errore: nessuna modifica salvata`);
+    if (r.status !== 0) fail(tr('The editor ({editor}) exited with an error: no change saved', { editor }));
     return fs.readFileSync(file, 'utf8');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }
 
-// File o link con l'applicazione predefinita del sistema.
+// File or link with the system's default application.
 export function openExternal(target) {
   const [cmd, args] = process.platform === 'darwin' ? ['open', [target]]
     : process.platform === 'win32' ? ['cmd', ['/c', 'start', '""', target]]
       : ['xdg-open', [target]];
   const child = spawn(cmd, args, { stdio: 'ignore', detached: true });
-  child.on('error', () => console.error(c.red('✗'), `Non riesco ad aprire ${target} (manca ${cmd}?)`));
+  child.on('error', () => console.error(c.red('✗'), tr('Cannot open {target} ({cmd} missing?)', { target, cmd })));
   child.unref();
 }

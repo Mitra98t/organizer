@@ -1,0 +1,122 @@
+{
+  "extDescription": {
+    "message": "Apre in Thunderbird le mail preparate in Organizer, con gli allegati, tiene aggiornate le conversazioni e porta in Organizer la posta in arrivo."
+  },
+  "optIntro": {
+    "message": "Collega Thunderbird a Organizer: \"Manda\" aprirà le mail qui, e le mail inviate e le risposte arrivate si aggiornano da sole in Organizer."
+  },
+  "optServer": {
+    "message": "Indirizzo di Organizer"
+  },
+  "optToken": {
+    "message": "Token API"
+  },
+  "optTokenHelp": {
+    "message": "Lo crei in Organizer: Impostazioni → Mail e Thunderbird → \"Crea token per Thunderbird\"."
+  },
+  "optInbox": {
+    "message": "Passa a Organizer tutta la posta in arrivo"
+  },
+  "optInboxHelp": {
+    "message": "Così in Organizer (Mail → In arrivo) vedi le mail ricevute e rispondi da lì. Le vedi solo tu. Spento, a Organizer arrivano solo le risposte alle mail mandate da Organizer."
+  },
+  "optSave": {
+    "message": "Salva e collega"
+  },
+  "optAccounts": {
+    "message": "Workspace di ogni account"
+  },
+  "optAccountsHelp": {
+    "message": "Le conversazioni nuove di un account finiscono nel suo workspace di Organizer. Quelle già in Organizer restano dove sono (un topic si sposta dalla sua pagina, menu ⋯)."
+  },
+  "optConnectFirst": {
+    "message": "Collega prima Organizer."
+  },
+  "optWsNotRead": {
+    "message": "Workspace non letti da Organizer ($1)."
+  },
+  "optDefault": {
+    "message": "predefinito"
+  },
+  "optNotConnected": {
+    "message": "Non ancora collegato."
+  },
+  "optConnectedTo": {
+    "message": "Collegato a $1"
+  },
+  "optBadAddress": {
+    "message": "Indirizzo non valido: scrivi per esempio https://organizer.example.com"
+  },
+  "optNoPermission": {
+    "message": "Senza il permesso di collegarsi a quell'indirizzo l'estensione non può funzionare."
+  },
+  "errStatus": {
+    "message": "errore $1"
+  },
+  "stEnterConfig": {
+    "message": "Inserisci indirizzo e token nelle opzioni"
+  },
+  "stBadToken": {
+    "message": "Token non valido o revocato: creane uno nuovo in Organizer"
+  },
+  "stClosed": {
+    "message": "Connessione chiusa, riprovo…"
+  },
+  "stUnreachable": {
+    "message": "Server non raggiungibile ($1), riprovo…"
+  },
+  "ntOpenFail": {
+    "message": "Non riesco ad aprire la mail \"$1\": $2"
+  },
+  "errAttachment": {
+    "message": "allegato $1 non scaricato (errore $2)"
+  },
+  "ntSentUnknown": {
+    "message": "Mail inviata, ma Organizer non l'ha saputo: $1"
+  },
+  "errNotFound": {
+    "message": "mail non trovata in Thunderbird"
+  },
+  "ntAttachFail": {
+    "message": "Allegato \"$1\" non salvato in Organizer: $2"
+  },
+  "errNoFolder": {
+    "message": "non è in nessuna cartella di Thunderbird"
+  },
+  "ntNotOpened": {
+    "message": "Mail non aperta: $1"
+  },
+  "ntConnectFirst": {
+    "message": "Collega prima Organizer (opzioni dell'estensione)"
+  },
+  "noSubject": {
+    "message": "senza oggetto"
+  },
+  "ntImported1": {
+    "message": "In Organizer: \"$1\", 1 messaggio"
+  },
+  "ntImportedN": {
+    "message": "In Organizer: \"$1\", $2 messaggi"
+  },
+  "ntImportedMax": {
+    "message": "In Organizer: \"$1\", i primi $2 messaggi"
+  },
+  "ntImportFail": {
+    "message": "Thread non portato in Organizer: $1"
+  },
+  "menuImport": {
+    "message": "Porta il thread in Organizer"
+  },
+  "stBackfill": {
+    "message": "Carico in Organizer le mail dell'ultimo mese…"
+  },
+  "stBackfillN": {
+    "message": "Carico in Organizer le mail dell'ultimo mese… $1/$2"
+  },
+  "ntBackfillDone": {
+    "message": "Caricate in Organizer le mail dell'ultimo mese ($1)"
+  },
+  "stBackfillFail": {
+    "message": "Caricamento dell'ultimo mese interrotto ($1): riprovo al prossimo collegamento"
+  }
+}

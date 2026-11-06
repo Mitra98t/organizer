@@ -1,22 +1,25 @@
-// Stato, rete, sincronizzazione e piccoli helper DOM condivisi dalle viste.
+// State, network, sync and small DOM helpers shared by the views.
 import { today, ymd, fromYmd, parseQuick } from './parse.js';
 import { allows, entryArea } from './perms.js';
+import { tr, trn, LANG, LOCALE } from './i18n.js';
 
-// Permessi dell'utente nel workspace attivo (dal server; null = tutto). Vedi perms.js.
+export { tr, trn };
+
+// The user's permissions in the active workspace (from the server; null = everything). See perms.js.
 export const can = (area, level = 'read') => allows(S.data?.perms, area, level);
 export const canEntry = (e, level = 'write') => can(entryArea(e.kind), level);
 
-// Sola lettura nella pagina: le parti marcate .ro (pagine, sezioni, voci) contengono controlli spenti,
-// le parti .rw dentro di esse no. Vale il contenitore più vicino. Offline è tutto in sola lettura, tranne le
-// voci in coda (vedi "offline" più sotto).
+// Read-only parts of the page: those marked .ro (pages, sections, entries) have their controls disabled, the
+// .rw parts inside them do not. The closest container wins. Offline everything is read-only, except the
+// queued entries (see "offline" below).
 export const roClass = writable => (writable && S.online ? 'rw' : 'ro');
 export function isReadOnly(el) {
   const scope = el?.closest?.('.ro, .rw');
   return !!scope && scope.classList.contains('ro');
 }
 
-// Dopo ogni ridisegno: si spengono i controlli che modificano dentro le parti in sola lettura. Restano
-// filtri, barre degli strumenti, sezioni da aprire e la scelta dei documenti da rivedere.
+// After every render: controls that change things inside read-only parts are disabled. Filters, toolbars,
+// collapsible sections and the choice of documents to review stay active.
 export function applyReadOnly(root) {
   for (const el of root.querySelectorAll('.ro :is(input, textarea, select, button)')) {
     if (el.closest('.toolbar') || el.matches('.filter, .keep, .sec-h, .sel-btn, .fchip, [type="search"]')) continue;
@@ -35,7 +38,7 @@ export const load = (k, d) => {
 export const save = (k, v) => {
   try {
     localStorage.setItem(k, JSON.stringify(v));
-  } catch { /* storage pieno o disabilitato: pazienza */ }
+  } catch { /* storage full or disabled: never mind */ }
 };
 
 export const S = { me: null, setup: false, data: null, live: false, online: navigator.onLine, outbox: load('org.outbox', []) };
@@ -55,22 +58,22 @@ export const ui = {
   tokens: null,
   chatDraft: '',
   chatEdit: null,
-  richEdit: null, // data-fk del campo di testo aperto in scrittura (vedi richField)
+  richEdit: null, // data-fk of the text field open for editing (see richField)
   trash: null,
   contactFilter: '',
-  contactsUnknown: false, // pannello "da salvare" in Contatti
-  ignoredAddrs: new Set(load('org.ignoredAddrs', [])), // indirizzi da non proporre in rubrica
+  contactsUnknown: false, // "to save" panel in Contacts
+  ignoredAddrs: new Set(load('org.ignoredAddrs', [])), // addresses not to suggest for the address book
   mailHelper: load('org.mailHelper', false),
   mailFilter: '',
-  mailView: load('org.mailView', 'active'), // 'active' (thread attivi) o 'archive'
-  mailType: null, // solo i thread in uno stato (da leggere, da mandare, in attesa, con stella)
-  mailSel: null, // nella pagina di un topic: la mail scelta nell'albero { topic, type: 'msg' | 'entry', id }
-  mailSelNext: null, // bozza appena chiesta (Rispondi): si sceglie quando arriva
+  mailView: load('org.mailView', 'active'), // 'active' (active threads) or 'archive'
+  mailType: null, // only threads in one state (unread, to send, awaiting reply, starred)
+  mailSel: null, // on a topic page: the mail picked in the tree { topic, type: 'msg' | 'entry', id }
+  mailSelNext: null, // draft just requested (Reply): picked as soon as it arrives
   mailAtt: false,
   mailProj: null,
   itemView: load('org.itemView', 'list'),
-  treeClosed: new Set(), // alberi del magazzino chiusi (chiave: il percorso degli id)
-  treeFocus: null, // "Vedi l'albero" da un articolo: solo i suoi alberi
+  treeClosed: new Set(), // collapsed inventory tree branches (key: the path of ids)
+  treeFocus: null, // "Show the tree" from an item: only its trees
   itemCat: null,
   projDeep: load('org.projDeep', true),
   docNote: null,
@@ -83,18 +86,18 @@ export const ui = {
   docGroup: load('org.docGroup', 'item'),
   docSel: new Set(),
   catPicker: null,
-  projPicker: null, // progetto con il popup del colore aperto
-  contactPicker: null, // contatto con il popup del colore aperto
+  projPicker: null, // project whose colour popup is open
+  contactPicker: null, // contact whose colour popup is open
   itemStatusF: null,
   hideDiscarded: load('org.hideDiscarded', false),
   contactGroup: load('org.contactGroup', 'none'),
-  contactColor: load('org.contactColor', 'contact'), // come si colorano i contatti (Impostazioni)
+  contactColor: load('org.contactColor', 'contact'), // how contacts are coloured (Settings)
   contactTab: null,
 };
 
 // ---------- render ----------
-// Durante il re-render l'elemento con il focus viene rimosso: i suoi blur/change non devono salvare nulla.
-// hold: durante un trascinamento la vista non si ridisegna (si rimanda a dopo il rilascio).
+// While re-rendering, the focused element is removed: its blur/change must not save anything.
+// hold: while dragging the view is not redrawn (it waits until the drop).
 export const RS = { busy: false, hold: false, pending: false };
 let renderFn = () => {};
 let statusFn = () => {};
@@ -194,9 +197,10 @@ export function autosize(el) {
   t.style.height = `${t.scrollHeight + 2}px`;
 }
 
-// ---------- rete ----------
+// ---------- network ----------
+// X-Lang: the server answers (errors, texts it generates) in the interface language.
 export async function api(method, url, body) {
-  const headers = { 'X-Requested-With': 'organizer' };
+  const headers = { 'X-Requested-With': 'organizer', 'X-Lang': LANG };
   const init = { method, headers, credentials: 'same-origin' };
   if (body instanceof Blob) {
     init.body = body;
@@ -209,11 +213,11 @@ export async function api(method, url, body) {
   try {
     r = await fetch(`api${url}`, init);
   } catch {
-    // Una richiesta interrotta non vuol dire offline (Safari ne perde qualcuna al risveglio o quando cambia
-    // rete): lo si è solo se nemmeno il server risponde. offline = la richiesta non è arrivata.
+    // An interrupted request does not mean offline (Safari drops a few on wake-up or when the network changes):
+    // we are offline only if the server does not answer either. offline = the request did not get through.
     const up = await reachable();
     setOnline(up);
-    throw Object.assign(new Error(up ? 'Connessione interrotta: riprova' : 'Sei offline'), { offline: true });
+    throw Object.assign(new Error(up ? tr('Connection interrupted: try again') : tr('You are offline')), { offline: true });
   }
   setOnline(true);
   const data = r.status === 204 ? null : await r.json().catch(() => null);
@@ -221,18 +225,18 @@ export async function api(method, url, body) {
     S.me = null;
     render();
   }
-  if (!r.ok) throw Object.assign(new Error(data?.error || `Errore ${r.status}`), { status: r.status });
+  if (!r.ok) throw Object.assign(new Error(data?.error || tr('Error {status}', { status: r.status })), { status: r.status });
   return data;
 }
 
-// Il server risponde? (Mentre riparte, per un aggiornamento, no: l'app è offline per qualche secondo.)
+// Does the server answer? (Not while it restarts for an update: the app is offline for a few seconds.)
 const reachable = () => fetch('api/info', { cache: 'no-store' }).then(r => r.ok, () => false);
 
 function setOnline(v) {
   if (S.online !== v) {
     S.online = v;
     renderStatus();
-    render(); // offline la pagina passa in sola lettura (e torna modificabile con la rete)
+    render(); // offline the page becomes read-only (and editable again when the network is back)
   }
 }
 
@@ -247,7 +251,7 @@ const group = (arr, key) => {
 };
 
 function indexData(d) {
-  d.contacts ||= []; // cache salvata da una versione precedente
+  d.contacts ||= []; // cache saved by an older version
   d.attachments ||= [];
   d.projectItems ||= [];
   d.docNotes ||= [];
@@ -259,7 +263,7 @@ function indexData(d) {
   d.chat ||= [];
   d.chatChannels ||= [];
   d.chatUnread ??= 0;
-  d.members = d.users.filter(u => u.member !== 0); // membri attuali del workspace (gli altri sono ex, per i nomi)
+  d.members = d.users.filter(u => u.member !== 0); // current workspace members (the others are former ones, kept for names)
   d.catHueOf = new Map(d.categoryColors.map(c => [c.name.toLowerCase(), c.hue]));
   d.entryById = new Map(d.entries.map(e => [e.id, e]));
   d.projectById = new Map(d.projects.map(p => [p.id, p]));
@@ -267,7 +271,7 @@ function indexData(d) {
   d.userById = new Map(d.users.map(u => [u.id, u]));
   d.itemById = new Map(d.items.map(i => [i.id, i]));
   d.itemByCode = new Map(d.items.map(i => [i.code.toUpperCase(), i]));
-  // Codici alternativi: #ALTERNATIVO porta all'articolo come il codice principale.
+  // Alternative codes: #ALTERNATIVE leads to the item like its main code.
   d.aliasesOf = group(d.itemAliases, 'item_id');
   for (const a of d.itemAliases) if (d.itemById.has(a.item_id)) d.itemByCode.set(a.code.toUpperCase(), d.itemById.get(a.item_id));
   d.childrenOf = group(d.entries.filter(e => e.parent_id), 'parent_id');
@@ -285,21 +289,21 @@ function indexData(d) {
   d.attachmentsOf = group(d.attachments, 'entry_id');
   d.mailMsgs ||= [];
   d.shares ||= [];
-  d.sharesOf = new Map(); // "entry:12" → id delle persone con cui è condiviso
+  d.sharesOf = new Map(); // "entry:12" → ids of the people it is shared with
   for (const x of d.shares) {
     const k = `${x.kind}:${x.obj_id}`;
     if (!d.sharesOf.has(k)) d.sharesOf.set(k, []);
     d.sharesOf.get(k).push(x.user_id);
   }
-  d.mine = new Set((d.myAddresses || []).map(a => a.toLowerCase())); // i miei indirizzi (identità di Thunderbird)
-  // Thread di mail (personali): messaggi, mail scritte in Organizer e collegamenti di ognuno.
+  d.mine = new Set((d.myAddresses || []).map(a => a.toLowerCase())); // my addresses (Thunderbird identities)
+  // Mail threads (personal): messages, mails written in Organizer and the links of each.
   d.mailTopics ||= [];
   d.mailThreads ||= [];
   d.threadLinks ||= [];
   d.topicLinks ||= [];
   d.topicById = new Map(d.mailTopics.map(t => [t.id, t]));
   d.linksOfTopic = group(d.topicLinks, 'topic_id');
-  d.topicsOf = new Map(); // "progetto:3" → id dei topic collegati
+  d.topicsOf = new Map(); // "progetto:3" → ids of the linked topics
   for (const l of d.topicLinks) {
     const k = `${l.kind}:${l.target_id}`;
     if (!d.topicsOf.has(k)) d.topicsOf.set(k, new Set());
@@ -310,7 +314,7 @@ function indexData(d) {
   d.msgsOfThread = group(d.mailMsgs, 'thread_id');
   d.entriesOfThread = group(d.entries.filter(e => e.thread_id && e.kind === 'mail'), 'thread_id');
   d.linksOfThread = group(d.threadLinks, 'thread_id');
-  d.threadsOf = new Map(); // "articolo:12" → id dei thread collegati
+  d.threadsOf = new Map(); // "articolo:12" → ids of the linked threads
   for (const l of d.threadLinks) {
     const k = `${l.kind}:${l.target_id}`;
     if (!d.threadsOf.has(k)) d.threadsOf.set(k, new Set());
@@ -323,7 +327,7 @@ function indexData(d) {
   return d;
 }
 
-// Cambio di workspace: i dati in memoria e in cache sono dell'altro, quindi si riparte da capo.
+// Switching workspace: the data in memory and in the cache belong to the other one, so start over.
 export async function switchWorkspace(id, hash = '#/agenda') {
   await api('POST', `/workspaces/${id}/switch`);
   clearLocal();
@@ -332,7 +336,7 @@ export async function switchWorkspace(id, hash = '#/agenda') {
 }
 
 export async function newWorkspace() {
-  const name = prompt('Nome del nuovo workspace (ne sarai admin):');
+  const name = prompt(tr('Name of the new workspace (you will be its admin):'));
   if (!name?.trim()) return;
   try {
     await api('POST', '/workspaces', { name: name.trim() });
@@ -380,7 +384,7 @@ export function sync() {
         updateBadge();
       } while (again);
     } catch (e) {
-      // 409: l'account non fa parte di nessun workspace (tolto da tutti): si propone di crearne uno.
+      // 409: the account belongs to no workspace (removed from all of them): offer to create one.
       if (e.status === 409) {
         S.noWorkspace = true;
         S.data = null;
@@ -393,7 +397,7 @@ export function sync() {
   return syncing;
 }
 
-// ---------- tempo reale ----------
+// ---------- real time ----------
 let es = null;
 let syncTimer = null;
 export function connectLive() {
@@ -403,7 +407,7 @@ export function connectLive() {
     S.live = true;
     renderStatus();
     let rev;
-    try { rev = JSON.parse(ev.data).rev; } catch { /* ignora */ }
+    try { rev = JSON.parse(ev.data).rev; } catch { /* ignore */ }
     if (!S.data || rev !== S.data.rev) {
       clearTimeout(syncTimer);
       syncTimer = setTimeout(sync, 120);
@@ -414,19 +418,19 @@ export function connectLive() {
     setOnline(true);
     renderStatus();
     flushOutbox();
-    window.dispatchEvent(new Event('org:live')); // il server può essere ripartito con una versione nuova
+    window.dispatchEvent(new Event('org:live')); // the server may have restarted with a new version
   };
   es.onerror = () => {
     S.live = false;
     renderStatus();
-    // Il tempo reale è caduto: il server risponde ancora? Se no si è offline (pagine in sola lettura).
+    // Real time dropped: does the server still answer? If not we are offline (read-only pages).
     reachable().then(setOnline);
   };
 }
 export const liveClosed = () => !es || es.readyState === EventSource.CLOSED;
-// Offline o senza tempo reale si riprova ogni 15 secondi se il server risponde: allora si torna online, parte la
-// coda e, se il tempo reale si era chiuso (il server che riparte risponde con un errore e il browser smette di
-// riprovare), lo si riapre.
+// Offline or without real time, check every 15 seconds whether the server answers: then we are back online, the
+// queue is sent and, if real time had closed (a restarting server answers with an error and the browser stops
+// retrying), it is reopened.
 setInterval(() => {
   if (!S.me || (S.live && S.online)) return;
   reachable().then(ok => {
@@ -443,10 +447,10 @@ export function disconnectLive() {
 }
 
 // ---------- offline ----------
-// Senza rete si possono solo creare todo (in Agenda) e note (nel Diario): restano in coda (S.outbox) e,
-// finché non partono, si possono modificare, segnare fatte o eliminare. Tutto il resto si legge soltanto:
-// così al ritorno della rete non c'è niente da mettere d'accordo con il server, le voci nuove si aggiungono
-// e basta. client_id (generato qui) evita i doppioni se l'invio si interrompe e si ripete.
+// Without network you can only create todos (Agenda) and notes (Journal): they wait in a queue (S.outbox) and,
+// until they are sent, can be edited, marked done or deleted. Everything else is read-only: so when the network
+// is back there is nothing to reconcile with the server, the new entries are simply added. client_id (generated
+// here) avoids duplicates if sending is interrupted and repeated.
 export const OFFLINE_KINDS = ['todo', 'note'];
 const newCid = () => (globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`);
 
@@ -465,20 +469,20 @@ export async function addEntry(payload) {
   }
   const kind = parseQuick(payload.text, { kind: payload.kind || 'todo' }).kind;
   if (!OFFLINE_KINDS.includes(kind) || payload.parent_id) {
-    toast('Offline si possono aggiungere solo todo e note: riprova quando torna la rete', { err: true });
+    toast(tr('Offline you can only add todos and notes: try again when the network is back'), { err: true });
     return false;
   }
   S.outbox.push({ ...payload, kind, cid: newCid(), pid: -Date.now(), queued_at: new Date().toISOString(), done: null });
   saveOutbox();
-  if (S.online) setTimeout(flushOutbox, 3000); // solo una richiesta interrotta: si riprova subito
-  toast(kind === 'note' ? 'Offline: nota in coda, parte appena torna la rete' : 'Offline: todo in coda, parte appena torna la rete');
+  if (S.online) setTimeout(flushOutbox, 3000); // just an interrupted request: retry right away
+  toast(kind === 'note' ? tr('Offline: note queued, it is sent as soon as the network is back') : tr('Offline: todo queued, it is sent as soon as the network is back'));
   return true;
 }
 
 const saveOutbox = () => { save('org.outbox', S.outbox); renderStatus(); render(); };
 const pendingOf = pid => S.outbox.find(p => p.pid === pid);
 
-// Una voce in coda si cambia (testo, fatta) o si toglie finché non è partita.
+// A queued entry can be changed (text, done) or removed until it has been sent.
 export function updatePending(pid, fields) {
   const p = pendingOf(pid);
   if (!p) return;
@@ -496,7 +500,7 @@ export async function flushOutbox() {
   if (flushing || !S.outbox.length) return;
   flushing = true;
   try {
-    // Le code salvate dalle versioni precedenti non hanno cid: se ne dà uno ora.
+    // Queues saved by older versions have no cid: give them one now.
     for (const p of S.outbox) p.cid ||= newCid();
     while (S.outbox.length) {
       const p = S.outbox[0];
@@ -505,7 +509,7 @@ export async function flushOutbox() {
         await api('POST', '/entries', { text, today: day, kind, project_id: projectId, client_id: cid, done: done || undefined });
       } catch (e) {
         if (e.offline || e.status === 401) return;
-        toast(`Voce in coda scartata: ${e.message}`, { err: true });
+        toast(tr('Queued entry discarded: {error}', { error: e.message }), { err: true });
       }
       S.outbox = S.outbox.filter(x => x !== p);
       save('org.outbox', S.outbox);
@@ -525,12 +529,12 @@ export async function act(fn, okMsg) {
     sync();
     return r;
   } catch (e) {
-    toast(e.offline ? `${e.message}: modifica non salvata` : e.message, { err: true });
+    toast(e.offline ? tr('{error}: change not saved', { error: e.message }) : e.message, { err: true });
     sync();
   }
 }
 
-// Aggiornamento ottimistico: la UI cambia subito, il server conferma con la sync successiva.
+// Optimistic update: the UI changes at once, the server confirms with the next sync.
 export function patchEntry(e, fields) {
   const local = { ...fields };
   if ('done' in local) {
@@ -542,34 +546,31 @@ export function patchEntry(e, fields) {
   return act(() => api('PATCH', `/entries/${e.id}`, { ...fields, today: today() }));
 }
 
-// ---------- formattazione ----------
-const DOW = ['dom', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab'];
-const MONTHS = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
-
+// ---------- formatting ----------
 export const dayDiff = d => Math.round((fromYmd(d) - fromYmd(today())) / 864e5);
 
 export function fmtDay(d) {
   const x = fromYmd(d);
-  return `${x.getDate()} ${MONTHS[x.getMonth()]}${x.getFullYear() !== new Date().getFullYear() ? ` ${x.getFullYear()}` : ''}`;
+  return x.toLocaleDateString(LOCALE, { day: 'numeric', month: 'short', ...(x.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}) }).replace('.', '');
 }
 
 export function dueInfo(due) {
   const diff = dayDiff(due);
   let label;
-  if (diff === 0) label = 'oggi';
-  else if (diff === 1) label = 'domani';
-  else if (diff === -1) label = 'ieri';
-  else if (diff > 1 && diff < 7) label = `${DOW[fromYmd(due).getDay()]} ${fromYmd(due).getDate()}`;
-  else if (diff < -1 && diff > -60) label = `${-diff}g fa`;
+  if (diff === 0) label = tr('today');
+  else if (diff === 1) label = tr('tomorrow');
+  else if (diff === -1) label = tr('yesterday');
+  else if (diff > 1 && diff < 7) label = `${fromYmd(due).toLocaleDateString(LOCALE, { weekday: 'short' }).replace('.', '')} ${fromYmd(due).getDate()}`;
+  else if (diff < -1 && diff > -60) label = tr('{n}d ago', { n: -diff });
   else label = fmtDay(due);
   return { label, diff, cls: diff < 0 ? 'over' : diff === 0 ? 'today' : diff <= 2 ? 'soon' : '' };
 }
 
 export const fmtLongDay = d => {
-  const s = fromYmd(d).toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const s = fromYmd(d).toLocaleDateString(LOCALE, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   return s.charAt(0).toUpperCase() + s.slice(1);
 };
-export const fmtTime = iso => new Date(iso).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+export const fmtTime = iso => new Date(iso).toLocaleString(LOCALE, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 export const localDay = iso => ymd(new Date(iso));
 export const fmtSize = n => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`);
 
@@ -585,44 +586,48 @@ export const isMine = e => {
 
 export const stop = ev => ev.stopPropagation();
 
-// Tinta stabile per progetto (dal tag) e per categoria di magazzino: stesso nome, stesso colore ovunque.
+// Stable hue per project (from its tag) and per inventory category: same name, same colour everywhere.
 export function hue(s) {
   let x = 0;
   for (const c of String(s)) x = (x * 31 + c.codePointAt(0)) >>> 0;
   return x % 360;
 }
-// Nome di un documento: quello dato nell'app, altrimenti il nome del file (o il link).
+// A document's name: the one given in the app, otherwise the file name (or the link).
 export const docName = d => d.label || d.filename || d.url;
 
 export function renameDoc(d) {
-  const name = prompt('Nuovo nome del documento (vuoto = torna al nome del file):', d.label || d.filename || '');
+  const name = prompt(tr('New name for the document (empty = back to the file name):'), d.label || d.filename || '');
   if (name == null) return;
   act(() => api('PATCH', `/docs/${d.id}`, { label: name.trim() }));
 }
 
+// Built-in document kinds. The stored values stay as they are (older databases have them); kindLabel() is the
+// name shown, in the interface language.
 export const DOC_KINDS = ['firmware', 'datasheet', 'schema', 'footprint', 'manuale', 'foto', 'altro'];
-// Tutti i tipi del workspace: i fissi più quelli aggiunti (che hanno un colore calcolato dal nome).
+const KIND_LABELS = { schema: tr('schematic'), manuale: tr('manual'), foto: tr('photo'), altro: tr('other') };
+export const kindLabel = k => KIND_LABELS[k] || k;
+// All the kinds of the workspace: the built-in ones plus the added ones (whose colour comes from the name).
 export const docKinds = () => S.data?.docKinds || DOC_KINDS;
 export const dkAttrs = k => (DOC_KINDS.includes(k) ? { class: `k-${k}` } : { class: 'k-custom', style: `--h:${hue(k)}` });
 
-// Nuovo tipo di documento: chiede il nome, lo crea e lo restituisce (null se annullato o in errore).
+// New document kind: asks for the name, creates it and returns it (null if cancelled or on error).
 export async function newDocKind() {
-  const name = prompt('Nuovo tipo di documento (una parola, es. "certificato", "gerber", "bom"):');
+  const name = prompt(tr('New document kind (one word, e.g. "certificate", "gerber", "bom"):'));
   if (!name?.trim()) return null;
   const r = await act(() => api('POST', '/doc-kinds', { name: name.trim() }));
   return r?.name ?? null;
 }
 
-// Scelta del tipo di documento: un menu nostro, perché le voci di un <select> sul Mac non si colorano.
-// Ogni voce è il tipo con il suo colore; in fondo "+ nuovo tipo…". Tastiera: ↑↓, Invio, Esc.
+// Document kind picker: our own menu, because the options of a <select> cannot be coloured on the Mac.
+// Each option is the kind with its colour; at the bottom "+ new kind…". Keyboard: ↑↓, Enter, Esc.
 const kindMenu = h('div.kind-menu', { hidden: true, role: 'listbox' });
 let kindMenuFor = null;
 
-export function kindPicker(value, onPick, { title = 'Tipo di documento' } = {}) {
+export function kindPicker(value, onPick, { title = tr('Document kind') } = {}) {
   const btn = h('button.dk-sel.kpick', {
     ...dkAttrs(value), type: 'button', title, 'aria-haspopup': 'listbox',
     onclick: ev => { ev.stopPropagation(); openKindMenu(btn, value, onPick); },
-  }, value, h('span.kpick-caret', '▾'));
+  }, kindLabel(value), h('span.kpick-caret', '▾'));
   return btn;
 }
 
@@ -631,7 +636,7 @@ function closeKindMenu() {
   kindMenu.hidden = true;
 }
 
-// Dopo un ridisegno il pulsante può essere stato sostituito: il menu si chiude.
+// After a render the button may have been replaced: the menu closes.
 export const kindMenuCheck = () => { if (kindMenuFor && !kindMenuFor.isConnected) closeKindMenu(); };
 
 function openKindMenu(btn, value, onPick) {
@@ -645,8 +650,8 @@ function openKindMenu(btn, value, onPick) {
     if (kind && kind !== value) onPick(kind);
   };
   kindMenu.replaceChildren(
-    ...docKinds().map(k => h('button.km-i', { type: 'button', class: k === value ? 'on' : null, role: 'option', onclick: () => pick(k) }, h('span.dk', dkAttrs(k), k))),
-    h('button.km-i.new', { type: 'button', onclick: () => pick('+') }, icon('plus'), 'nuovo tipo…'));
+    ...docKinds().map(k => h('button.km-i', { type: 'button', class: k === value ? 'on' : null, role: 'option', onclick: () => pick(k) }, h('span.dk', dkAttrs(k), kindLabel(k)))),
+    h('button.km-i.new', { type: 'button', onclick: () => pick('+') }, icon('plus'), tr('new kind…')));
   kindMenu.hidden = false;
   const r = btn.getBoundingClientRect();
   const mh = kindMenu.offsetHeight;
@@ -674,15 +679,15 @@ kindMenu.addEventListener('keydown', ev => {
   }
 });
 
-// URL del file di un documento. L'impronta (sha256) nell'indirizzo evita che il browser mostri dalla cache
-// un file vecchio con lo stesso numero di documento (dopo un reset o il ripristino di un backup).
-// src: un file che non è un documento (l'anteprima di un allegato ricevuto, già scaricato).
+// URL of a document's file. The fingerprint (sha256) in the address stops the browser from showing from its cache
+// an old file with the same document number (after a reset or restoring a backup).
+// src: a file that is not a document (the preview of a received attachment, already downloaded).
 export const docFileUrl = (d, { inline = false } = {}) => d.src
   || `api/docs/${d.id}/file?v=${(d.sha256 || '').slice(0, 12)}${inline ? '&inline=1' : ''}`;
 
-// Colore scelto a mano se c'è, altrimenti quello automatico.
+// The colour picked by hand if there is one, otherwise the automatic one.
 export const projHue = p => p?.hue ?? hue(p?.tag ?? '');
-// Per un @tag scritto a mano: il colore del progetto se esiste, altrimenti quello che avrà.
+// For a typed @tag: the project's colour if it exists, otherwise the one it will get.
 export const tagStyle = tag => {
   const p = S.data?.projectByTag.get(String(tag).toLowerCase());
   return `--h:${p ? projHue(p) : hue(String(tag).toLowerCase())}`;
@@ -690,34 +695,34 @@ export const tagStyle = tag => {
 export const catHue = cat => S.data?.catHueOf?.get(String(cat).toLowerCase()) ?? hue(String(cat).toLowerCase());
 export const catStyle = cat => (cat ? `--h:${catHue(cat)}` : null);
 
-// Tinte proposte nel selettore di colore (stesse luminosità dei colori automatici, in chiaro e in scuro).
+// Hues offered by the colour picker (same lightness as the automatic colours, in light and dark themes).
 export const HUES = [0, 25, 45, 85, 130, 160, 190, 210, 235, 265, 290, 320];
 
-// Selettore di colore: tinte fisse + "automatico". onPick(hue | null).
+// Colour picker: fixed hues + "automatic". onPick(hue | null).
 export function huePicker(current, auto, onPick) {
   return h('div.hues',
-    HUES.map(x => h('button.hue', { class: current === x ? 'on' : null, style: `--h:${x}`, title: `Tinta ${x}`, onclick: () => onPick(x) })),
-    h('button.hue.auto', { class: current == null ? 'on' : null, style: `--h:${auto}`, title: 'Colore automatico', onclick: () => onPick(null) }, 'A'));
+    HUES.map(x => h('button.hue', { class: current === x ? 'on' : null, style: `--h:${x}`, title: tr('Hue {n}', { n: x }), onclick: () => onPick(x) })),
+    h('button.hue.auto', { class: current == null ? 'on' : null, style: `--h:${auto}`, title: tr('Automatic colour'), onclick: () => onPick(null) }, 'A'));
 }
-// Chip di filtro, uguale in tutte le pagine. Con "tint" è la parola su sfondo del suo colore (categoria,
-// tipo di documento, tipo di voce, stato); acceso ha il bordo pieno. Senza "tint" è un chip neutro.
+// Filter chip, the same on every page. With "tint" it is the word on a background of its colour (category,
+// document kind, entry kind, status); when on it has a solid border. Without "tint" it is a neutral chip.
 export function filterChip({ on, onclick, label, n, cls, style, title }) {
   return h('button.chip.fchip', { class: [on && 'on', cls].filter(Boolean).join(' ') || null, style, title, onclick }, label, n != null && h('span.n', n));
 }
 
-// Codici alternativi di un articolo (testo), per filtri e ricerche.
+// An item's alternative codes (text), for filters and searches.
 export const aliasCodes = it => (S.data?.aliasesOf.get(it.id) || []).map(a => a.code);
 
 export const itemAttrs = it => (it?.category ? { class: 'cat', style: catStyle(it.category) } : {});
 
-// Progetti di una voce: prima il principale, poi gli altri (solo quelli visibili e non nel cestino).
+// An entry's projects: the main one first, then the others (only visible ones, not in the trash).
 export function projectsOf(e) {
   const D = S.data;
   const ids = [e.project_id, ...(D.extraProjectsOf.get(e.id) || []).map(x => x.project_id)];
   return [...new Set(ids)].map(id => id && D.projectById.get(id)).filter(Boolean);
 }
 
-// Tutti i sottoprogetti (a ogni livello) di un progetto.
+// All the subprojects (at every level) of a project.
 export function descendants(id) {
   const out = [];
   const walk = pid => {
@@ -742,8 +747,8 @@ export function ancestors(id) {
 
 const RICH_RE = /(https?:\/\/[^\s<>]+[^\s<>.,;:!?)\]'"])|(^|[\s(\[,;:])#([A-Za-z0-9](?:[\w.\-/]*[A-Za-z0-9_])?)/g;
 
-// Testo con #CODICI cliccabili (portano alla scheda di magazzino), URL attivi e collegamenti [[tipo:ID]].
-// bare: anche i codici di magazzino scritti senza # (testo delle mail) diventano link.
+// Text with clickable #CODES (they lead to the inventory item), live URLs and [[kind:ID]] links.
+// bare: inventory codes written without # (mail text) become links too.
 export function richText(text, { bare = false } = {}) {
   const s = String(text || '');
   const out = [];
@@ -761,7 +766,7 @@ const codeLink = (code, it) => h('a.code', {
 }, code);
 
 function codesAndUrls(text, bare) {
-  const plain = bare ? bareCodes : t => [t];
+  const plain = bare ? bareCodes : x => [x];
   const out = [];
   let last = 0;
   for (const m of String(text || '').matchAll(RICH_RE)) {
@@ -770,7 +775,7 @@ function codesAndUrls(text, bare) {
       const internal = m[1].startsWith(`${location.origin}${location.pathname}#/`);
       const short = m[1].replace(/^https?:\/\/(www\.)?/, '');
       out.push(internal
-        ? h('a.ext', { href: m[1].slice(m[1].indexOf('#')), onclick: stop }, m[1].includes('#/d/') ? 'apri la nota nel documento' : 'apri')
+        ? h('a.ext', { href: m[1].slice(m[1].indexOf('#')), onclick: stop }, m[1].includes('#/d/') ? tr('open the note in the document') : tr('open'))
         : h('a.ext', { href: m[1], target: '_blank', rel: 'noopener noreferrer', onclick: stop }, short.length > 42 ? `${short.slice(0, 40)}…` : short));
     } else {
       out.push(...plain(text.slice(last, m.index + m[2].length)));
@@ -782,7 +787,7 @@ function codesAndUrls(text, bare) {
   return out;
 }
 
-// Codici di articoli esistenti scritti senza # (solo parole intere: "SCH-051" sì, "SCH-051B" no).
+// Codes of existing items written without # (whole words only: "SCH-051" yes, "SCH-051B" no).
 const WORD_RE = /[A-Za-z0-9](?:[\w.\-/]*[A-Za-z0-9_])?/g;
 function bareCodes(text) {
   const out = [];
@@ -797,11 +802,11 @@ function bareCodes(text) {
   return out;
 }
 
-// ---------- schede chiudibili (telefono) ----------
-// Magazzino, Documenti e Mail: su telefono le schede (categorie, gruppi, topic) si chiudono e resta l'intestazione,
-// con il suo numero. "Chiudi tutto / Apri tutto" in cima; ogni scheda si apre o chiude da sola toccando la sua
-// intestazione. Si ricorda su questo dispositivo; su schermo largo le schede sono sempre aperte.
-const folds = load('org.folds', {}); // pagina → { all, open: [chiavi aperte con all], closed: [chiavi chiuse senza all] }
+// ---------- collapsible cards (phone) ----------
+// Inventory, Documents and Mail: on a phone the cards (categories, groups, topics) collapse to their header, with
+// its count. "Collapse all / Expand all" at the top; each card opens or closes on its own by tapping its header.
+// Remembered on this device; on a wide screen the cards are always open.
+const folds = load('org.folds', {}); // page → { all, open: [keys open with all], closed: [keys closed without all] }
 const phone = () => matchMedia('(max-width: 899px)').matches;
 const isFolded = (page, key) => { const f = folds[page] || {}; return f.all ? !(f.open || []).includes(key) : (f.closed || []).includes(key); };
 
@@ -814,13 +819,13 @@ function toggleFold(page, key) {
   render();
 }
 
-// el: la scheda; il suo primo figlio è l'intestazione (riceve la freccia per aprire e chiudere).
+// el: the card; its first child is the header (it gets the arrow to open and close).
 export function fold(page, key, el) {
   const k = String(key);
   el.dataset.fold = `${page}|${k}`;
   el.classList.toggle('folded', isFolded(page, k));
   el.firstElementChild?.append(h('button.fold-t.only-mobile', {
-    type: 'button', title: 'Apri o chiudi', 'aria-expanded': String(!isFolded(page, k)), onclick: ev => { ev.stopPropagation(); toggleFold(page, k); },
+    type: 'button', title: tr('Open or close'), 'aria-expanded': String(!isFolded(page, k)), onclick: ev => { ev.stopPropagation(); toggleFold(page, k); },
   }, '▾'));
   return el;
 }
@@ -829,7 +834,7 @@ export function foldBar(page) {
   const all = !!folds[page]?.all;
   return h('div.fold-bar.only-mobile',
     h('button.btn.sm.ghost', { type: 'button', onclick: () => { folds[page] = { all: !all }; save('org.folds', folds); render(); } },
-      all ? 'Apri tutto' : 'Chiudi tutto'));
+      all ? tr('Expand all') : tr('Collapse all')));
 }
 
 document.addEventListener('click', ev => {
@@ -840,10 +845,10 @@ document.addEventListener('click', ev => {
   toggleFold(page, key);
 });
 
-// ---------- colonne "a muro" (come la home di Pinterest) ----------
-// I blocchi (categorie del magazzino, gruppi di documenti) vanno in N colonne: ognuno, nell'ordine, nella
-// colonna più corta, così sotto un blocco basso non resta spazio vuoto. N: 3 su schermo grande, 2 medio,
-// 1 su telefono (come --cols nel CSS). Le altezze si misurano appena la vista è nella pagina.
+// ---------- "wall" columns (like Pinterest's home) ----------
+// The blocks (inventory categories, document groups) go in N columns: each, in order, into the shortest column,
+// so no empty space is left under a short block. N: 3 on a large screen, 2 medium, 1 on a phone (like --cols in
+// the CSS). Heights are measured as soon as the view is in the page.
 const COLS_MQ = [['(max-width: 899px)', 1], ['(max-width: 1399px)', 2]];
 const masonryCols = () => COLS_MQ.find(([q]) => matchMedia(q).matches)?.[1] ?? 3;
 
@@ -862,35 +867,34 @@ export function masonry(cls, blocks) {
 function pack(box) {
   if (!box.isConnected) return;
   const cols = [...box.children];
-  const sizes = box.blocks.map(b => b.offsetHeight); // colonne larghe uguali: altezze già giuste
+  const sizes = box.blocks.map(b => b.offsetHeight); // equally wide columns: heights are already right
   const heights = cols.map(() => 0);
   box.blocks.forEach((b, i) => {
     const c = heights.indexOf(Math.min(...heights));
     cols[c].append(b);
-    heights[c] += sizes[i] + 12; // più lo spazio tra i blocchi
+    heights[c] += sizes[i] + 12; // plus the gap between blocks
   });
 }
 
-// Quando il contenitore cambia larghezza (finestra, rotazione del telefono…): se cambia il numero di colonne
-// si ridisegna, altrimenti si ricompongono le colonne (il testo può andare a capo in modo diverso).
+// When the container changes width (window, phone rotation…): if the number of columns changes, re-render,
+// otherwise re-pack the columns (text may wrap differently).
 let packTimer = null;
 const masonryWatch = new ResizeObserver(entries => {
   clearTimeout(packTimer);
   packTimer = setTimeout(() => {
-    for (const e of entries) if (!e.target.isConnected) masonryWatch.unobserve(e.target); // viste vecchie
+    for (const e of entries) if (!e.target.isConnected) masonryWatch.unobserve(e.target); // old views
     const boxes = entries.map(e => e.target).filter(b => b.isConnected);
     if (boxes.some(b => b.children.length !== masonryCols())) render();
     else boxes.forEach(pack);
   }, 100);
 });
 
-// ---------- campi di testo che si leggono come la chat ----------
-// Il testo si mostra già colorato (#CODICI, collegamenti [[…]], link) e i link si cliccano; un clic sul testo
-// (o Invio quando ha il focus) apre il campo per scrivere, uscendo si salva e si torna alla lettura.
-// Markdown semplice per le note lunghe (note degli articoli): titoli (# ## ###), elenchi (- * 1.), caselle
-// (- [ ] / - [x]), citazioni (>), blocchi di codice (```), linee (---), **grassetto**, *corsivo*, ~~barrato~~,
-// `codice` e [testo](url); dentro restano attivi #CODICI, URL e collegamenti [[…]]. "#CODICE" non è un titolo:
-// il titolo vuole lo spazio dopo i #.
+// ---------- text fields that read like the chat ----------
+// The text is shown already coloured (#CODES, [[…]] links, URLs) and the links can be clicked; a click on the
+// text (or Enter when it has focus) opens the field for writing, leaving it saves and goes back to reading.
+// Simple Markdown for long notes: headings (# ## ###), lists (- * 1.), checkboxes (- [ ] / - [x]), quotes (>),
+// code blocks (```), rules (---), **bold**, *italic*, ~~strikethrough~~, `code` and [text](url); #CODES, URLs and
+// [[…]] links keep working inside. "#CODE" is not a heading: a heading needs a space after the #.
 const MD_INLINE = /`([^`\n]+)`|\*\*([^*\n]+?)\*\*|~~([^~\n]+?)~~|(?<![\w*])\*(?!\s)([^*\n]+?)\*(?![\w*])|(?<![\w_])_(?!\s)([^_\n]+?)_(?![\w_])|\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g;
 function mdInline(s, opts) {
   const out = [];
@@ -970,29 +974,30 @@ export function richField({ fk, value, placeholder, cls, rows = 2, attrs = {}, o
     el.setSelectionRange(el.value.length, el.value.length);
     autosize(el);
   };
-  // In sola lettura (vedi isReadOnly) il testo si legge e i link funzionano, ma non si apre il campo.
+  // Read-only (see isReadOnly): the text can be read and its links work, but the field does not open.
   const editable = ev => !isReadOnly(ev.currentTarget);
   return h(`div.${cls}.rich-view${md ? '.md' : ''}`, {
-    tabindex: 0, role: 'textbox', title: 'Clicca per modificare', style: `--rows:${rows}`,
+    tabindex: 0, role: 'textbox', title: tr('Click to edit'), style: `--rows:${rows}`,
     onclick: ev => { if (editable(ev) && !ev.target.closest('a, button') && !String(getSelection())) edit(); },
     onkeydown: ev => { if (editable(ev) && ev.key === 'Enter' && ev.target === ev.currentTarget) { ev.preventDefault(); edit(); } },
   }, value ? (md ? mdText(value, { bare }) : richText(value, { bare })) : h('span.rich-ph', placeholder));
 }
 
-// ---------- collegamenti [[tipo:ID]] ----------
-// Si scrivono con "[[" in qualunque campo di testo (l'autocompletamento inserisce il token) e si vedono come
-// link con il nome sempre attuale. Gli articoli restano #CODICE. Le mail li mandano come testo semplice.
-// [[mail:ID]] è una conversazione di mail: personale, chi non la riceve vede "non hai permessi sufficienti".
-// [[nota:ID]] è una nota su un documento (anche su un pezzo di testo di un PDF): privata, salvo condivisione.
+// ---------- [[kind:ID]] links ----------
+// Typed with "[[" in any text field (autocomplete inserts the token) and shown as links with an always up-to-date
+// name. Items stay #CODE. Mails send them as plain text. The kinds keep their Italian names in stored text:
+// [[doc:]], [[voce:]] (entry), [[contatto:]] (contact), [[progetto:]] (project), [[mail:]] (a mail conversation:
+// personal, whoever does not receive it sees "not enough permissions") and [[nota:]] (a note on a document, also
+// on a piece of a PDF's text: private unless shared).
 const REF_RE = /\[\[(doc|voce|contatto|progetto|mail|nota):(\d+)\]\]/g;
 const ENTRY_ICON = { todo: 'check', mail: 'mail', note: 'diary' };
 const plainTitle = t => t.replace(/(^|\s)#/g, '$1');
 
 const REF_AREA = { doc: 'documenti', progetto: 'progetti', contatto: 'contatti', mail: 'mail', nota: 'documenti' };
 
-// Collegamenti a cose che l'app non ha nei dati (archiviate, non condivise, eliminate): si chiede al server
-// una volta, tutti insieme dopo il ridisegno. Il server dice solo lo stato (e il titolo se si può vedere).
-const refInfo = new Map(); // "voce:12" → { status: 'ok' | 'hidden' | 'gone', title… } (null = in arrivo)
+// Links to things the app does not have in its data (archived, not shared, deleted): ask the server once, all
+// together after the render. The server only says the status (and the title if it can be seen).
+const refInfo = new Map(); // "voce:12" → { status: 'ok' | 'hidden' | 'gone', title… } (null = on its way)
 let refAsk = null;
 function askRef(kind, id) {
   const key = `${kind}:${id}`;
@@ -1010,62 +1015,62 @@ function askRef(kind, id) {
   return null;
 }
 
-const noAccess = () => h('span.ref.gone.denied', { title: 'Il collegamento porta a qualcosa che non è condiviso con te (o a un\'area che non puoi vedere)' },
-  icon('lock'), 'Nota: non hai permessi sufficienti');
+const noAccess = () => h('span.ref.gone.denied', { title: tr('The link leads to something not shared with you (or to an area you cannot see)') },
+  icon('lock'), tr('Note: not enough permissions'));
 
 export function refChip(kind, id) {
   const D = S.data;
-  // Collegamento a un'area che non si può vedere: si dice, senza nome (i dati non arrivano).
+  // Link to an area you cannot see: say so, without a name (the data does not arrive).
   if (REF_AREA[kind] && !can(REF_AREA[kind])) return noAccess();
   if (kind === 'doc') {
     const d = D.docById.get(id);
     const it = d && D.itemById.get(d.item_id);
-    return d ? h('a.ref', { href: `#/d/${id}`, onclick: stop, title: `${d.kind}${it ? ` di ${it.code}` : ''}` }, icon('file'), docName(d), it && h('span.ref-x', it.code))
-      : h('span.ref.gone', icon('file'), 'documento eliminato');
+    return d ? h('a.ref', { href: `#/d/${id}`, onclick: stop, title: it ? tr('{kind} of {code}', { kind: kindLabel(d.kind), code: it.code }) : kindLabel(d.kind) }, icon('file'), docName(d), it && h('span.ref-x', it.code))
+      : h('span.ref.gone', icon('file'), tr('document deleted'));
   }
   if (kind === 'voce') {
-    // Non nei dati: archiviata (si apre lo stesso), non condivisa, o eliminata.
+    // Not in the data: archived (it opens anyway), not shared, or deleted.
     const e = D.entryById.get(id) || refInfoEntry(id);
     if (e === 'hidden') return noAccess();
-    if (e === 'gone') return h('span.ref.gone', icon('check'), 'voce eliminata');
+    if (e === 'gone') return h('span.ref.gone', icon('check'), tr('entry deleted'));
     return h('a.ref', { href: `#/v/${id}`, onclick: stop, class: e?.done_at ? 'done' : null },
-      icon(ENTRY_ICON[e?.kind] || 'check'), e ? plainTitle(e.title.replace(REF_RE, '…')) : `voce ${id}`);
+      icon(ENTRY_ICON[e?.kind] || 'check'), e ? plainTitle(e.title.replace(REF_RE, '…')) : tr('entry {id}', { id }));
   }
   if (kind === 'mail') {
     const t = D.threadById.get(id);
     const r = !t && askRef('mail', id);
     if (r?.status === 'hidden') return noAccess();
-    if (!t && r?.status !== 'ok') return h('span.ref.gone', icon('mail'), r ? 'conversazione eliminata' : 'conversazione…');
+    if (!t && r?.status !== 'ok') return h('span.ref.gone', icon('mail'), r ? tr('conversation deleted') : tr('conversation…'));
     const subject = t ? t.subject : r.title;
-    return h('a.ref', { href: `#/t/${t ? t.topic_id : r.topic}?th=${id}`, onclick: stop, title: 'Conversazione di mail' }, icon('mail'), plainTitle(subject || '(senza oggetto)'));
+    return h('a.ref', { href: `#/t/${t ? t.topic_id : r.topic}?th=${id}`, onclick: stop, title: tr('Mail conversation') }, icon('mail'), plainTitle(subject || tr('(no subject)')));
   }
   if (kind === 'nota') {
     const n = D.docNoteById.get(id);
     const r = !n && askRef('nota', id);
     if (r?.status === 'hidden') return noAccess();
-    if (!n && r?.status !== 'ok') return h('span.ref.gone', icon('log'), r ? 'nota eliminata' : 'nota…');
+    if (!n && r?.status !== 'ok') return h('span.ref.gone', icon('log'), r ? tr('note deleted') : tr('note…'));
     const d = D.docById.get(n ? n.doc_id : r.doc);
-    return h('a.ref', { href: `#/d/${n ? n.doc_id : r.doc}?n=${id}`, onclick: stop, class: (n ? n.resolved_at : r.done) ? 'done' : null, title: n?.quote ? `«${n.quote}»` : 'Nota su un documento' },
-      icon('log'), noteTitle(n ? n.text : r.title), d && h('span.ref-x', `${docName(d)}${n?.page && n.z == null && /pdf/i.test(d.mime || d.filename || d.url || '') ? ` · pag. ${n.page}` : ''}`));
+    return h('a.ref', { href: `#/d/${n ? n.doc_id : r.doc}?n=${id}`, onclick: stop, class: (n ? n.resolved_at : r.done) ? 'done' : null, title: n?.quote ? `«${n.quote}»` : tr('Note on a document') },
+      icon('log'), noteTitle(n ? n.text : r.title), d && h('span.ref-x', `${docName(d)}${n?.page && n.z == null && /pdf/i.test(d.mime || d.filename || d.url || '') ? ` · ${tr('p. {n}', { n: n.page })}` : ''}`));
   }
   if (kind === 'progetto') {
     const p = D.projectById.get(id);
     const st = !p && askRef('progetto', id)?.status;
     if (st === 'hidden') return noAccess();
     return p ? h('a.ref', { href: `#/p/${id}`, onclick: stop, style: `--h:${projHue(p)}` }, icon('folder'), p.name, h('span.ref-x', `@${p.tag}`))
-      : h('span.ref.gone', icon('folder'), st ? 'progetto eliminato' : 'progetto…');
+      : h('span.ref.gone', icon('folder'), st ? tr('project deleted') : tr('project…'));
   }
   const c = D.contactById.get(id);
   const st = !c && askRef('contatto', id)?.status;
   if (st === 'hidden') return noAccess();
   return c ? h('a.ref', { href: `#/contatti/${id}`, onclick: stop, title: c.email }, icon('user'), c.name || c.email)
-    : h('span.ref.gone', icon('user'), st ? 'contatto eliminato' : 'contatto…');
+    : h('span.ref.gone', icon('user'), st ? tr('contact deleted') : tr('contact…'));
 }
 
-// Titolo di una nota su un documento: la prima riga, accorciata.
+// Title of a note on a document: its first line, shortened.
 const noteTitle = t => {
   const first = String(t || '').split('\n')[0].trim();
-  return first.length > 80 ? `${first.slice(0, 80)}…` : first || 'nota';
+  return first.length > 80 ? `${first.slice(0, 80)}…` : first || tr('note');
 };
 
 function refInfoEntry(id) {
@@ -1075,7 +1080,7 @@ function refInfoEntry(id) {
   return { kind: r.kind, title: r.title, done_at: r.done ? 'x' : null };
 }
 
-// Nome semplice di un collegamento (per le mail aperte con mailto: e le notifiche).
+// Plain name of a link (for mails opened with mailto: and for notifications).
 export function plainRefs(text) {
   const D = S.data;
   return String(text || '').replace(REF_RE, (m, kind, id) => {
@@ -1086,8 +1091,8 @@ export function plainRefs(text) {
   });
 }
 
-// Backlink: le voci che collegano un elemento (dal server: comprende le voci archiviate).
-// Si rileggono quando cambiano i dati; intanto si mostra l'ultimo risultato.
+// Backlinks: the entries that link to something (from the server: archived entries included).
+// Read again when the data changes; meanwhile the last result is shown.
 const backlinkCache = new Map();
 export function backlinks(kind, id) {
   const key = `${kind}:${id}`;
@@ -1102,7 +1107,7 @@ export function backlinks(kind, id) {
   return c?.list || null;
 }
 
-// Chat: oltre a ciò che fa richText, @progetto e +persona diventano link.
+// Chat: on top of what richText does, @project and +person become links.
 const CHAT_RE = /(^|[\s(\[,;:])([@+])([\p{L}\d_][\p{L}\d_.-]*[\p{L}\d_]|[\p{L}\d_])/gu;
 
 export function chatText(text) {
@@ -1113,7 +1118,7 @@ export function chatText(text) {
     const [, pre, sig, name] = m;
     const p = sig === '@' && D.projectByTag.get(name.toLowerCase());
     const u = sig === '+' && D.users.find(x => x.username.toLowerCase() === name.toLowerCase());
-    if (!p && !u) continue; // non è un collegamento: resta testo
+    if (!p && !u) continue; // not a link: stays text
     out.push(...richText(text.slice(last, m.index + pre.length)));
     out.push(p ? h('a.tag', { href: `#/p/${p.id}`, onclick: stop, style: `--h:${projHue(p)}` }, `@${p.tag}`)
       : h('span.mention', { class: u.id === D.me.id ? 'me' : null, title: u.name }, `+${u.username}`));
@@ -1123,18 +1128,18 @@ export function chatText(text) {
   return out;
 }
 
-// Elimina (sposta nel cestino) e offre "Annulla" nel toast.
+// Delete (move to the trash) and offer "Undo" in the toast.
 export async function trashIt(type, url, label) {
   const ok = await act(() => api('DELETE', url).then(() => true));
   const id = url.split('/').pop();
-  if (ok) toast(`${label} nel cestino`, { action: { label: 'Annulla', fn: () => act(() => api('POST', `/trash/${type}/${id}/restore`)) } });
+  if (ok) toast(tr('{what} moved to the trash', { what: label }), { action: { label: tr('Undo'), fn: () => act(() => api('POST', `/trash/${type}/${id}/restore`)) } });
   return ok;
 }
 
-// Colore dei contatti, scelto in Impostazioni (preferenza di questo dispositivo, come il tema):
-// per contatto (quello scelto dal pallino, altrimenti automatico dall'indirizzo) oppure uguale per tutti quelli
-// con la stessa azienda, fascia oraria o ruolo (senza quel dato: nessun colore).
-export const CONTACT_COLOR = { contact: 'Per contatto (automatico o scelto)', company: 'Per azienda', timeslot: 'Per fascia oraria', role: 'Per ruolo' };
+// Contact colour, chosen in Settings (a preference of this device, like the theme): per contact (the one picked
+// from the dot, otherwise automatic from the address) or the same for everyone with the same company, time slot or
+// role (without that field: no colour).
+export const CONTACT_COLOR = { contact: tr('Per contact (automatic or picked)'), company: tr('Per company'), timeslot: tr('Per time slot'), role: tr('Per role') };
 export function contactHue(c) {
   if (ui.contactColor in CONTACT_COLOR && ui.contactColor !== 'contact') {
     const v = String(c[ui.contactColor] || '').trim().toLowerCase();
@@ -1144,7 +1149,7 @@ export function contactHue(c) {
 }
 export const contactStyle = c => { const x = contactHue(c); return x == null ? null : `--h:${x}`; };
 
-// Destinatari come elementi: i contatti in rubrica con il loro nome e colore, gli altri indirizzi così come sono.
+// Recipients as elements: contacts in the address book with their name and colour, other addresses as they are.
 export function contactNames(list) {
   const out = [];
   for (const a of String(list || '').split(',').map(s => s.trim()).filter(Boolean)) {
@@ -1158,18 +1163,18 @@ export function contactNames(list) {
 export function toast(msg, { err = false, action } = {}) {
   const box = document.getElementById('toasts');
   if (!box) return;
-  const t = h('div.toast', { class: err && 'err' }, h('span', msg),
-    action && h('button', { onclick: () => { action.fn(); t.remove(); } }, action.label));
-  box.append(t);
-  setTimeout(() => t.remove(), action ? 6000 : 3500);
+  const el = h('div.toast', { class: err && 'err' }, h('span', msg),
+    action && h('button', { onclick: () => { action.fn(); el.remove(); } }, action.label));
+  box.append(el);
+  setTimeout(() => el.remove(), action ? 6000 : 3500);
 }
 
 export async function copy(text) {
   try {
     await navigator.clipboard.writeText(text);
-    toast('Copiato');
+    toast(tr('Copied'));
   } catch {
-    prompt('Copia:', text);
+    prompt(tr('Copy:'), text);
   }
 }
 
@@ -1179,16 +1184,16 @@ export function updateBadge() {
   (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
 }
 
-// ---------- condivisione ----------
-// Tutto è privato di chi lo crea (tranne magazzino e documenti): si condivide con delle persone o con tutti.
-// Chi l'ha creato apre il pannello e sceglie; gli altri vedono soltanto con chi è condiviso.
+// ---------- sharing ----------
+// Everything is private to whoever creates it (except inventory and documents): it is shared with some people or
+// with everyone. The creator opens the panel and chooses; the others only see who it is shared with.
 export const sharedWithOf = (kind, o) => (S.data.sharesOf.get(`${kind}:${o.id}`) || []);
 
 export function shareLabel(kind, o) {
   const D = S.data;
-  if (o.shared_all) return 'tutti';
+  if (o.shared_all) return tr('everyone');
   const ids = sharedWithOf(kind, o);
-  if (!ids.length) return o.created_by === D.me.id ? 'solo tu' : `${userName(o.created_by)} e te`;
+  if (!ids.length) return o.created_by === D.me.id ? tr('only you') : tr('{name} and you', { name: userName(o.created_by) });
   return ids.map(userName).join(', ');
 }
 
@@ -1196,32 +1201,32 @@ export function shareBox(kind, o) {
   const D = S.data;
   const mine = o.created_by === D.me.id;
   const ids = sharedWithOf(kind, o);
-  const label = [icon(o.shared_all ? 'users' : ids.length ? 'user' : 'lock'), h('span', 'Visibile a: ', h('b', shareLabel(kind, o)))];
-  // Chi non l'ha creato vede solo con chi è condiviso.
-  if (!mine) return h('span.share-b.ro-info', { title: `Creato da ${userName(o.created_by)}: solo lui sceglie con chi condividerlo` }, label, h('span.muted', ` · di ${userName(o.created_by)}`));
+  const label = [icon(o.shared_all ? 'users' : ids.length ? 'user' : 'lock'), h('span', tr('Visible to:'), ' ', h('b', shareLabel(kind, o)))];
+  // Whoever did not create it only sees who it is shared with.
+  if (!mine) return h('span.share-b.ro-info', { title: tr('Created by {name}: only they choose who to share it with', { name: userName(o.created_by) }) }, label, h('span.muted', ` · ${tr('by {name}', { name: userName(o.created_by) })}`));
   const save = (users, all) => act(() => api('PUT', `/shares/${kind}/${o.id}`, { users, all }));
   return popButton(`share:${kind}:${o.id}`, label, () => {
     const x = (kind === 'entry' ? S.data.entryById : kind === 'project' ? S.data.projectById : kind === 'contact' ? S.data.contactById : new Map(S.data.docNotes.map(n => [n.id, n]))).get(o.id) || o;
     const cur = sharedWithOf(kind, x);
     const others = S.data.members.filter(u => u.id !== S.data.me.id);
     return [
-      popSep('Visibile a'),
-      popItem('Solo io', () => save([], false), { on: !x.shared_all && !cur.length, check: true }),
-      popItem('Tutti', () => save(cur, !x.shared_all), { on: !!x.shared_all, check: true, hint: '+all' }),
-      others.length > 0 && popSep('Persone'),
+      popSep(tr('Visible to')),
+      popItem(tr('Only me'), () => save([], false), { on: !x.shared_all && !cur.length, check: true }),
+      popItem(tr('Everyone'), () => save(cur, !x.shared_all), { on: !!x.shared_all, check: true, hint: '+all' }),
+      others.length > 0 && popSep(tr('People')),
       others.map(u => popItem(u.name || u.username, () => save(cur.includes(u.id) ? cur.filter(v => v !== u.id) : [...cur, u.id], !!x.shared_all),
         { on: !!x.shared_all || cur.includes(u.id), check: true, hint: `@${u.username}` })),
-      !others.length && h('p.muted.pop-note', 'Non ci sono altre persone nel workspace.'),
-      h('p.muted.pop-note', 'Anche dalla barra: +persona, ++persona (e gliela assegni), +all.'),
+      !others.length && h('p.muted.pop-note', tr('There is nobody else in the workspace.')),
+      h('p.muted.pop-note', tr('From the bar too: +person, ++person (also assigns it to them), +all.')),
     ];
-  }, { class: 'share-b', title: 'Scegli con chi condividere' });
+  }, { class: 'share-b', title: tr('Choose who to share with') });
 }
 
-// ---------- menu a comparsa ----------
-// Menu contestuali (come il tasto destro) accanto al pulsante che li apre: Visibile a, Assegnata, Scadenza,
-// Tipo. Si chiudono cliccando fuori, con Esc o scorrendo la pagina; ↑↓ passano da una voce all'altra.
-// Dopo un ridisegno il pulsante viene sostituito: se c'è ancora (stesso data-pop) il menu resta aperto lì
-// e si aggiorna, così le scelte multiple (le persone di "Visibile a") non lo chiudono.
+// ---------- popup menus ----------
+// Context menus (like a right click) next to the button that opens them: Visible to, Assigned, Due date, Kind.
+// They close on a click outside, with Esc or when the page scrolls; ↑↓ move from one item to the next.
+// After a render the button is replaced: if it is still there (same data-pop) the menu stays open on it and is
+// updated, so multiple choices (the people in "Visible to") do not close it.
 const pop = h('div.popmenu', { hidden: true, role: 'menu' });
 let popState = null; // { key, btn, content }
 
@@ -1245,7 +1250,7 @@ function drawPop() {
   placePop(popState.btn);
 }
 
-// Pulsante che apre un menu: content(close) disegna il contenuto (si richiama a ogni aggiornamento).
+// Button that opens a menu: content(close) draws the content (called again on every update).
 export function popButton(key, label, content, attrs = {}) {
   const btn = h('button.pop-b', {
     type: 'button', 'data-pop': key, 'aria-haspopup': 'menu', 'aria-expanded': String(popState?.key === key), ...attrs,
@@ -1271,7 +1276,7 @@ export const popCheck = () => {
   drawPop();
 };
 
-// Una voce del menu: on = scelta attuale (o spuntata, nei menu a scelta multipla).
+// A menu item: on = the current choice (or ticked, in multiple-choice menus).
 export const popItem = (label, onclick, { on = false, check = false, hint = null } = {}) =>
   h('button.pop-i', { type: 'button', role: check ? 'menuitemcheckbox' : 'menuitem', class: on ? 'on' : null, 'aria-checked': check ? String(on) : null, onclick },
     check ? h('span.pop-ck', on ? icon('check') : null) : null, h('span.pop-l', label), hint && h('span.muted.pop-h', hint));

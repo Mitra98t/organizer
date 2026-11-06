@@ -1,8 +1,8 @@
 {
   "name": "Organizer",
   "short_name": "Organizer",
-  "description": "Todo, mail, diario e magazzino sincronizzati",
-  "lang": "it",
+  "description": "Todos, mail, journal and inventory, in sync",
+  "lang": "en",
   "start_url": "./#/agenda",
   "scope": "./",
   "display": "standalone",
@@ -16,7 +16,7 @@
   ],
   "shortcuts": [
     { "name": "Agenda", "url": "./#/agenda" },
-    { "name": "Magazzino", "url": "./#/magazzino" },
-    { "name": "Diario", "url": "./#/diario" }
+    { "name": "Inventory", "url": "./#/magazzino" },
+    { "name": "Journal", "url": "./#/diario" }
   ]
 }

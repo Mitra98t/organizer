@@ -1,14 +1,14 @@
-// Mail: composer (destinatari, oggetto, testo e invio verso il client di posta) e i blocchi della colonna
-// laterale che legano la posta al resto di Organizer (persone, allegati in entrambi i versi, collegamenti, chi
-// la cita). Pagina Mail e topic: topics.js.
-// Con l'estensione di Thunderbird collegata (server/thunderbird.js) "Manda" apre la mail lì, lo stato si
-// aggiorna da solo e i messaggi ricevuti e mandati finiscono nel loro thread.
+// Mail: composer (recipients, subject, text and sending to the mail client) and the side-column blocks that tie mail
+// to the rest of Organizer (people, attachments both ways, links, who mentions it). Mail and topic pages: topics.js.
+// With the Thunderbird extension connected (server/thunderbird.js) "Send" opens the mail there, the status updates
+// by itself and the received and sent messages end up in their thread.
 import {
   h, icon, S, ui, api, act, toast, render, patchEntry, fmtSize, fmtTime, plainRefs, richField, contactStyle, contactNames, can, itemAttrs, docName,
 } from './core.js';
 import { backlinksBox } from './views.js';
 import { pickDoc, pickItem } from './pickers.js';
 import { kindOf, previewBody } from './docview.js';
+import { tr } from './i18n.js';
 
 const subjectOf = e => plainRefs(e.mail_subject || e.title.replace(/(^|\s)#/g, '$1'));
 
@@ -20,7 +20,7 @@ export function mailto(e) {
   return `mailto:${to}?${q.join('&')}`;
 }
 
-// I campi salvano su blur: prima di inviare si salva quello che c'è a schermo, anche se il focus è ancora lì.
+// Fields save on blur: before sending, what is on screen is saved, even if the focus is still there.
 async function saveVisible(e) {
   const val = fk => document.querySelector(`[data-fk="${fk}-${e.id}"]`)?.value;
   const now = { contact: val('to'), mail_cc: val('cc'), mail_subject: val('subj'), notes: val('body') };
@@ -41,19 +41,19 @@ async function send(e) {
     }
     if (S.data.mailExt) {
       await api('POST', `/entries/${e.id}/compose`);
-      toast('Aperta in Thunderbird: quando la invii, qui diventa "mandata" da sola');
+      toast(tr('Opened in Thunderbird: when you send it, it becomes "sent" here by itself'));
       return;
     }
     const atts = S.data.attachmentsOf.get(e.id) || [];
     if (!ui.mailHelper) {
       location.href = mailto(e);
-      if (atts.length) toast('Allegati non inclusi: installa l\'helper Thunderbird (Impostazioni → Mail) o usa .eml', { err: true });
+      if (atts.length) toast(tr('Attachments not included: install the Thunderbird helper (Settings → Mail) or use .eml'), { err: true });
       return;
     }
     const { token } = await api('POST', `/entries/${e.id}/send`);
     const server = location.href.split('#')[0].replace(/[^/]*$/, '');
     location.href = `organizer-mail://open?server=${encodeURIComponent(server)}&token=${token}`;
-    toast('Mail aperta in Thunderbird', { action: { label: 'Segna inviata', fn: () => patchEntry(e, { done: true }) } });
+    toast(tr('Mail opened in Thunderbird'), { action: { label: tr('Mark as sent'), fn: () => patchEntry(e, { done: true }) } });
   } catch (err) {
     toast(err.message, { err: true });
   }
@@ -61,36 +61,36 @@ async function send(e) {
 
 async function upload(e, files) {
   for (const f of files) {
-    toast(`Allego ${f.name}…`);
+    toast(tr('Attaching {name}…', { name: f.name }));
     await act(() => api('POST', `/entries/${e.id}/attachments?${new URLSearchParams({ name: f.name })}`, f));
   }
 }
 
-// La mail da scrivere. Gli allegati si gestiscono nella colonna laterale, ma si possono trascinare anche qui.
+// The mail to write. Attachments are managed in the side column, but they can be dropped here too.
 export function mailComposer(e) {
   const saveField = key => ev => { if (ev.target.value !== (e[key] || '')) patchEntry(e, { [key]: ev.target.value }); };
   const box = h('div.mail',
-    h('label.mf', h('span', 'A'),
-      h('input', { value: e.contact || '', placeholder: 'email o nome dalla rubrica, separati da virgola', 'data-fk': `to-${e.id}`, 'data-ac': 'email', autocomplete: 'off', spellcheck: 'false', onblur: saveField('contact') })),
+    h('label.mf', h('span', tr('To')),
+      h('input', { value: e.contact || '', placeholder: tr('email or name from the address book, separated by commas'), 'data-fk': `to-${e.id}`, 'data-ac': 'email', autocomplete: 'off', spellcheck: 'false', onblur: saveField('contact') })),
     h('label.mf', h('span', 'Cc'),
       h('input', { value: e.mail_cc || '', 'data-fk': `cc-${e.id}`, 'data-ac': 'email', autocomplete: 'off', spellcheck: 'false', onblur: saveField('mail_cc') })),
-    h('label.mf', h('span', 'Oggetto'),
+    h('label.mf', h('span', tr('Subject')),
       h('input', { value: e.mail_subject || '', placeholder: subjectOf({ ...e, mail_subject: null }), 'data-fk': `subj-${e.id}`, onblur: saveField('mail_subject') })),
-    // #articolo suggerisce dal magazzino e scrive il codice senza # (la mail va a chi non usa l'app);
-    // [[ collega documenti, voci, contatti e progetti: nella mail mandata diventano il loro nome.
-    // Nel testo letto i codici senza # sono colorati come gli altri (bare).
+    // #item suggests from the inventory and writes the code without # (the mail goes to people who do not use the app);
+    // [[ links documents, entries, contacts and projects: in the sent mail they become their name.
+    // In the text being read, codes without # are coloured like the others (bare).
     richField({
       fk: `body-${e.id}`, cls: 'mail-body', rows: 6, value: e.notes, bare: true,
-      placeholder: 'Testo della mail… (#codice per un articolo, [[ per collegare altro)',
+      placeholder: tr('Mail text… (#code for an item, [[ to link something else)'),
       attrs: { 'data-ac': 'mail', 'data-ac-only': '#', 'data-ac-bare': '', 'data-ac-entry': e.id },
       onSave: notes => patchEntry(e, { notes }),
     }),
     h('div.mail-actions',
-      // mousedown senza effetto: il testo resta in modifica e non si ridisegna (spostando il tasto) prima del clic;
-      // send legge i campi così come sono.
-      h('button.btn.primary', { onmousedown: ev => ev.preventDefault(), onclick: () => send(e) }, icon('send'), S.data.mailExt || ui.mailHelper ? 'Manda con Thunderbird' : 'Manda'),
-      h('a.btn.sm.ghost', { href: mailto(e), title: 'Apre l\'app mail predefinita, senza allegati' }, 'App mail'),
-      h('a.btn.sm.ghost', { href: `api/entries/${e.id}/eml`, download: '', title: 'File .eml con allegati' }, icon('download'), '.eml')));
+      // mousedown without effect: the text stays in edit mode and is not redrawn (moving the button) before the click;
+      // send reads the fields as they are.
+      h('button.btn.primary', { onmousedown: ev => ev.preventDefault(), onclick: () => send(e) }, icon('send'), S.data.mailExt || ui.mailHelper ? tr('Send with Thunderbird') : tr('Send mail')),
+      h('a.btn.sm.ghost', { href: mailto(e), title: tr('Opens the default mail app, without attachments') }, tr('Mail app')),
+      h('a.btn.sm.ghost', { href: `api/entries/${e.id}/eml`, download: '', title: tr('.eml file with attachments') }, icon('download'), '.eml')));
 
   box.addEventListener('dragover', ev => { ev.preventDefault(); box.classList.add('drag'); });
   box.addEventListener('dragleave', () => box.classList.remove('drag'));
@@ -102,11 +102,11 @@ export function mailComposer(e) {
   return box;
 }
 
-// ---------- indirizzi ----------
+// ---------- addresses ----------
 export const lc = s => String(s || '').toLowerCase();
-// "Nome <email>, …" → "email, …" (così i contatti in rubrica si riconoscono e si colorano).
+// "Name <email>, …" → "email, …" (so contacts in the address book are recognised and coloured).
 export const addrs = s => String(s || '').split(',').map(a => (a.match(/<([^>]+)>/)?.[1] || a).trim()).filter(Boolean).join(', ');
-// "Nome <email>" → { name, email }
+// "Name <email>" → { name, email }
 export const parseAddr = a => {
   const email = (String(a).match(/<([^>]+)>/)?.[1] || String(a)).trim();
   return { email, name: String(a).replace(/<[^>]*>/, '').replace(/["']/g, '').trim().replace(email, '').trim() };
@@ -119,11 +119,11 @@ export function fromName(addr) {
   return parseAddr(addr).name || email;
 }
 
-// ---------- colonna laterale ----------
+// ---------- side column ----------
 export const block = (title, ...children) => (children.flat(Infinity).some(Boolean) ? h('div.ms-b', h('div.ms-h', title), children) : null);
 
-// Persone: quelle in rubrica con azienda e ruolo; le altre si aggiungono con un clic.
-export function peopleBlock(list, title = 'Persone') {
+// People: those in the address book with company and role; the others are added with a click.
+export function peopleBlock(list, title = tr('People')) {
   const D = S.data;
   const seen = new Set();
   const rows = addrList(list.join(',')).filter(a => !D.mine.has(lc(a.email)) && !seen.has(lc(a.email)) && seen.add(lc(a.email))).map(a => {
@@ -136,14 +136,14 @@ export function peopleBlock(list, title = 'Persone') {
     return h('div.ms-person.unknown', { title: a.email },
       icon('user'), h('span', a.name || a.email), a.name && h('span.muted.mono', a.email),
       can('contatti', 'write') && h('button.chip', {
-        title: 'Aggiungi alla rubrica',
-        onclick: () => act(() => api('POST', '/contacts', { email: a.email, name: a.name }), 'Aggiunto ai contatti'),
+        title: tr('Add to the address book'),
+        onclick: () => act(() => api('POST', '/contacts', { email: a.email, name: a.name }), tr('Added to the contacts')),
       }, icon('plus'), 'rubrica'));
   });
   return block(title, rows);
 }
 
-// Allegati della mail che si manda: file caricati o documenti presi dal magazzino.
+// Attachments of the mail being sent: uploaded files or documents taken from the inventory.
 export function outAttachments(e) {
   const D = S.data;
   const atts = D.attachmentsOf.get(e.id) || [];
@@ -154,35 +154,35 @@ export function outAttachments(e) {
       const it = doc && D.itemById.get(doc.item_id);
       return h('div.ms-att',
         icon('clip'),
-        h('a', { href: `api/attachments/${a.id}/file`, title: 'Scarica' }, a.filename),
+        h('a', { href: `api/attachments/${a.id}/file`, title: tr('Download') }, a.filename),
         a.size != null && h('span.muted', fmtSize(a.size)),
-        doc && h('a.code', { href: `#/d/${doc.id}`, title: `Dal magazzino: ${docName(doc)}`, ...itemAttrs(it) }, it?.code || 'magazzino'),
-        !e.done_at && h('button.icon-btn.sm', { title: 'Togli', onclick: () => act(() => api('DELETE', `/attachments/${a.id}`)) }, icon('x')));
+        doc && h('a.code', { href: `#/d/${doc.id}`, title: tr('From the inventory: {name}', { name: docName(doc) }), ...itemAttrs(it) }, it?.code || tr('inventory')),
+        !e.done_at && h('button.icon-btn.sm', { title: tr('Remove'), onclick: () => act(() => api('DELETE', `/attachments/${a.id}`)) }, icon('x')));
     }),
     !e.done_at && h('div.ms-add',
-      h('button.btn.sm', { onclick: () => fileInput.click() }, icon('clip'), 'Allega'),
+      h('button.btn.sm', { onclick: () => fileInput.click() }, icon('clip'), tr('Attach')),
       can('documenti') && h('button.btn.sm', {
-        onclick: () => pickDoc({ onPick: d => act(() => api('POST', `/entries/${e.id}/attachments`, { doc_id: d.id }), `Allegato ${docName(d)}`) }),
-      }, icon('box'), 'Dal magazzino…'),
+        onclick: () => pickDoc({ onPick: d => act(() => api('POST', `/entries/${e.id}/attachments`, { doc_id: d.id }), tr('{name} attached', { name: docName(d) })) }),
+      }, icon('box'), tr('From the inventory…')),
       fileInput),
   ];
 }
 
-// Collegamenti in avanti: articoli (#codice) e [[…]] scritti nella mail.
+// Forward links: items (#code) and [[…]] written in the mail.
 export const REF_RE = /\[\[(doc|voce|contatto|progetto|mail|nota):(\d+)\]\]/g;
 function linksBlock(itemIds, text) {
   const D = S.data;
   const items = [...new Set(itemIds)].map(id => D.itemById.get(id)).filter(Boolean);
   const refs = [...new Map([...String(text || '').matchAll(REF_RE)].map(m => [`${m[1]}:${m[2]}`, [m[1], +m[2]]])).values()].map(([kind, id]) => {
     if (kind === 'doc') { const d = D.docById.get(id); return d && h('a.ms-link', { href: `#/d/${id}` }, icon('file'), docName(d)); }
-    if (kind === 'voce') { const x = D.entryById.get(id); return h('a.ms-link', { href: `#/v/${id}` }, icon('log'), x ? plainRefs(x.title) : `voce ${id}`); }
+    if (kind === 'voce') { const x = D.entryById.get(id); return h('a.ms-link', { href: `#/v/${id}` }, icon('log'), x ? plainRefs(x.title) : tr('entry {id}', { id })); }
     if (kind === 'contatto') { const c = D.contactById.get(id); return c && h('a.ms-link', { href: `#/contatti/${id}` }, icon('user'), c.name || c.email); }
     if (kind === 'mail') { const t = D.threadById.get(id); return t && h('a.ms-link', { href: `#/t/${t.topic_id}?th=${id}` }, icon('mail'), t.subject); }
     if (kind === 'nota') { const n = D.docNoteById.get(id); return n && h('a.ms-link', { href: `#/d/${n.doc_id}?n=${id}` }, icon('log'), plainRefs(`[[nota:${id}]]`)); }
     const p = D.projectById?.get(id);
     return p && h('a.ms-link', { href: `#/p/${id}` }, '@', p.tag || p.name);
   }).filter(Boolean);
-  return block('Collegamenti',
+  return block(tr('Links'),
     items.length > 0 && h('div.item-chips', items.map(it => h('a.code', { href: `#/i/${it.id}`, ...itemAttrs(it), title: it.name || it.code }, it.code))),
     refs);
 }
@@ -191,16 +191,16 @@ export function mailSide(e) {
   const msgs = S.data.msgsOfThread.get(e.thread_id) || [];
   return [
     peopleBlock([e.contact, e.mail_cc, ...msgs.filter(m => m.direction === 'in').map(m => m.from_addr)]),
-    (!e.done_at || S.data.attachmentsOf.has(e.id)) && block('Allegati', outAttachments(e)),
+    (!e.done_at || S.data.attachmentsOf.has(e.id)) && block(tr('Attachments'), outAttachments(e)),
     linksBlock((S.data.itemsOfEntry.get(e.id) || []).map(x => x.item_id), `${e.title} ${e.notes || ''}`),
-    backlinksBox('voce', e.id, { title: 'Citata in', compact: true }),
+    backlinksBox('voce', e.id, { title: tr('Mentioned in'), compact: true }),
   ];
 }
 
-// ---------- allegati ricevuti: anteprima e magazzino ----------
-// Con Thunderbird collegato, ogni allegato di una mail ricevuta si può vedere senza salvarlo (Anteprima, per i
-// tipi che il visualizzatore dei documenti sa mostrare) e può diventare un documento di un articolo: si sceglie
-// articolo e tipo in un modale e il file arriva dall'anteprima appena vista o da Thunderbird.
+// ---------- received attachments: preview and inventory ----------
+// With Thunderbird connected, every attachment of a received mail can be viewed without saving it (Preview, for the
+// kinds the document viewer can show) and can become an item's document: item and kind are chosen in a modal and
+// the file comes from the preview just seen or from Thunderbird.
 const canPreview = a => !!a.part && !['none', 'link'].includes(kindOf({ filename: a.name, mime: a.type }));
 const previewHash = (msgId, n) => `#/allegato/${msgId}?n=${n}`;
 
@@ -209,7 +209,7 @@ function saveToItem(a, msgId, n) {
     file: a,
     onPick: (it, kind) => act(async () => {
       const r = await api('POST', '/mail/attachments/save', { id: msgId, n, item_id: it.id, kind });
-      toast(r.saved ? `${a.name} salvato tra i documenti di ${it.code}` : `Chiesto a Thunderbird: ${a.name} comparirà tra i documenti di ${it.code}`);
+      toast(r.saved ? tr('{name} saved among the documents of {code}', { name: a.name, code: it.code }) : tr('Asked Thunderbird: {name} will appear among the documents of {code}', { name: a.name, code: it.code }));
     }),
   });
 }
@@ -219,20 +219,20 @@ export function attList(list, msgId) {
   const canSave = S.data.mailExt && can('documenti', 'write');
   return h('div.att-in', list.map((a, n) => {
     const preview = canPreview(a);
-    // Dall'anteprima "indietro" torna qui, alla mail da cui si è aperta.
+    // From the preview "back" returns here, to the mail it was opened from.
     const open = { href: previewHash(msgId, n), onclick: () => { ui.attFrom = location.hash; } };
     return h('div.ms-att', icon('clip'),
-      preview ? h('a', { ...open, title: 'Anteprima' }, a.name ?? a) : h('span', a.name ?? a),
+      preview ? h('a', { ...open, title: tr('Preview') }, a.name ?? a) : h('span', a.name ?? a),
       a.size && h('span.muted', fmtSize(a.size)),
-      preview && h('a.chip', { ...open, title: 'Guarda il file senza salvarlo' }, icon('file'), 'anteprima'),
-      canSave && a.part && h('button.chip', { title: 'Salva come documento di un articolo del magazzino', onclick: () => saveToItem(a, msgId, n) },
-        icon('box'), '→ magazzino'));
+      preview && h('a.chip', { ...open, title: tr('Look at the file without saving it') }, icon('file'), tr('preview')),
+      canSave && a.part && h('button.chip', { title: tr('Save as a document of an inventory item'), onclick: () => saveToItem(a, msgId, n) },
+        icon('box'), tr('→ inventory')));
   }));
 }
 
-// La pagina dell'anteprima (#/allegato/messaggio?n=indice). Il file si scarica una volta (il server lo chiede a
-// Thunderbird, che può metterci qualche secondo) e resta in memoria finché la pagina è aperta.
-const attFiles = new Map(); // "att:messaggio:n" → { status, meta, att, url, error }
+// The preview page (#/allegato/message?n=index). The file is downloaded once (the server asks Thunderbird for it,
+// which may take a few seconds) and stays in memory while the page is open.
+const attFiles = new Map(); // "att:message:n" → { status, meta, att, url, error }
 
 async function loadAttachment(key, msgId, n) {
   const st = { status: 'loading' };
@@ -240,13 +240,13 @@ async function loadAttachment(key, msgId, n) {
   try {
     st.meta = await api('GET', `/mail/messages/${msgId}`);
     st.att = st.meta.attachments[n];
-    if (!st.att) throw new Error('Allegato inesistente');
+    if (!st.att) throw new Error(tr('No such attachment'));
     render();
     const r = await fetch(`api/mail/messages/${msgId}/attachments/${n}`, { credentials: 'same-origin' })
-      .catch(() => { throw new Error('Connessione interrotta: riprova'); });
-    if (!r.ok) throw new Error((await r.json().catch(() => null))?.error || `Errore ${r.status}`);
+      .catch(() => { throw new Error(tr('Connection interrupted: try again')); });
+    if (!r.ok) throw new Error((await r.json().catch(() => null))?.error || tr('Error {status}', { status: r.status }));
     const blob = await r.blob();
-    if (attFiles.get(key) !== st) return; // pagina già chiusa
+    if (attFiles.get(key) !== st) return; // page already closed
     Object.assign(st, { status: 'ready', blob, url: URL.createObjectURL(blob) });
   } catch (e) {
     Object.assign(st, { status: 'error', error: e.message });
@@ -263,7 +263,7 @@ window.addEventListener('hashchange', () => {
   }
 });
 
-// Indietro: alla mail da cui si è aperta l'anteprima (o alla sua conversazione, se si è arrivati da un link).
+// Back: to the mail the preview was opened from (or to its conversation, if we came from a link).
 export function attachmentBack() {
   const st = [...attFiles.values()][0];
   if (ui.attFrom) {
@@ -282,17 +282,17 @@ export function viewAttachment(id, query = {}) {
   const canSave = S.data.mailExt && can('documenti', 'write') && att?.part;
   return h('div.view.docview.attview',
     h('div.head',
-      h('button.icon-btn', { title: 'Torna alla mail (Esc)', onclick: attachmentBack }, icon('back')),
-      h('h2.dv-title', att?.name || 'Allegato'),
-      meta && h('span.muted.att-from', `da ${fromName(meta.from_addr)} · ${meta.subject || '(senza oggetto)'} · ${fmtTime(meta.date)}`),
+      h('button.icon-btn', { title: tr('Back to the mail (Esc)'), onclick: attachmentBack }, icon('back')),
+      h('h2.dv-title', att?.name || tr('Attachment')),
+      meta && h('span.muted.att-from', `${tr('from {name}', { name: fromName(meta.from_addr) })} · ${meta.subject || tr('(no subject)')} · ${fmtTime(meta.date)}`),
       h('span.grow'),
       d && h('span.muted', fmtSize(d.size)),
-      canSave && h('button.btn.sm', { title: 'Salva come documento di un articolo del magazzino', onclick: () => saveToItem(att, +id, n) }, icon('box'), '→ magazzino'),
-      d && h('a.icon-btn', { href: d.src, download: att.name || 'allegato', title: 'Scarica' }, icon('download'))),
-    st.status === 'loading' ? h('div.empty', icon('wait'), h('p', 'Chiedo il file a Thunderbird…'))
+      canSave && h('button.btn.sm', { title: tr('Save as a document of an inventory item'), onclick: () => saveToItem(att, +id, n) }, icon('box'), tr('→ inventory')),
+      d && h('a.icon-btn', { href: d.src, download: att.name || 'attachment', title: tr('Download') }, icon('download'))),
+    st.status === 'loading' ? h('div.empty', icon('wait'), h('p', tr('Asking Thunderbird for the file…')))
       : st.status === 'error' ? h('div.empty', h('p', st.error),
-        h('button.btn', { onclick: () => { attFiles.delete(key); render(); } }, 'Riprova'))
-        : kindOf(d) === 'none' ? h('div.empty', h('p', 'Anteprima non disponibile per questo tipo di file.'),
-          h('a.btn', { href: d.src, download: att.name || 'allegato' }, icon('download'), `Scarica ${att.name}`))
+        h('button.btn', { onclick: () => { attFiles.delete(key); render(); } }, tr('Try again')))
+        : kindOf(d) === 'none' ? h('div.empty', h('p', tr('No preview for this kind of file.')),
+          h('a.btn', { href: d.src, download: att.name || 'attachment' }, icon('download'), tr('Download {name}', { name: att.name })))
           : previewBody(d));
 }

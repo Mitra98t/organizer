@@ -1,12 +1,12 @@
-// Esporta i feedback in una cartella, uno per sottocartella (feedback.md + le immagini), per rivederli dal
-// terminale o farli leggere a chi corregge l'app. Si usa con `make feedback` (ALL=1 anche quelli risolti).
-//   node server/feedback-export.js CARTELLA [--all]
+// Exports feedback into a folder, one per subfolder (feedback.md + the images), to review it from the terminal or
+// hand it to whoever fixes the app. Used by `make feedback` (ALL=1 also the resolved ones).
+//   node server/feedback-export.js FOLDER [--all]
 import fs from 'node:fs';
 import path from 'node:path';
 import { DATA_DIR } from './db.js';
 import { acc } from './accounts.js';
 
-const FEEDBACK_DIR = path.join(DATA_DIR, 'feedback'); // come in feedback.js
+const FEEDBACK_DIR = path.join(DATA_DIR, 'feedback'); // as in feedback.js
 
 const [out = 'feedback-export', flag] = process.argv.slice(2);
 const all = flag === '--all';
@@ -27,11 +27,11 @@ for (const f of list) {
     return name;
   });
   fs.writeFileSync(path.join(dir, 'feedback.md'), [
-    `# Feedback ${f.id}${f.status === 'done' ? ' (risolto)' : ''}`,
+    `# Feedback ${f.id}${f.status === 'done' ? ' (resolved)' : ''}`,
     '',
-    `- Da: ${f.user_name || f.username || 'utente eliminato'}${f.username ? ` (@${f.username})` : ''}`,
-    `- Quando: ${f.created_at}`,
-    `- Versione: ${f.version || '?'} · pagina: ${f.page || '?'} · workspace: ${f.ws || '?'}`,
+    `- From: ${f.user_name || f.username || 'deleted user'}${f.username ? ` (@${f.username})` : ''}`,
+    `- When: ${f.created_at}`,
+    `- Version: ${f.version || '?'} · page: ${f.page || '?'} · workspace: ${f.ws || '?'}`,
     `- Browser: ${f.client || '?'}`,
     '',
     f.text,
@@ -40,4 +40,4 @@ for (const f of list) {
     '',
   ].join('\n'));
 }
-console.log(`${list.length} feedback ${all ? '' : 'aperti '}esportati in ${out}`);
+console.log(`${list.length} ${all ? '' : 'open '}feedback exported to ${out}`);

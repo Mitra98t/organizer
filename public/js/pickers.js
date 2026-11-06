@@ -1,29 +1,30 @@
-// Modali per scegliere dal magazzino, con una ricerca come nella pagina Documenti:
-//  - pickDoc: un documento (file) da allegare a una mail; si cerca per nome, codice (anche alternativo), nome
-//    dell'articolo, tipo e versione, e si filtra per tipo; i documenti stanno raggruppati sotto il loro articolo;
-//  - pickItem: l'articolo (e il tipo di documento) in cui salvare un allegato ricevuto; con actions e senza tipo
-//    serve anche a spostare o copiare un documento in un altro articolo.
-// Il contenuto si ridisegna da solo mentre si scrive: il resto dell'app non si tocca.
-import { h, icon, S, api, act, docName, docKinds, dkAttrs, itemAttrs, fmtSize, filterChip, aliasCodes } from './core.js';
+// Modals to pick from the inventory, with a search like the Documents page's:
+//  - pickDoc: a document (file) to attach to a mail; searched by name, code (also alternative), item name, kind and
+//    version, and filtered by kind; the documents are grouped under their item;
+//  - pickItem: the item (and the document kind) to save a received attachment into; with actions and without the
+//    kind it also moves or copies a document to another item.
+// The content redraws itself while typing: the rest of the app is not touched.
+import { h, icon, S, api, act, docName, docKinds, dkAttrs, kindLabel, itemAttrs, fmtSize, filterChip, aliasCodes } from './core.js';
 import { fuzzy } from './autocomplete.js';
+import { tr } from './i18n.js';
 
 const lc = s => String(s ?? '').toLowerCase();
 const LIMIT = 60;
-// Chip del tipo di documento, con il suo colore.
-const kindChip = (k, on, onclick) => { const a = dkAttrs(k); return filterChip({ on, label: k, cls: `tint ${a.class}`, style: a.style, onclick }); };
+// Document kind chip, with its colour.
+const kindChip = (k, on, onclick) => { const a = dkAttrs(k); return filterChip({ on, label: kindLabel(k), cls: `tint ${a.class}`, style: a.style, onclick }); };
 
 function modal(title, cls) {
   const body = h('div.pk-body');
   const dialog = h(`dialog.fb.pk.${cls}`, { 'aria-label': title, onclose: () => dialog.remove() },
-    h('div.pk-h', h('h2', title), h('button.icon-btn', { type: 'button', title: 'Chiudi', 'aria-label': 'Chiudi', onclick: () => dialog.close() }, icon('x'))),
+    h('div.pk-h', h('h2', title), h('button.icon-btn', { type: 'button', title: tr('Close'), 'aria-label': tr('Close'), onclick: () => dialog.close() }, icon('x'))),
     body);
   document.body.append(dialog);
   dialog.showModal();
   return { dialog, body, close: () => dialog.close() };
 }
 
-// Punteggio rispetto alla ricerca (più basso = meglio, null = non c'entra): ogni parola deve trovarsi in almeno
-// un campo ("sch42 2.3" = codice e versione); per ogni parola conta il campo migliore (più il suo peso).
+// Score against the search (lower = better, null = unrelated): every word must be in at least one field ("sch42
+// 2.3" = code and version); for each word the best field counts (plus its weight).
 function score(q, fields) {
   if (!q) return 0;
   let total = 0;
@@ -39,11 +40,11 @@ function score(q, fields) {
   return total;
 }
 
-export function pickDoc({ title = 'Allega dal magazzino', onPick }) {
+export function pickDoc({ title = tr('Attach from the inventory'), onPick }) {
   const D = S.data;
   const m = modal(title, 'pk-docs');
   const state = { q: '', kind: null };
-  const input = h('input.filter', { type: 'search', placeholder: 'Cerca per nome, codice, articolo, tipo, versione…', autofocus: true, oninput: ev => { state.q = ev.target.value; draw(); } });
+  const input = h('input.filter', { type: 'search', placeholder: tr('Search by name, code, item, kind, version…'), autofocus: true, oninput: ev => { state.q = ev.target.value; draw(); } });
   const list = h('div.pk-list');
   const chips = h('div.toolbar.cats');
   m.body.append(input, chips, list);
@@ -57,19 +58,19 @@ export function pickDoc({ title = 'Allega dal magazzino', onPick }) {
       const it = D.itemById.get(d.item_id);
       return { d, it, r: score(q, [[docName(d)], [d.filename, 0.3], [it.code, 0.1], ...aliasCodes(it).map(a => [a, 0.2]), [it.name, 0.5], [d.kind, 1], [d.version, 1]]) };
     }).filter(x => x.r != null).sort((a, b) => a.r - b.r || b.d.created_at.localeCompare(a.d.created_at)).slice(0, LIMIT);
-    // Sotto il loro articolo, nell'ordine del primo trovato.
+    // Under their item, in the order of the first one found.
     const groups = new Map();
     for (const x of found) {
       if (!groups.has(x.it.id)) groups.set(x.it.id, []);
       groups.get(x.it.id).push(x.d);
     }
-    list.replaceChildren(...(!found.length ? [h('p.muted.pk-empty', docs.length ? 'Nessun documento trovato.' : 'Nel magazzino non ci sono ancora file.')] : []),
+    list.replaceChildren(...(!found.length ? [h('p.muted.pk-empty', docs.length ? tr('No document found.') : tr('There are no files in the inventory yet.'))] : []),
       ...[...groups].map(([id, ds]) => {
         const it = D.itemById.get(id);
         return h('div.pk-group',
           h('div.pk-item', h('span.code', itemAttrs(it), it.code), h('span.muted', it.name || '')),
           ds.map(d => h('button.pk-row', { type: 'button', onclick: () => { m.close(); onPick(d); } },
-            h('span.dk', dkAttrs(d.kind), d.kind), h('span.pk-name', docName(d)), d.version && h('span.muted.mono', `v${d.version}`),
+            h('span.dk', dkAttrs(d.kind), kindLabel(d.kind)), h('span.pk-name', docName(d)), d.version && h('span.muted.mono', `v${d.version}`),
             h('span.grow'), d.size != null && h('span.muted', fmtSize(d.size)))));
       }));
   }
@@ -77,7 +78,7 @@ export function pickDoc({ title = 'Allega dal magazzino', onPick }) {
   input.focus();
 }
 
-// Tipo proposto per un file, dall'estensione.
+// Kind suggested for a file, from its extension.
 function guessKind(name) {
   const ext = lc(name).split('.').pop();
   if (['bin', 'hex', 'elf', 'uf2', 'img', 'zip'].includes(ext)) return 'firmware';
@@ -87,33 +88,33 @@ function guessKind(name) {
   return 'altro';
 }
 
-// actions: i pulsanti in fondo, { label(articolo), icon, fn(articolo, tipo) }; il primo vale anche col doppio clic.
-// kinds false: senza la scelta del tipo. exclude: un articolo da non proporre (quello dove il documento sta già).
+// actions: the buttons at the bottom, { label(item), icon, fn(item, kind) }; the first one also works with a double
+// click. kinds false: without choosing the kind. exclude: an item not to offer (the one the document is already in).
 export function pickItem({ file, onPick, title, kinds: withKinds = true, exclude = null,
-  actions = [{ label: it => `Salva in ${it.code}`, icon: 'box', fn: onPick }] }) {
+  actions = [{ label: it => tr('Save in {code}', { code: it.code }), icon: 'box', fn: onPick }] }) {
   const D = S.data;
-  const m = modal(title || `Salva "${file.name}" nel magazzino`, 'pk-items');
+  const m = modal(title || tr('Save "{name}" in the inventory', { name: file.name }), 'pk-items');
   const state = { q: '', item: null, kind: docKinds().includes(guessKind(file.name)) ? guessKind(file.name) : 'altro' };
-  const input = h('input.filter', { type: 'search', placeholder: 'Articolo: codice (anche alternativo), nome, categoria…', oninput: ev => { state.q = ev.target.value; draw(); } });
+  const input = h('input.filter', { type: 'search', placeholder: tr('Item: code (also alternative), name, category…'), oninput: ev => { state.q = ev.target.value; draw(); } });
   const list = h('div.pk-list');
   const kinds = h('div.toolbar.cats');
   const pick = a => { if (state.item) { m.close(); a.fn(state.item, state.kind); } };
   const buttons = actions.map((a, i) => h(`button.btn${i ? '' : '.primary'}`, { type: 'button', onclick: () => pick(a) }));
-  m.body.append(input, list, ...(withKinds ? [h('div.pk-sub', 'Tipo di documento'), kinds] : []),
-    h('div.toolbar.pk-foot', buttons, h('button.btn.ghost', { type: 'button', onclick: m.close }, 'Annulla')));
+  m.body.append(input, list, ...(withKinds ? [h('div.pk-sub', tr('Document kind')), kinds] : []),
+    h('div.toolbar.pk-foot', buttons, h('button.btn.ghost', { type: 'button', onclick: m.close }, tr('Cancel'))));
 
   function draw() {
     const q = lc(state.q.trim());
     const found = D.items.filter(it => it.id !== exclude).map(it => ({ it, r: score(q, [[it.code], ...aliasCodes(it).map(a => [a, 0.1]), [it.name, 0.5], [it.category, 1]]) }))
       .filter(x => x.r != null).sort((a, b) => a.r - b.r || a.it.code.localeCompare(b.it.code)).slice(0, LIMIT);
-    list.replaceChildren(...(!found.length ? [h('p.muted.pk-empty', 'Nessun articolo trovato.')] : []),
+    list.replaceChildren(...(!found.length ? [h('p.muted.pk-empty', tr('No item found.'))] : []),
       ...found.map(({ it }) => h('button.pk-row', {
         type: 'button', class: state.item?.id === it.id ? 'on' : null,
         onclick: () => { state.item = it; draw(); }, ondblclick: () => { state.item = it; pick(actions[0]); },
       }, h('span.code', itemAttrs(it), it.code), h('span.pk-name', it.name || ''), h('span.grow'), it.category && h('span.muted', it.category))));
     kinds.replaceChildren(...docKinds().map(k => kindChip(k, state.kind === k, () => { state.kind = k; draw(); })));
     actions.forEach((a, i) => {
-      buttons[i].replaceChildren(icon(a.icon), state.item ? a.label(state.item) : i ? '' : 'Scegli un articolo');
+      buttons[i].replaceChildren(icon(a.icon), state.item ? a.label(state.item) : i ? '' : tr('Pick an item'));
       buttons[i].disabled = !state.item;
       buttons[i].hidden = i > 0 && !state.item;
     });
@@ -122,14 +123,14 @@ export function pickItem({ file, onPick, title, kinds: withKinds = true, exclude
   input.focus();
 }
 
-// Sposta (con le note) o copia (un file suo, senza note) un documento in un altro articolo.
+// Moves (with its notes) or copies (a file of its own, without notes) a document to another item.
 export function moveDoc(d) {
   const name = docName(d);
   pickItem({
-    file: { name }, title: `Sposta o copia "${name}"`, kinds: false, exclude: d.item_id,
+    file: { name }, title: tr('Move or copy "{name}"', { name }), kinds: false, exclude: d.item_id,
     actions: [
-      { label: it => `Sposta in ${it.code}`, icon: 'box', fn: it => act(() => api('PATCH', `/docs/${d.id}`, { item_id: it.id }), `${name} spostato in ${it.code}`) },
-      { label: it => `Copia in ${it.code}`, icon: 'copy', fn: it => act(() => api('POST', `/docs/${d.id}/copy`, { item_id: it.id }), `${name} copiato in ${it.code}`) },
+      { label: it => tr('Move to {code}', { code: it.code }), icon: 'box', fn: it => act(() => api('PATCH', `/docs/${d.id}`, { item_id: it.id }), tr('{name} moved to {code}', { name, code: it.code })) },
+      { label: it => tr('Copy to {code}', { code: it.code }), icon: 'copy', fn: it => act(() => api('POST', `/docs/${d.id}/copy`, { item_id: it.id }), tr('{name} copied to {code}', { name, code: it.code })) },
     ],
   });
 }

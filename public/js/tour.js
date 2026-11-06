@@ -1,57 +1,58 @@
-// Giro di Organizer: passi sull'app vera, dentro un workspace di prova solo tuo con contenuti finti
-// (server/tour.js). Ogni passo apre una pagina e mette in luce una sua parte con una scheda di spiegazione;
-// intanto si può usare l'app normalmente. Lo stato (passo, workspace di prova, quello da cui si arriva) sta in
-// localStorage, perché cambiare workspace ricarica la pagina. Alla prima entrata l'app chiede se fare il giro.
+// Organizer tour: steps on the real app, inside a demo workspace of your own with fake content (server/tour.js).
+// Each step opens a page and highlights a part of it with an explanation card; meanwhile the app can be used
+// normally. The state (step, demo workspace, the one you came from) is in localStorage, because switching workspace
+// reloads the page. On the first visit the app asks whether to take the tour.
 import { h, icon, S, api, act, render, toast, load, save, switchWorkspace, clearLocal } from './core.js';
+import { tr } from './i18n.js';
 
 const KEY = 'org.tour';
 const kbd = t => h('code.k', t);
 
-// sel: cosa mettere in luce (il primo elemento visibile); senza sel la scheda sta in un angolo, center: al
-// centro con lo sfondo scurito.
+// sel: what to highlight (the first visible element); without sel the card sits in a corner, center: in the middle
+// with the background darkened.
 function steps(ids) {
   return [
-    { hash: '#/agenda', center: true, title: 'Benvenuto nel giro',
-      text: ['Questo è un workspace di prova, solo tuo, con contenuti finti: Anna e Luca non esistono. Puoi scrivere, spuntare e cancellare quello che vuoi; alla fine lo elimini con un clic e torni al tuo.'] },
-    { hash: '#/agenda', sel: '.qrow', title: 'La barra rapida',
-      text: ['Una riga diventa una todo. Dentro: ', kbd('#codice'), ' un articolo, ', kbd('@progetto'), ', ', kbd('!ven'), ' la scadenza, ',
-        kbd('+anna'), ' la condividi, ', kbd('++anna'), ' gliela assegni. Con ', kbd('m:'), ' davanti è una mail, con ', kbd('n:'), ' una nota del diario.'] },
-    { hash: '#/agenda', title: 'Agenda',
-      text: ['Le cose da fare, per scadenza. Tutto quello che scrivi è privato finché non lo condividi: qui vedi anche le todo che Anna e Luca hanno condiviso con te o ti hanno assegnato.'] },
-    ids.entry && { hash: `#/v/${ids.entry}`, sel: '.editor', title: 'Una voce aperta',
-      text: ['Dettagli, sotto-attività, aggiornamenti con la data (cosa hai scoperto, cosa manca) e "Visibile a" per scegliere con chi condividerla. I codici come SCH-042 portano all\'articolo.'] },
-    { hash: '#/diario', title: 'Diario',
-      text: ['Le cose successe una volta che vanno ricordate. Con ', kbd('!ieri'), ' o ', kbd('!12/10'), ' dici quando è successo; con i codici e i progetti le ritrovi nell\'articolo e nel progetto.'] },
-    { hash: '#/progetti', title: 'Progetti',
-      text: ['Ogni progetto (', kbd('@rover'), ') raccoglie le sue todo, le mail, le note del diario e gli articoli del magazzino che usa. Si possono mettere in pausa e avere sottoprogetti.'] },
-    { hash: '#/magazzino', title: 'Magazzino',
-      text: ['Gli articoli per codice, a colonne per categoria: posizione, quantità, firmware, codici alternativi e componenti (PRD-ROVER contiene SCH-042, PSU-12 e la staffa). Nei suggerimenti basta un pezzo: ',
-        kbd('#sch42'), ' trova SCH-042.'] },
-    ids.pdf && { hash: `#/d/${ids.pdf}`, title: 'Documenti',
-      text: ['PDF, immagini e file di testo si leggono qui, con le versioni. Le note si attaccano a un punto preciso: sono tue, a meno che non le condividi (quella di Anna è condivisa con tutti).'] },
-    ids.model && { hash: `#/d/${ids.model}`, title: 'Modelli 3D',
-      text: ['STL, STEP e 3MF: trascina per ruotare, rotella o due dita per lo zoom. Anche qui una nota si aggancia a un punto del pezzo.'] },
-    { hash: '#/mail', sel: '.topic-card', title: 'Mail a topic',
-      text: ['La posta è personale: gli altri del workspace non la vedono. Ogni scheda è un topic con le sue conversazioni: il tasto a sinistra archivia una conversazione, trascinarla su un altro topic le unisce. Stella e colore per ritrovarle.'] },
-    ids.thread && { hash: `#/t/${ids.thread}`, sel: '.tp-tree', title: 'Dentro un topic',
-      text: ['A sinistra l\'albero delle mail, come in un forum: ogni risposta sotto quella a cui risponde. Al centro la mail scelta, con Rispondi e Rispondi a tutti (la bozza si scrive qui e parte da Thunderbird). A destra i collegamenti: articoli e progetti citati nelle mail si collegano da soli, e li togli se sono sbagliati.'] },
-    { hash: '#/chat', title: 'Chat',
-      text: ['Canali per tutti o per poche persone. ', kbd('+luca'), ' lo avvisa, ', kbd('[['), ' cita una voce, un documento o un articolo. Un canale si può silenziare: allora avvisa solo se ti citano.'] },
-    { hash: '#/agenda', sel: '.bell', title: 'Notifiche',
-      text: ['Qui arrivano citazioni, assegnazioni e mail. Da Impostazioni → Notifiche le ricevi anche sul telefono o sul computer, ad app chiusa.'] },
-    { hash: '#/agenda', sel: '#search', title: 'Cerca',
-      text: ['Cerca in tutto il workspace: voci, articoli, documenti, progetti e contatti.'] },
-    { hash: '#/impostazioni', title: 'Impostazioni',
-      text: ['Tema, notifiche, permessi del workspace, collegamento con Thunderbird e il comando ', kbd('org'), ' da terminale. Il giro si riapre da App e aiuto.'] },
-    { hash: null, center: true, end: true, title: 'Fine del giro',
-      text: ['Il workspace di prova si può eliminare adesso (torni al tuo) oppure tenere per provare ancora: lo trovi nel menu dei workspace e lo elimini da Impostazioni → App e aiuto.'] },
+    { hash: '#/agenda', center: true, title: tr('Welcome to the tour'),
+      text: [tr('This is a demo workspace, yours only, with fake content: Anna and Luca do not exist. You can write, tick and delete whatever you like; at the end you delete it with a click and go back to yours.')] },
+    { hash: '#/agenda', sel: '.qrow', title: tr('The quick bar'),
+      text: [tr('A line becomes a todo. Inside: '), kbd('#code'), tr(' an item, '), kbd('@project'), ', ', kbd('!fri'), tr(' the due date, '),
+        kbd('+anna'), tr(' shares it, '), kbd('++anna'), tr(' assigns it to her. With '), kbd('m:'), tr(' in front it is a mail, with '), kbd('n:'), tr(' a journal note.')] },
+    { hash: '#/agenda', title: tr('Agenda'),
+      text: [tr('Things to do, by due date. Everything you write is private until you share it: here you also see the todos Anna and Luca shared with you or assigned to you.')] },
+    ids.entry && { hash: `#/v/${ids.entry}`, sel: '.editor', title: tr('An open entry'),
+      text: [tr('Details, subtasks, dated updates (what you found out, what is missing) and "Visible to" to choose who to share it with. Codes like SCH-042 lead to the item.')] },
+    { hash: '#/diario', title: tr('Journal'),
+      text: [tr('Things that happened once and should be remembered. With '), kbd('!yesterday'), tr(' or '), kbd('!12/10'), tr(' you say when it happened; with codes and projects you find them again in the item and the project.')] },
+    { hash: '#/progetti', title: tr('Projects'),
+      text: [tr('Each project ('), kbd('@rover'), tr(') gathers its todos, mails, journal notes and the inventory items it uses. Projects can be paused and have subprojects.')] },
+    { hash: '#/magazzino', title: tr('Inventory'),
+      text: [tr('Items by code, in columns by category: location, quantity, firmware, alternative codes and components (PRD-ROVER contains SCH-042, PSU-12 and the bracket). In the suggestions a piece is enough: '),
+        kbd('#sch42'), tr(' finds SCH-042.')] },
+    ids.pdf && { hash: `#/d/${ids.pdf}`, title: tr('Documents'),
+      text: [tr('PDFs, images and text files are read here, with their versions. Notes are pinned to a precise point: they are yours unless you share them (Anna\'s is shared with everyone).')] },
+    ids.model && { hash: `#/d/${ids.model}`, title: tr('3D models'),
+      text: [tr('STL, STEP and 3MF: drag to rotate, wheel or two fingers to zoom. Here too a note hooks onto a point of the part.')] },
+    { hash: '#/mail', sel: '.topic-card', title: tr('Mail by topic'),
+      text: [tr('Mail is personal: the others in the workspace do not see it. Each card is a topic with its conversations: the button on the left archives a conversation, dragging it onto another topic merges them. Star and colour to find them again.')] },
+    ids.thread && { hash: `#/t/${ids.thread}`, sel: '.tp-tree', title: tr('Inside a topic'),
+      text: [tr('On the left the mail tree, like a forum: each reply under the one it answers. In the middle the chosen mail, with Reply and Reply all (the draft is written here and leaves from Thunderbird). On the right the links: items and projects mentioned in the mails link by themselves, and you remove them if they are wrong.')] },
+    { hash: '#/chat', title: tr('Chat'),
+      text: [tr('Channels for everyone or for a few people. '), kbd('+luca'), tr(' notifies him, '), kbd('[['), tr(' mentions an entry, a document or an item. A channel can be muted: then it notifies only when you are mentioned.')] },
+    { hash: '#/agenda', sel: '.bell', title: tr('Notifications'),
+      text: [tr('Mentions, assignments and mails arrive here. From Settings → Notifications you also get them on the phone or the computer, with the app closed.')] },
+    { hash: '#/agenda', sel: '#search', title: tr('Search'),
+      text: [tr('Searches the whole workspace: entries, items, documents, projects and contacts.')] },
+    { hash: '#/impostazioni', title: tr('Settings'),
+      text: [tr('Theme, notifications, workspace permissions, connection with Thunderbird and the '), kbd('org'), tr(' terminal command. The tour opens again from App and help.')] },
+    { hash: null, center: true, end: true, title: tr('End of the tour'),
+      text: [tr('The demo workspace can be deleted now (you go back to yours) or kept to keep trying: you find it in the workspace menu and delete it from Settings → App and help.')] },
   ].filter(Boolean);
 }
 
 export const tourState = () => load(KEY, null);
 const setState = st => (st ? save(KEY, st) : localStorage.removeItem(KEY));
 
-// ---------- inizio e fine ----------
+// ---------- start and end ----------
 export async function startTour({ restart = false } = {}) {
   const D = S.data;
   const r = await api('POST', '/tour/start');
@@ -69,7 +70,7 @@ export async function startTour({ restart = false } = {}) {
   render();
 }
 
-// Elimina il workspace di prova; se ci sei dentro torni a quello da cui sei partito (o al primo che hai).
+// Deletes the demo workspace; if you are in it you go back to the one you came from (or to your first one).
 export async function deleteTour() {
   const D = S.data;
   const st = tourState();
@@ -78,7 +79,7 @@ export async function deleteTour() {
   await api('POST', '/tour/end', { delete: true });
   if (D.workspace.id !== D.tourWs) {
     D.tourWs = null;
-    toast('Workspace di prova eliminato');
+    toast(tr('Demo workspace deleted'));
     return render();
   }
   const home = D.workspaces.find(w => w.id === st?.home && !w.tour) || D.workspaces.find(w => !w.tour && w.id !== D.tourWs);
@@ -91,7 +92,7 @@ export async function deleteTour() {
 function keep() {
   setState(null);
   hide();
-  toast('Il workspace di prova resta: lo trovi nel menu dei workspace');
+  toast(tr('The demo workspace stays: you find it in the workspace menu'));
   render();
 }
 
@@ -105,10 +106,10 @@ function go(n) {
   else render();
 }
 
-// ---------- scheda e luce ----------
+// ---------- card and highlight ----------
 const spot = h('div.tour-spot', { hidden: true });
 const card = h('div.tour-card', { hidden: true, role: 'dialog', 'aria-labelledby': 'tour-title' });
-let shown = -1; // passo disegnato nella scheda (si ridisegna solo quando cambia)
+let shown = -1; // step drawn in the card (redrawn only when it changes)
 let scrolled = -1;
 
 function hide() {
@@ -119,17 +120,17 @@ function hide() {
 
 function drawCard(s, i, n) {
   card.replaceChildren(
-    h('div.tour-h', h('h3#tour-title', s.title), !s.end && h('button.icon-btn.sm', { title: 'Esci dal giro', 'aria-label': 'Esci dal giro', onclick: () => go(n - 1) }, icon('x'))),
+    h('div.tour-h', h('h3#tour-title', s.title), !s.end && h('button.icon-btn.sm', { title: tr('Leave the tour'), 'aria-label': tr('Leave the tour'), onclick: () => go(n - 1) }, icon('x'))),
     h('p', s.text),
     s.end
       ? h('div.tour-foot.end',
-        h('button.btn.primary', { onclick: () => act(deleteTour) }, icon('trash'), 'Elimina e torna al mio workspace'),
-        h('button.btn', { onclick: keep }, 'Tienilo'),
-        h('button.btn.ghost', { onclick: () => act(() => startTour({ restart: true })) }, icon('restore'), 'Ricomincia'))
+        h('button.btn.primary', { onclick: () => act(deleteTour) }, icon('trash'), tr('Delete it and go back to my workspace')),
+        h('button.btn', { onclick: keep }, tr('Keep it')),
+        h('button.btn.ghost', { onclick: () => act(() => startTour({ restart: true })) }, icon('restore'), tr('Start over')))
       : h('div.tour-foot',
-        h('span.tour-n', `${i + 1} di ${n}`),
-        i > 0 && h('button.btn.sm.ghost', { onclick: () => go(i - 1) }, 'Indietro'),
-        h('button.btn.sm.primary', { onclick: () => go(i + 1) }, i === 0 ? 'Iniziamo' : 'Avanti')));
+        h('span.tour-n', tr('{i} of {n}', { i: i + 1, n })),
+        i > 0 && h('button.btn.sm.ghost', { onclick: () => go(i - 1) }, tr('Back')),
+        h('button.btn.sm.primary', { onclick: () => go(i + 1) }, i === 0 ? tr('Let\'s start') : tr('Next'))));
 }
 
 const visible = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
@@ -155,7 +156,7 @@ function place() {
     const r = el.getBoundingClientRect();
     if (r.top < 0 || r.bottom > innerHeight) el.scrollIntoView({ block: 'center' });
   }
-  // Luce: sull'elemento, oppure (al centro) uno sfondo scuro su tutto; negli altri passi niente.
+  // Highlight: on the element, or (centred) a dark background over everything; nothing in the other steps.
   spot.classList.toggle('dim', !!s.center);
   if (el) {
     const r = el.getBoundingClientRect();
@@ -166,7 +167,7 @@ function place() {
     Object.assign(spot.style, { top: `${innerHeight / 2}px`, left: `${innerWidth / 2}px`, width: '0px', height: '0px' });
     spot.hidden = false;
   } else spot.hidden = true;
-  // Scheda: su telefono in basso; al centro; sotto o sopra l'elemento; altrimenti in basso a destra.
+  // Card: at the bottom on a phone; in the centre; below or above the element; otherwise bottom right.
   card.className = 'tour-card';
   Object.assign(card.style, { top: '', left: '', right: '', bottom: '' });
   if (narrow) return card.classList.add('bottom');
@@ -182,7 +183,7 @@ function place() {
   card.style.left = `${Math.max(16, Math.min(innerWidth - cw - 16, r.left))}px`;
 }
 
-// ---------- invito alla prima entrata ----------
+// ---------- invitation on the first visit ----------
 let invited = false;
 function invite() {
   invited = true;
@@ -196,27 +197,27 @@ function invite() {
   };
   const dialog = h('dialog.fb.tour-invite', { 'aria-labelledby': 'ti-title', oncancel: () => close(true) },
     h('div.ti-body',
-      h('h2#ti-title', icon('help'), 'Vuoi fare il giro?'),
-      h('p', 'Un giro guidato di Organizer in un paio di minuti: agenda, magazzino, documenti, mail, chat. Si fa su un workspace di prova con contenuti finti, che alla fine elimini con un clic.'),
+      h('h2#ti-title', icon('help'), tr('Take the tour?')),
+      h('p', tr('A guided tour of Organizer in a couple of minutes: agenda, inventory, documents, mail, chat. It runs on a demo workspace with fake content, which you delete with a click at the end.')),
       h('div.toolbar',
-        h('button.btn.primary', { onclick: () => { close(false); act(startTour); } }, 'Inizia il giro'),
-        h('button.btn.ghost', { onclick: () => close(true) }, 'Più tardi')),
-      h('p.muted', 'Lo ritrovi sempre in Impostazioni → App e aiuto.')));
+        h('button.btn.primary', { onclick: () => { close(false); act(startTour); } }, tr('Start the tour')),
+        h('button.btn.ghost', { onclick: () => close(true) }, tr('Later'))),
+      h('p.muted', tr('You can always find it in Settings → App and help.'))));
   document.body.append(dialog);
   dialog.showModal();
 }
 
-// Dopo ogni disegno dell'app (vedi app.js).
+// After every render of the app (see app.js).
 export function tourTick() {
   const D = S.data;
   if (!D?.workspace) return;
   const st = tourState();
-  if (st && 'tourWs' in D && D.tourWs !== st.ws) setState(null); // il workspace di prova non c'è più
+  if (st && 'tourWs' in D && D.tourWs !== st.ws) setState(null); // the demo workspace is gone
   if (!st && D.onboarded === false && !invited && D.workspace.id !== D.tourWs) invite();
   place();
 }
 
-// Le pagine cambiano altezza da sole (immagini, anteprime, colonne): la luce segue.
+// Pages change height by themselves (images, previews, columns): the highlight follows.
 addEventListener('resize', () => requestAnimationFrame(place));
 addEventListener('scroll', () => requestAnimationFrame(place), { passive: true });
 setInterval(() => { if (!card.hidden || tourState()) place(); }, 500);

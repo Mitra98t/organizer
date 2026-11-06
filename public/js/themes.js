@@ -1,12 +1,13 @@
-// Temi dell'interfaccia. Oltre a quelli di Organizer (automatico, chiaro, scuro) ci sono temi ispirati a
-// schemi di colori famosi di Neovim e VS Code, e alcuni temi "funky" (funky: true). Per ognuno bastano i colori
-// di base: le varianti tenui (sfondo dei codici, dei tag, dell'accento…) si ricavano mescolandoli con il colore
-// dei pannelli. La scelta vale per il dispositivo (localStorage "org.theme"), come prima.
+// Interface themes. Besides Organizer's (automatic, light, dark) there are themes inspired by famous Neovim and VS
+// Code colour schemes, and some "funky" themes (funky: true). For each one the base colours are enough: the soft
+// variants (background of codes, tags, the accent…) come from mixing them with the panels' colour. The choice is
+// per device (localStorage "org.theme").
 
-// bg: sfondo · panel/panel2: pannelli · text/muted: testo · line: bordi · accent/ink: colore principale e testo
-// sopra di esso · blue: codici e mail · purple: tag e note · red/orange/yellow: errori, oggi, a breve.
-// Facoltativi: grad (sfondo sfumato dietro ai pannelli) · glow (l'accento si illumina: pulsanti, menu, titoli) ·
-// radius (angoli dei riquadri) · mono (tutto il testo in carattere monospaziato, da terminale).
+// bg: background · panel/panel2: panels · text/muted: text · line: borders · accent/ink: main colour and the text on
+// it · blue: codes and mail · purple: tags and notes · red/orange/yellow: errors, today, soon.
+// Optional: grad (gradient background behind the panels) · glow (the accent glows: buttons, menus, titles) ·
+// radius (corners of the boxes) · mono (all text in a monospaced font, like a terminal).
+import { tr } from './i18n.js';
 export const THEMES = {
   tokyonight: { name: 'Tokyo Night', dark: true, bg: '#16161e', panel: '#1f2335', panel2: '#292e42', text: '#c0caf5', muted: '#7a82a9', line: '#2f3549', accent: '#7aa2f7', ink: '#16161e', blue: '#7dcfff', purple: '#bb9af7', red: '#f7768e', orange: '#ff9e64', yellow: '#e0af68' },
   catppuccin: { name: 'Catppuccin Mocha', dark: true, bg: '#181825', panel: '#1e1e2e', panel2: '#313244', text: '#cdd6f4', muted: '#9399b2', line: '#383a4f', accent: '#cba6f7', ink: '#1e1e2e', blue: '#89b4fa', purple: '#f5c2e7', red: '#f38ba8', orange: '#fab387', yellow: '#f9e2af' },
@@ -36,21 +37,21 @@ export const THEMES = {
   vaporwave: { name: 'Vaporwave', funky: true, dark: true, glow: true, radius: '14px', bg: '#1b1035', panel: '#241446', panel2: '#2f1a5c', text: '#fdf2ff', muted: '#b9a3e3', line: '#3b2470', accent: '#01cdfe', ink: '#12082a', blue: '#05ffa1', purple: '#ff71ce', red: '#ff5e8a', orange: '#ff9e5e', yellow: '#fffb96',
     grad: 'radial-gradient(circle at 15% 0%, #ff71ce55 0, transparent 45%), radial-gradient(circle at 90% 100%, #01cdfe44 0, transparent 50%)' },
   matrix: { name: 'Matrix', funky: true, dark: true, glow: true, mono: true, bg: '#000300', panel: '#020b03', panel2: '#071a09', text: '#b6ffb9', muted: '#4fae58', line: '#0e3a14', accent: '#00ff41', ink: '#001a05', blue: '#39ff88', purple: '#a5ff7a', red: '#ff4d4d', orange: '#ffb000', yellow: '#d8ff3e' },
-  amber: { name: 'Terminale ambra', funky: true, dark: true, glow: true, mono: true, bg: '#120b02', panel: '#1a1004', panel2: '#241707', text: '#ffcf70', muted: '#b07f2c', line: '#3a2608', accent: '#ffb000', ink: '#120b02', blue: '#ffd27a', purple: '#ff9d3d', red: '#ff5a36', orange: '#ff8a00', yellow: '#ffe08a' },
+  amber: { name: tr('Amber terminal'), funky: true, dark: true, glow: true, mono: true, bg: '#120b02', panel: '#1a1004', panel2: '#241707', text: '#ffcf70', muted: '#b07f2c', line: '#3a2608', accent: '#ffb000', ink: '#120b02', blue: '#ffd27a', purple: '#ff9d3d', red: '#ff5a36', orange: '#ff8a00', yellow: '#ffe08a' },
   cobalt2: { name: 'Cobalt2', funky: true, dark: true, bg: '#15232d', panel: '#193549', panel2: '#1f4662', text: '#ffffff', muted: '#9fb6c6', line: '#234e6d', accent: '#ffc600', ink: '#193549', blue: '#9effff', purple: '#fb94ff', red: '#ff628c', orange: '#ff9d00', yellow: '#ffc600' },
   shadesofpurple: { name: 'Shades of Purple', funky: true, dark: true, bg: '#1e1e3f', panel: '#2d2b55', panel2: '#3a3772', text: '#ffffff', muted: '#a599e9', line: '#43418a', accent: '#fad000', ink: '#2d2b55', blue: '#9effff', purple: '#fb94ff', red: '#ec3a37', orange: '#ff9d00', yellow: '#fad000' },
   halloween: { name: 'Halloween', funky: true, dark: true, glow: true, bg: '#120c12', panel: '#1c131c', panel2: '#2a1b2a', text: '#f3e9dc', muted: '#a7929f', line: '#3b2a3b', accent: '#ff7518', ink: '#120c12', blue: '#a3ff76', purple: '#b267e6', red: '#ff3b3b', orange: '#ff7518', yellow: '#ffd23f',
     grad: 'radial-gradient(circle at 50% 120%, #ff751833 0, transparent 60%)' },
   bubblegum: { name: 'Bubblegum', funky: true, dark: false, radius: '16px', bg: '#ffe9f3', panel: '#fff6fb', panel2: '#ffe0ee', text: '#4a1d3a', muted: '#a0668a', line: '#fbc8df', accent: '#ff4fa3', ink: '#ffffff', blue: '#2f8cff', purple: '#a259ff', red: '#e0245e', orange: '#ff7a1a', yellow: '#c99700',
     grad: 'radial-gradient(circle at 10% 10%, #ffc2e2 0, transparent 40%), radial-gradient(circle at 90% 80%, #c9e4ff 0, transparent 45%)' },
-  sorbetto: { name: 'Sorbetto', funky: true, dark: false, radius: '14px', bg: '#f4f1ff', panel: '#ffffff', panel2: '#eef0ff', text: '#2d2a4a', muted: '#7a7699', line: '#e1defa', accent: '#00b39b', ink: '#ffffff', blue: '#4f7cff', purple: '#c04de0', red: '#e5484d', orange: '#f07d18', yellow: '#b58400',
+  sorbetto: { name: tr('Sorbet'), funky: true, dark: false, radius: '14px', bg: '#f4f1ff', panel: '#ffffff', panel2: '#eef0ff', text: '#2d2a4a', muted: '#7a7699', line: '#e1defa', accent: '#00b39b', ink: '#ffffff', blue: '#4f7cff', purple: '#c04de0', red: '#e5484d', orange: '#f07d18', yellow: '#b58400',
     grad: 'linear-gradient(135deg, #ffe6f2 0%, #e9f0ff 50%, #e6fff5 100%)' },
-  limonata: { name: 'Limonata', funky: true, dark: false, bg: '#fbffe0', panel: '#fffff4', panel2: '#f3f9d2', text: '#2a3300', muted: '#6f7a3a', line: '#e3eeb1', accent: '#7ab800', ink: '#ffffff', blue: '#0077c8', purple: '#b03fb5', red: '#d6262e', orange: '#e86a00', yellow: '#a88a00',
+  limonata: { name: tr('Lemonade'), funky: true, dark: false, bg: '#fbffe0', panel: '#fffff4', panel2: '#f3f9d2', text: '#2a3300', muted: '#6f7a3a', line: '#e3eeb1', accent: '#7ab800', ink: '#ffffff', blue: '#0077c8', purple: '#b03fb5', red: '#d6262e', orange: '#e86a00', yellow: '#a88a00',
     grad: 'radial-gradient(circle at 100% 0%, #fff27a66 0, transparent 50%)' },
 };
 
-// I temi di Organizer: colori nel CSS (auto segue il sistema, chiaro/scuro forzati).
-export const BASE_THEMES = { auto: 'Organizer automatico', light: 'Organizer chiaro', dark: 'Organizer scuro' };
+// Organizer's themes: colours in the CSS (auto follows the system, light/dark forced).
+export const BASE_THEMES = { auto: tr('Organizer automatic'), light: tr('Organizer light'), dark: tr('Organizer dark') };
 
 const mix = (c, pct, base) => `color-mix(in srgb, ${c} ${pct}%, ${base})`;
 
@@ -78,12 +79,12 @@ export function applyTheme(id) {
   const root = document.documentElement;
   for (const k of KEYS) root.style.removeProperty(k);
   const t = THEMES[id];
-  // data-theme: chiaro o scuro di base (le regole del CSS che dipendono dal tema); i colori sono inline.
+  // data-theme: base light or dark (the CSS rules that depend on the theme); the colours are inline.
   root.dataset.theme = t ? (t.dark ? 'dark' : 'light') : id in BASE_THEMES ? id : 'auto';
   if (t) for (const [k, v] of Object.entries(vars(t))) root.style.setProperty(k, v);
-  // Accento luminoso (temi funky): le regole stanno nel CSS, sotto [data-glow].
+  // Glowing accent (funky themes): the rules live in the CSS, under [data-glow].
   root.toggleAttribute('data-glow', !!t?.glow);
-  // Colore della barra del browser / dell'app installata.
+  // Colour of the browser bar / of the installed app.
   const bg = t ? t.bg : getComputedStyle(root).getPropertyValue('--bg').trim();
   document.querySelectorAll('meta[name="theme-color"]').forEach(m => m.setAttribute('content', bg));
 }
@@ -91,6 +92,6 @@ export function applyTheme(id) {
 export const currentTheme = () => localStorage.getItem('org.theme') || 'auto';
 
 export function setTheme(id) {
-  try { localStorage.setItem('org.theme', id); } catch { /* modalità privata: vale fino alla chiusura */ }
+  try { localStorage.setItem('org.theme', id); } catch { /* private mode: only until the app is closed */ }
   applyTheme(id);
 }

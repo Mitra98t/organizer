@@ -1,14 +1,14 @@
-// Database dei dati: uno per workspace (file SQLite separati). Quale usare lo decide la richiesta in corso:
-// `db` è un riferimento che punta al database del workspace attivo (AsyncLocalStorage), così il resto
-// del server scrive `db.prepare(...)` senza sapere quale workspace sta servendo.
-// Utenti, sessioni e appartenenze ai workspace stanno invece in accounts.db (vedi accounts.js).
+// Data databases: one per workspace (separate SQLite files). Which one to use is decided by the current request:
+// `db` is a reference pointing to the active workspace's database (AsyncLocalStorage), so the rest of the server
+// writes `db.prepare(...)` without knowing which workspace it is serving.
+// Users, sessions and workspace memberships live in accounts.db instead (see accounts.js).
 import { DatabaseSync } from 'node:sqlite';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'node:fs';
 import path from 'node:path';
 
 export const DATA_DIR = path.resolve(process.env.DATA_DIR || 'data');
-export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads'); // condivisa: i file hanno nomi casuali
+export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads'); // shared: the files have random names
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 export function openSqlite(file) {
@@ -17,8 +17,8 @@ export function openSqlite(file) {
   return conn;
 }
 
-// Ogni elemento è una migrazione; non modificare quelle già rilasciate, aggiungerne di nuove in coda.
-// Una migrazione è SQL, oppure (steps) SQL e poi passi in JS sulla stessa connessione, nella stessa transazione.
+// Each element is a migration; do not change released ones, add new ones at the end.
+// A migration is SQL, or (steps) SQL followed by JS steps on the same connection, in the same transaction.
 const steps = (sql, ...fns) => conn => { conn.exec(sql); for (const f of fns) f(conn); };
 
 const MIGRATIONS = [
@@ -126,7 +126,7 @@ const MIGRATIONS = [
   );
   CREATE INDEX documents_item ON documents(item_id);
   `,
-  // v2: cestino (soft delete), rubrica, mail con allegati
+  // v2: trash (soft delete), address book, mails with attachments
   `
   ALTER TABLE entries ADD COLUMN deleted_at TEXT;
   ALTER TABLE entries ADD COLUMN deleted_by INTEGER REFERENCES users ON DELETE SET NULL;
@@ -170,7 +170,7 @@ const MIGRATIONS = [
     expires_at TEXT NOT NULL
   );
   `,
-  // v3: sottoprogetti e articoli di magazzino collegati a mano a un progetto
+  // v3: subprojects and inventory items linked to a project by hand
   `
   ALTER TABLE projects ADD COLUMN parent_id INTEGER REFERENCES projects ON DELETE SET NULL;
   CREATE TABLE project_items (
@@ -181,8 +181,8 @@ const MIGRATIONS = [
   );
   CREATE INDEX project_items_item ON project_items(item_id);
   `,
-  // v4: note sui documenti. Con page/x/y è un segnaposto su un punto del file (x, y in 0..1),
-  // senza è una nota generale sul file.
+  // v4: notes on documents. With page/x/y it is a pin on a point of the file (x, y in 0..1),
+  // without them it is a general note on the file.
   `
   CREATE TABLE doc_notes (
     id INTEGER PRIMARY KEY,
@@ -200,8 +200,8 @@ const MIGRATIONS = [
   );
   CREATE INDEX doc_notes_doc ON doc_notes(doc_id);
   `,
-  // v5: link opzionale sugli articoli; voci in più progetti (project_id resta il principale,
-  // entry_projects contiene gli altri).
+  // v5: optional link on items; entries in several projects (project_id stays the main one,
+  // entry_projects holds the others).
   `
   ALTER TABLE items ADD COLUMN url TEXT NOT NULL DEFAULT '';
   CREATE TABLE entry_projects (
@@ -211,7 +211,7 @@ const MIGRATIONS = [
   );
   CREATE INDEX entry_projects_project ON entry_projects(project_id);
   `,
-  // v6: fascia oraria dei contatti; colori scelti a mano (tinta 0..359) per progetti e categorie.
+  // v6: contacts' time slot; colours picked by hand (hue 0..359) for projects and categories.
   `
   ALTER TABLE contacts ADD COLUMN timeslot TEXT NOT NULL DEFAULT '';
   ALTER TABLE projects ADD COLUMN hue INTEGER;
@@ -220,18 +220,18 @@ const MIGRATIONS = [
     hue INTEGER NOT NULL
   );
   `,
-  // v7: workspace. La tabella users di ogni workspace diventa una copia dei suoi membri (nomi e ruolo)
-  // per le chiavi esterne e i nomi; password e sessioni vivono in accounts.db. member = 0: ex membro.
+  // v7: workspaces. Each workspace's users table becomes a copy of its members (names and role) for foreign keys
+  // and names; passwords and sessions live in accounts.db. member = 0: former member.
   `
   ALTER TABLE users ADD COLUMN member INTEGER NOT NULL DEFAULT 1;
   `,
-  // v8: stato dell'articolo: '' attivo, 'outdated' superato, 'discarded' scartato (valutato e poi lasciato perdere).
-  // Dalla 0.20.5 anche 'evaluation' (in valutazione), senza cambiare lo schema.
+  // v8: item status: '' active, 'outdated' superseded, 'discarded' (evaluated and then dropped).
+  // Since 0.20.5 also 'evaluation' (being evaluated), without changing the schema.
   `
   ALTER TABLE items ADD COLUMN status TEXT NOT NULL DEFAULT '';
   `,
-  // v9: chat del workspace. I collegamenti stanno nel testo: #CODICE, @progetto, [[doc:12]], [[voce:34]], [[contatto:5]].
-  // chat_read_id: l'ultimo messaggio letto da ogni persona (per il numero di non letti).
+  // v9: workspace chat. Links live in the text: #CODE, @project, [[doc:12]], [[voce:34]], [[contatto:5]].
+  // chat_read_id: the last message read by each person (for the unread count).
   `
   CREATE TABLE chat_messages (
     id INTEGER PRIMARY KEY,
@@ -243,8 +243,8 @@ const MIGRATIONS = [
   );
   ALTER TABLE users ADD COLUMN chat_read_id INTEGER NOT NULL DEFAULT 0;
   `,
-  // v10: collegamenti scritti nelle voci, per i backlink: [[doc:ID]] [[voce:ID]] [[contatto:ID]] [[progetto:ID]]
-  // e, nelle mail, i codici di magazzino scritti senza # (kind 'articolo'). Ricalcolati a ogni modifica del testo.
+  // v10: links written in entries, for backlinks: [[doc:ID]] [[voce:ID]] [[contatto:ID]] [[progetto:ID]]
+  // and, in mails, inventory codes written without # (kind 'articolo'). Computed again at every text change.
   `
   CREATE TABLE entry_links (
     entry_id INTEGER NOT NULL REFERENCES entries ON DELETE CASCADE,
@@ -254,7 +254,7 @@ const MIGRATIONS = [
   );
   CREATE INDEX entry_links_target ON entry_links(kind, target_id);
   `,
-  // v11: tipi di documento aggiunti dal workspace (oltre a quelli fissi) e mail in attesa di risposta.
+  // v11: document kinds added by the workspace (besides the built-in ones) and mails awaiting a reply.
   `
   CREATE TABLE doc_kinds (
     name TEXT PRIMARY KEY,
@@ -263,12 +263,12 @@ const MIGRATIONS = [
   );
   ALTER TABLE entries ADD COLUMN awaiting_reply INTEGER NOT NULL DEFAULT 0;
   `,
-  // v12: colore scelto per un contatto (tinta 0..359; NULL = automatico dall'indirizzo).
+  // v12: colour picked for a contact (hue 0..359; NULL = automatic from the address).
   `
   ALTER TABLE contacts ADD COLUMN hue INTEGER;
   `,
-  // v13: codici alternativi degli articoli (oltre al codice principale, con cui l'articolo è noto).
-  // Ogni codice, principale o alternativo, appartiene a un solo articolo.
+  // v13: items' alternative codes (besides the main code, by which the item is known).
+  // Each code, main or alternative, belongs to one item only.
   `
   CREATE TABLE item_aliases (
     code TEXT PRIMARY KEY COLLATE NOCASE,
@@ -277,14 +277,14 @@ const MIGRATIONS = [
   );
   CREATE INDEX item_aliases_item ON item_aliases(item_id);
   `,
-  // v14: note sui modelli 3D. Il punto è x, y, z (0..1 nel riquadro che contiene il modello), con page = 1.
+  // v14: notes on 3D models. The point is x, y, z (0..1 in the box containing the model), with page = 1.
   `
   ALTER TABLE doc_notes ADD COLUMN z REAL;
   `,
-  // v15: mail con l'estensione di Thunderbird (server/thunderbird.js). mail_outbox: le mail da aprire in
-  // Thunderbird; mail_messages: i messaggi delle conversazioni (mandati e risposte arrivate), legati alla mail
-  // di Organizer a cui appartengono. Una mail scritta come risposta ha mail_thread (la prima mail della
-  // conversazione) e reply_to (il messaggio a cui risponde).
+  // v15: mail with the Thunderbird extension (server/thunderbird.js). mail_outbox: the mails to open in
+  // Thunderbird; mail_messages: the conversations' messages (sent and replies received), tied to the Organizer
+  // mail they belong to. A mail written as a reply has mail_thread (the conversation's first mail) and reply_to
+  // (the message it replies to).
   `
   CREATE TABLE mail_outbox (
     id INTEGER PRIMARY KEY,
@@ -311,12 +311,12 @@ const MIGRATIONS = [
   ALTER TABLE entries ADD COLUMN mail_thread INTEGER REFERENCES entries ON DELETE SET NULL;
   ALTER TABLE entries ADD COLUMN reply_to INTEGER REFERENCES mail_messages ON DELETE SET NULL;
   `,
-  // v16: tutto è privato di chi lo crea, tranne magazzino e documenti. Voci, progetti, contatti e note sui
-  // documenti si condividono con delle persone (shares) o con tutti (shared_all). La colonna private non conta
-  // più. I dati di prima diventano privati di chi li ha creati (chi aveva una voce assegnata la vede ancora);
-  // ciò che non ha più un autore resta di tutti.
-  // Chat a canali: "everyone" = tutti i membri del workspace leggono e scrivono, altrimenti chat_members
-  // (can_write 0 = solo lettura). chat_reads: l'ultimo messaggio letto per canale. La chat di prima è "generale".
+  // v16: everything is private to whoever creates it, except inventory and documents. Entries, projects, contacts
+  // and notes on documents are shared with some people (shares) or with everyone (shared_all). The private column
+  // no longer counts. Earlier data becomes private to whoever created it (whoever had an entry assigned still sees
+  // it); what has no author any more stays everyone's.
+  // Channel chat: "everyone" = all workspace members read and write, otherwise chat_members (can_write 0 =
+  // read-only). chat_reads: the last message read per channel. The earlier chat becomes "general".
   `
   CREATE TABLE shares (
     kind TEXT NOT NULL CHECK (kind IN ('entry', 'project', 'contact', 'docnote')),
@@ -355,27 +355,27 @@ const MIGRATIONS = [
     PRIMARY KEY (channel_id, user_id)
   );
   ALTER TABLE chat_messages ADD COLUMN channel_id INTEGER REFERENCES chat_channels ON DELETE CASCADE;
-  INSERT INTO chat_channels (id, name, everyone, created_at) VALUES (1, 'generale', 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+  INSERT INTO chat_channels (id, name, everyone, created_at) VALUES (1, 'general', 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
   UPDATE chat_messages SET channel_id = 1;
   INSERT INTO chat_reads (channel_id, user_id, read_id) SELECT 1, id, chat_read_id FROM users WHERE chat_read_id > 0;
   CREATE INDEX chat_messages_channel ON chat_messages(channel_id, id);
   `,
-  // v17: voci create offline nell'app. client_id lo genera l'app: se l'invio si ripete (rete caduta a metà)
-  // la voce non si crea due volte.
+  // v17: entries created offline in the app. The app generates client_id: if sending is repeated (network dropped
+  // halfway) the entry is not created twice.
   `
   ALTER TABLE entries ADD COLUMN client_id TEXT;
   CREATE UNIQUE INDEX entries_client ON entries(created_by, client_id) WHERE client_id IS NOT NULL;
   `,
-  // v18: canali silenziati (per persona): niente notifiche per ogni messaggio, solo per le citazioni.
+  // v18: muted channels (per person): no notification for every message, only for mentions.
   `
   ALTER TABLE chat_reads ADD COLUMN muted INTEGER NOT NULL DEFAULT 0;
   `,
-  // v19: mail a thread. Un thread (personale, di owner_id) raccoglie i messaggi ricevuti e mandati e le mail
-  // scritte in Organizer (entries.thread_id); attivo finché non lo si archivia. mail_thread_links: i
-  // collegamenti scelti a mano o trovati nei messaggi (codici di magazzino); quelli citati nelle mail scritte in
-  // Organizer arrivano da entry_links. I messaggi ora appartengono al thread (entry_id solo per quelli mandati
-  // da una mail di Organizer); read_at per quelli ricevuti. Le conversazioni di prima diventano thread: una
-  // mail mandata che non aspetta risposta finisce tra gli archiviati.
+  // v19: mail threads. A thread (personal, of owner_id) gathers the messages received and sent and the mails
+  // written in Organizer (entries.thread_id); active until archived. mail_thread_links: the links picked by hand
+  // or found in the messages (inventory codes); those mentioned in mails written in Organizer come from
+  // entry_links. Messages now belong to the thread (entry_id only for those sent from an Organizer mail);
+  // read_at for the received ones. The earlier conversations become threads: a sent mail not awaiting a reply
+  // ends up among the archived ones.
   steps(`
   CREATE TABLE mail_threads (
     id INTEGER PRIMARY KEY,
@@ -425,7 +425,7 @@ const MIGRATIONS = [
     SELECT m.id, e.thread_id, CASE WHEN m.direction = 'out' THEN m.entry_id END, m.direction, m.message_id, m.from_addr, m.to_addr, m.cc, m.subject,
       m.body, m.attachments, m.date, m.created_at, m.created_at
     FROM mail_messages m JOIN entries e ON e.id = m.entry_id WHERE e.thread_id IS NOT NULL;
-  -- Cancellando la tabella vecchia SQLite azzera entries.reply_to (ON DELETE SET NULL): si salva e si rimette.
+  -- Dropping the old table SQLite clears entries.reply_to (ON DELETE SET NULL): save it and put it back.
   CREATE TEMP TABLE keep_reply AS SELECT id, reply_to FROM entries WHERE reply_to IS NOT NULL;
   DROP TABLE mail_messages;
   ALTER TABLE mail_messages_v19 RENAME TO mail_messages;
@@ -435,7 +435,7 @@ const MIGRATIONS = [
   CREATE INDEX mail_messages_thread ON mail_messages(thread_id, date);
   CREATE INDEX mail_messages_mid ON mail_messages(message_id);
   `, conn => {
-    // I thread nati dalle mail di prima prendono l'oggetto senza "Re:", "R:", "Fwd:"… (come cleanSubject).
+    // Threads born from earlier mails take the subject without "Re:", "R:", "Fwd:"… (like cleanSubject).
     const re = /^\s*((re|r|fw|fwd|i|aw|sv)\s*(\[\d+\])?\s*:\s*)+/i;
     const set = conn.prepare('UPDATE mail_threads SET subject = ? WHERE id = ?');
     for (const t of conn.prepare('SELECT id, subject FROM mail_threads').all()) {
@@ -443,16 +443,16 @@ const MIGRATIONS = [
       if (s && s !== t.subject) set.run(s, t.id);
     }
   }),
-  // v20: thread nel cestino. Eliminato, porta con sé le mail scritte in Organizer che ne fanno parte (stesso
-  // deleted_at): si ripristinano insieme.
+  // v20: threads in the trash. When deleted, it takes along the mails written in Organizer that belong to it (same
+  // deleted_at): they are restored together.
   `
   ALTER TABLE mail_threads ADD COLUMN deleted_at TEXT;
   ALTER TABLE mail_threads ADD COLUMN deleted_by INTEGER;
   `,
-  // v21: la posta a topic. Un topic (personale) raccoglie una o più conversazioni (mail_threads), ognuna con
-  // stella e colore; l'albero delle mail viene da in_reply_to e refs (References). I collegamenti tolti a mano
-  // restano come hidden: non tornano. Si riparte da zero: restano solo i thread con mail scritte in Organizer
-  // (ognuno nel suo topic); il resto lo ricarica l'estensione di Thunderbird (l'ultimo mese).
+  // v21: mail by topic. A topic (personal) gathers one or more conversations (mail_threads), each with star and
+  // colour; the mail tree comes from in_reply_to and refs (References). Links removed by hand stay as hidden: they
+  // do not come back. Starting over: only threads with mails written in Organizer stay (each in its own topic);
+  // the rest is loaded again by the Thunderbird extension (the last month).
   `
   CREATE TABLE mail_topics (
     id INTEGER PRIMARY KEY,
@@ -473,7 +473,7 @@ const MIGRATIONS = [
   INSERT INTO mail_topics (id, owner_id, title, created_at) SELECT id, owner_id, subject, created_at FROM mail_threads;
   UPDATE mail_threads SET topic_id = id;
   `,
-  // v22: anche un topic si collega (a un progetto, un articolo…), oltre alle sue conversazioni.
+  // v22: a topic can be linked too (to a project, an item…), besides its conversations.
   `
   CREATE TABLE mail_topic_links (
     topic_id INTEGER NOT NULL REFERENCES mail_topics ON DELETE CASCADE,
@@ -482,8 +482,8 @@ const MIGRATIONS = [
     PRIMARY KEY (topic_id, kind, target_id)
   );
   `,
-  // v23: note su un pezzo di testo di un PDF: quote è il testo selezionato, marks i riquadri evidenziati
-  // (JSON [[pagina, x, y, w, h], …] in 0..1); page/x/y restano il segnaposto, alla fine della prima riga.
+  // v23: notes on a piece of a PDF's text: quote is the selected text, marks the highlighted boxes
+  // (JSON [[page, x, y, w, h], …] in 0..1); page/x/y stay the pin, at the end of the first line.
   `
   ALTER TABLE doc_notes ADD COLUMN quote TEXT;
   ALTER TABLE doc_notes ADD COLUMN marks TEXT;
@@ -492,7 +492,7 @@ const MIGRATIONS = [
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
 
-// Porta un database (quello in uso o un backup da ripristinare) all'ultima versione dello schema.
+// Brings a database (the one in use or a backup to restore) to the latest schema version.
 export function migrate(conn) {
   const { user_version: version } = conn.prepare('PRAGMA user_version').get();
   for (let i = version; i < MIGRATIONS.length; i++) {
@@ -511,7 +511,7 @@ export function migrate(conn) {
 }
 
 const als = new AsyncLocalStorage();
-const opened = new Map(); // file → connessione
+const opened = new Map(); // file → connection
 
 export function openDataDb(file) {
   if (!opened.has(file)) {
@@ -522,14 +522,14 @@ export function openDataDb(file) {
   return opened.get(file);
 }
 
-// Esegue fn con `db` che punta al database del workspace ws ({ id, file }).
+// Runs fn with `db` pointing to the database of workspace ws ({ id, file }).
 export const withWorkspace = (ws, fn) => als.run({ ws: ws.id, db: openDataDb(ws.file) }, fn);
 export const currentWorkspace = () => als.getStore()?.ws ?? null;
 
 export const db = new Proxy({}, {
   get(_, key) {
     const conn = als.getStore()?.db;
-    if (!conn) throw new Error('Nessun workspace attivo per questa operazione');
+    if (!conn) throw new Error('No active workspace for this operation');
     const v = conn[key];
     return typeof v === 'function' ? v.bind(conn) : v;
   },

@@ -1,22 +1,24 @@
-// Organizer per Thunderbird. Tiene una connessione con il server di Organizer (token API, vedi le opzioni):
-//  - quando in Organizer si preme "Manda", apre la mail qui, già compilata e con gli allegati; se è una risposta,
-//    la apre come risposta al messaggio originale, così la conversazione resta unita;
-//  - quando la mail parte, lo dice a Organizer (diventa "mandata", in attesa di risposta);
-//  - quando arriva una mail che risponde a una conversazione seguita da Organizer, gliela passa;
-//  - con "tutta la posta in arrivo" (opzioni, attivo di base) passa anche le altre mail delle cartelle Posta in
-//    arrivo, che in Organizer vede solo chi le riceve. Spento, le altre mail non escono da Thunderbird;
-//  - dal tasto destro su una mail (anche vecchia, in qualunque cartella), "Porta il thread in Organizer" passa
-//    tutta la conversazione: i messaggi prima e tutte le risposte dopo, tra i thread attivi;
-//  - al primo collegamento di una persona (lo dice il server) carica l'ultimo mese da tutte le cartelle, tranne
-//    spam, cestino e bozze: in Organizer si vedono tutte le conversazioni recenti, da archiviare;
-//  - le conversazioni nuove vanno nel workspace scelto per il loro account di posta (opzioni), se no nel predefinito;
-//  - "Apri in Thunderbird" in Organizer apre qui il messaggio, in una scheda.
+// Organizer for Thunderbird. It keeps a connection with the Organizer server (API token, see the options):
+//  - when "Send" is pressed in Organizer, it opens the mail here, already filled in and with the attachments; if it is
+//    a reply, it opens it as a reply to the original message, so the conversation stays together;
+//  - when the mail goes out, it tells Organizer (it becomes "sent", awaiting reply);
+//  - when a mail arrives that replies to a conversation followed by Organizer, it passes it on;
+//  - with "all incoming mail" (options, on by default) it also passes the other mails of the Inbox folders, which in
+//    Organizer only whoever receives them sees. Off, the other mails do not leave Thunderbird;
+//  - from the right click on a mail (old ones too, in any folder), "Bring the thread into Organizer" passes the whole
+//    conversation: the messages before and all the replies after, among the active threads;
+//  - at a person's first connection (the server says so) it loads the last month from all folders, except
+//    spam, trash and drafts: in Organizer all the recent conversations show up, to be archived;
+//  - new conversations go to the workspace chosen for their mail account (options), otherwise to the default one;
+//  - "Open in Thunderbird" in Organizer opens the message here, in a tab.
+// Texts: _locales/en and _locales/it (Thunderbird's language).
 /* global browser */
 
 let cfg = { server: '', token: '', inbox: true, wsByAccount: {} };
-let watch = new Set(); // Message-ID delle conversazioni seguite
-const composing = new Map(); // finestra di composizione → richiesta di Organizer
-let stream = null; // AbortController della connessione aperta
+let watch = new Set(); // Message-IDs of the followed conversations
+const t = (key, ...subs) => browser.i18n.getMessage(key, subs.map(String)) || key;
+const composing = new Map(); // compose window → Organizer's request
+let stream = null; // AbortController of the open connection
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const status = (state, text = '') => browser.storage.local.set({ status: { state, text, at: Date.now() } });
@@ -35,7 +37,7 @@ async function call(method, path, body) {
     body: body && JSON.stringify(body),
   });
   if (!r.ok) {
-    const err = new Error((await r.json().catch(() => null))?.error || `errore ${r.status}`);
+    const err = new Error((await r.json().catch(() => null))?.error || t('errStatus', r.status));
     err.status = r.status;
     throw err;
   }
@@ -46,20 +48,20 @@ function notify(text) {
   browser.notifications.create({ type: 'basic', title: 'Organizer', message: text, iconUrl: 'icon.png' }).catch(() => {});
 }
 
-// ---------- connessione ----------
-// Un flusso di eventi (Server-Sent Events) letto con fetch, perché serve l'header con il token.
+// ---------- connection ----------
+// A stream of events (Server-Sent Events) read with fetch, because the header with the token is needed.
 async function connect() {
   stream?.abort();
   const ctrl = (stream = new AbortController());
   await loadConfig();
-  if (!cfg.server || !cfg.token) return status('off', 'Inserisci indirizzo e token nelle opzioni');
+  if (!cfg.server || !cfg.token) return status('off', t('stEnterConfig'));
   for (let wait = 2000; !ctrl.signal.aborted; wait = Math.min(wait * 2, 60000)) {
     try {
       const r = await fetch(`${cfg.server}/api/mail/stream`, {
         headers: { Authorization: `Bearer ${cfg.token}`, 'X-Organizer-Ext': browser.runtime.getManifest().version }, signal: ctrl.signal,
       });
-      if (r.status === 401) return status('error', 'Token non valido o revocato: creane uno nuovo in Organizer');
-      if (!r.ok) throw new Error(`errore ${r.status}`);
+      if (r.status === 401) return status('error', t('stBadToken'));
+      if (!r.ok) throw new Error(t('errStatus', r.status));
       status('on', cfg.server);
       wait = 2000;
       sendIdentities();
@@ -81,10 +83,10 @@ async function connect() {
           if (/^event: open$/m.test(ev)) openMessages();
         }
       }
-      status('error', 'Connessione chiusa, riprovo…');
+      status('error', t('stClosed'));
     } catch (e) {
       if (ctrl.signal.aborted) return;
-      status('error', `Server non raggiungibile (${e.message}), riprovo…`);
+      status('error', t('stUnreachable', e.message));
     }
     await sleep(wait);
   }
@@ -94,12 +96,12 @@ async function refreshWatch() {
   try {
     watch = new Set(await call('GET', '/mail/watch'));
   } catch (e) {
-    console.warn('Organizer: conversazioni non lette', e);
+    console.warn('Organizer: conversations not read', e);
   }
 }
 
-// I nostri indirizzi: servono a Organizer per "rispondi a tutti" senza rispondere a sé stessi.
-let myAddresses = new Set(); // per capire se una mail vecchia l'abbiamo mandata noi
+// Our addresses: Organizer needs them for "reply all" without replying to oneself.
+let myAddresses = new Set(); // to tell whether we sent an old mail
 async function sendIdentities() {
   try {
     const accounts = await browser.accounts.list(false);
@@ -107,11 +109,11 @@ async function sendIdentities() {
     myAddresses = new Set(addresses.map(a => a.toLowerCase()));
     await call('POST', '/mail/identities', { addresses });
   } catch (e) {
-    console.warn('Organizer: indirizzi non mandati', e);
+    console.warn('Organizer: addresses not sent', e);
   }
 }
 
-// ---------- mail da aprire ----------
+// ---------- mails to open ----------
 let busy = null;
 function openPending() {
   busy = (busy || Promise.resolve()).then(async () => {
@@ -119,19 +121,19 @@ function openPending() {
     try {
       list = await call('GET', '/mail/outbox');
     } catch (e) {
-      return console.warn('Organizer: coda non letta', e);
+      return console.warn('Organizer: queue not read', e);
     }
     for (const req of list) {
       try {
         await call('POST', `/mail/outbox/${req.ws}/${req.id}/claim`);
       } catch {
-        continue; // presa da un altro Thunderbird
+        continue; // taken by another Thunderbird
       }
       try {
         await openCompose(req);
       } catch (e) {
         console.error(e);
-        notify(`Non riesco ad aprire la mail "${req.subject}": ${e.message}`);
+        notify(t('ntOpenFail', req.subject, e.message));
       }
     }
   });
@@ -144,12 +146,12 @@ const toHtml = text => String(text || '').replace(/&/g, '&amp;').replace(/</g, '
 async function openCompose(req) {
   const attachments = await Promise.all(req.files.map(async f => {
     const r = await fetch(`${cfg.server}/api/mail/outbox/${req.ws}/${req.id}/file/${f.n}`, { headers: { Authorization: `Bearer ${cfg.token}` } });
-    if (!r.ok) throw new Error(`allegato ${f.name} non scaricato (errore ${r.status})`);
+    if (!r.ok) throw new Error(t('errAttachment', f.name, r.status));
     return { file: new File([await r.blob()], f.name, { type: f.mime }) };
   }));
   let tab = null;
   if (req.reply_to) {
-    // Risposta: si apre dal messaggio originale (se è in Thunderbird), con la citazione sotto il testo.
+    // Reply: it opens from the original message (if it is in Thunderbird), with the quote below the text.
     const found = await browser.messages.query({ headerMessageId: req.reply_to }).catch(() => null);
     const original = found?.messages?.[0];
     if (original) {
@@ -162,7 +164,7 @@ async function openCompose(req) {
     }
   }
   if (!tab) {
-    // Testo semplice o HTML come preferisce l'identità predefinita (Impostazioni account → Composizione).
+    // Plain text or HTML as the default identity prefers (Account settings → Composition).
     const identity = (await browser.accounts.getDefault().catch(() => null))?.identities?.[0];
     const plain = identity?.composeHtml === false;
     tab = await browser.compose.beginNew({
@@ -175,8 +177,8 @@ async function openCompose(req) {
 
 browser.tabs.onRemoved.addListener(id => composing.delete(id));
 
-// Una mail partita: se l'aveva preparata Organizer diventa "mandata"; in ogni caso (con "tutta la posta")
-// entra nel suo thread, e se risponde a mail che Organizer non ha si recuperano anche quelle.
+// A mail that went out: if Organizer prepared it, it becomes "sent"; in any case (with "all mail") it enters its
+// thread, and if it replies to mails Organizer does not have, those are fetched too.
 browser.compose.onAfterSend.addListener(async (tab, info) => {
   if (info.error) return;
   const req = composing.get(tab.id);
@@ -191,23 +193,23 @@ browser.compose.onAfterSend.addListener(async (tab, info) => {
         from: m?.author || '', to: (m?.recipients || []).join(', '), cc: (m?.ccList || []).join(', '), subject: m?.subject || req.subject,
       });
     } catch (e) {
-      notify(`Mail inviata, ma Organizer non l'ha saputo: ${e.message}`);
+      notify(t('ntSentUnknown', e.message));
     }
   }
-  if (m && (req || cfg.inbox)) await pass(m, { direction: 'out' }).catch(e => console.warn('Organizer: mail mandata non passata', e));
+  if (m && (req || cfg.inbox)) await pass(m, { direction: 'out' }).catch(e => console.warn('Organizer: sent mail not passed', e));
 });
 
-// ---------- allegati → documenti del magazzino e anteprime ----------
-// Da Organizer si sceglie un allegato di una mail ricevuta e l'articolo: il file sta qui, lo carichiamo noi
-// come documento dell'articolo (stessa API dei caricamenti, nel workspace da cui è partita la richiesta).
-// Per l'anteprima (preview) il file va solo al server, che lo mostra e lo tiene per poco.
+// ---------- attachments → inventory documents and previews ----------
+// From Organizer one picks an attachment of a received mail and the item: the file is here, we upload it as a
+// document of the item (same API as the uploads, in the workspace the request came from).
+// For the preview the file only goes to the server, which shows it and keeps it for a short while.
 function saveAttachments() {
   busy = (busy || Promise.resolve()).then(async () => {
     let list = [];
     try {
       list = await call('GET', '/mail/fetches');
     } catch (e) {
-      return console.warn('Organizer: richieste di allegati non lette', e);
+      return console.warn('Organizer: attachment requests not read', e);
     }
     for (const f of list) {
       try {
@@ -218,7 +220,7 @@ function saveAttachments() {
       try {
         const found = await browser.messages.query({ headerMessageId: f.message_id });
         const msg = found?.messages?.[0];
-        if (!msg) throw new Error('mail non trovata in Thunderbird');
+        if (!msg) throw new Error(t('errNotFound'));
         const file = await browser.messages.getAttachmentFile(msg.id, f.part);
         const url = f.preview ? `${cfg.server}/api/mail/fetches/${f.id}/file`
           : `${cfg.server}/api/items/${f.item_id}/docs?${new URLSearchParams({ name: f.name, kind: f.kind })}`;
@@ -227,11 +229,11 @@ function saveAttachments() {
           headers: { Authorization: `Bearer ${cfg.token}`, 'X-Workspace': String(f.ws), 'Content-Type': file.type || f.type || 'application/octet-stream' },
           body: file,
         });
-        if (!r.ok) throw new Error((await r.json().catch(() => null))?.error || `errore ${r.status}`);
+        if (!r.ok) throw new Error((await r.json().catch(() => null))?.error || t('errStatus', r.status));
       } catch (e) {
-        // L'anteprima che non arriva lo dice in Organizer, dove la si aspetta.
+        // A preview that does not arrive says so in Organizer, where it is expected.
         if (f.preview) await call('POST', `/mail/fetches/${f.id}/done`, { error: e.message }).catch(() => {});
-        else notify(`Allegato "${f.name}" non salvato in Organizer: ${e.message}`);
+        else notify(t('ntAttachFail', f.name, e.message));
       } finally {
         if (!f.preview) call('POST', `/mail/fetches/${f.id}/done`).catch(() => {});
       }
@@ -240,29 +242,29 @@ function saveAttachments() {
   return busy;
 }
 
-// ---------- "Apri in Thunderbird" ----------
-// Il messaggio scelto in Organizer si apre qui in una scheda, e la finestra viene davanti.
+// ---------- "Open in Thunderbird" ----------
+// The message chosen in Organizer opens here in a tab, and the window comes to the front.
 async function openMessages() {
   let list = [];
   try {
     list = await call('GET', '/mail/opens');
   } catch (e) {
-    return console.warn('Organizer: mail da aprire non lette', e);
+    return console.warn('Organizer: mails to open not read', e);
   }
   for (const mid of list) {
     try {
       const found = await browser.messages.query({ headerMessageId: mid });
       const msg = found?.messages?.[0];
-      if (!msg) throw new Error('non è in nessuna cartella di Thunderbird');
+      if (!msg) throw new Error(t('errNoFolder'));
       const tab = await browser.messageDisplay.open({ messageId: msg.id, location: 'tab' });
       if (tab?.windowId != null) await browser.windows.update(tab.windowId, { focused: true }).catch(() => {});
     } catch (e) {
-      notify(`Mail non aperta: ${e.message}`);
+      notify(t('ntNotOpened', e.message));
     }
   }
 }
 
-// ---------- risposte in arrivo ----------
+// ---------- incoming replies ----------
 const ids = s => [...String(s || '').matchAll(/<([^>]+)>/g)].map(x => x[1]);
 
 async function textOf(id, full) {
@@ -271,7 +273,7 @@ async function textOf(id, full) {
     const plain = parts.find(p => p.contentType === 'text/plain') || parts[0];
     if (plain) return plain.contentType === 'text/plain' ? plain.content : htmlToText(plain.content);
   } catch {
-    // Thunderbird più vecchio: si cerca nelle parti del messaggio.
+    // Older Thunderbird: search the message's parts.
   }
   const walk = p => (p.contentType === 'text/plain' && p.body) || (p.parts || []).map(walk).find(Boolean) || '';
   return walk(full);
@@ -284,8 +286,8 @@ function htmlToText(html) {
   return doc.body.textContent.replace(/\n{3,}/g, '\n\n').trim();
 }
 
-// Passa una mail di Thunderbird a Organizer. extra: direction ('in' arrivata, 'out' mandata), history (vecchia,
-// chiesta per completare un thread), thread (quello che l'ha chiesta), import (scelta a mano: tra gli attivi).
+// Passes a Thunderbird mail to Organizer. extra: direction ('in' received, 'out' sent), history (old, asked for
+// to complete a thread), thread (the one that asked for it), import (picked by hand: among the active ones).
 async function pass(header, extra = {}, full = null) {
   full ||= await browser.messages.getFull(header.id);
   const h = name => (full.headers?.[name] || []).join(' ');
@@ -304,8 +306,8 @@ async function pass(header, extra = {}, full = null) {
   return r;
 }
 
-// Le mail vecchie di un thread che Organizer non ha: si cercano in Thunderbird (in tutte le cartelle) e si
-// mandano come storia. Al massimo 30 per volta, per non fermare tutto con conversazioni lunghissime.
+// The old mails of a thread that Organizer does not have: searched in Thunderbird (in all folders) and sent
+// as history. At most 30 at a time, not to block everything with very long conversations.
 async function history(missing, thread, budget = { n: 30 }) {
   for (const mid of missing) {
     if (budget.n-- <= 0) return;
@@ -313,14 +315,14 @@ async function history(missing, thread, budget = { n: 30 }) {
     const old = found?.messages?.[0];
     if (!old) continue;
     const mine = myAddresses.has(String(old.author || '').replace(/.*<([^>]+)>.*/, '$1').trim().toLowerCase());
-    await pass(old, { history: true, thread, direction: mine ? 'out' : 'in' }).catch(e => console.warn('Organizer: mail vecchia non passata', e));
+    await pass(old, { history: true, thread, direction: mine ? 'out' : 'in' }).catch(e => console.warn('Organizer: old mail not passed', e));
   }
 }
 
-// ---------- un thread scelto a mano ----------
-// Dalla mail scelta si risale ai messaggi citati (References) e si scende alle risposte: quelle con lo stesso
-// oggetto (senza Re:, R:, Fwd:…) in tutte le cartelle che citano un messaggio già raccolto, finché se ne trovano
-// di nuove. Poi tutto a Organizer, dal più vecchio, nello stesso thread.
+// ---------- a thread picked by hand ----------
+// From the chosen mail up to the quoted messages (References) and down to the replies: those with the same
+// subject (without Re:, R:, Fwd:…) in all folders that quote a message already gathered, as long as new ones turn
+// up. Then everything to Organizer, from the oldest, in the same thread.
 const cleanSubject = s => String(s || '').replace(/^\s*((re|r|fw|fwd|i|aw|sv)\s*(\[\d+\])?\s*:\s*)+/i, '').trim();
 const isMine = m => myAddresses.has(String(m.author || '').replace(/.*<([^>]+)>.*/, '$1').trim().toLowerCase());
 const IMPORT_MAX = 200;
@@ -342,12 +344,12 @@ async function conversation(start) {
     return x;
   };
   const first = await add(start);
-  // Prima: i messaggi citati che ci sono in Thunderbird.
+  // Before: the quoted messages that are in Thunderbird.
   for (const mid of first.refs) {
     const found = await browser.messages.query({ headerMessageId: mid }).catch(() => null);
     if (found?.messages?.[0]) await add(found.messages[0]);
   }
-  // Dopo: le risposte, cercate per oggetto.
+  // After: the replies, searched by subject.
   const subject = cleanSubject(start.subject);
   if (subject) {
     const candidates = (await allPages(await browser.messages.query({ subject })).catch(() => []))
@@ -372,7 +374,7 @@ async function conversation(start) {
 }
 
 async function importThread(start, done) {
-  if (!cfg.token) return notify('Collega prima Organizer (opzioni dell\'estensione)');
+  if (!cfg.token) return notify(t('ntConnectFirst'));
   try {
     const list = await conversation(start);
     for (const x of list) done.add(x.header.headerMessageId);
@@ -381,19 +383,20 @@ async function importThread(start, done) {
       const r = await pass(x.header, { import: true, thread, direction: isMine(x.header) ? 'out' : 'in' }, x.full);
       thread ||= r?.thread || null;
     }
-    notify(`In Organizer: "${cleanSubject(start.subject) || 'senza oggetto'}", ${list.length} ${list.length === 1 ? 'messaggio' : 'messaggi'}${list.length >= IMPORT_MAX ? ' (i primi)' : ''}`);
+    const subject = cleanSubject(start.subject) || t('noSubject');
+    notify(list.length >= IMPORT_MAX ? t('ntImportedMax', subject, list.length) : list.length === 1 ? t('ntImported1', subject) : t('ntImportedN', subject, list.length));
   } catch (e) {
     console.error(e);
-    notify(`Thread non portato in Organizer: ${e.message}`);
+    notify(t('ntImportFail', e.message));
   }
 }
 
-browser.menus.create({ id: 'organizer-import', title: 'Porta il thread in Organizer', contexts: ['message_list'] });
+browser.menus.create({ id: 'organizer-import', title: t('menuImport'), contexts: ['message_list'] });
 browser.menus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== 'organizer-import') return;
   const picked = info.selectedMessages ? await allPages(info.selectedMessages)
     : [await browser.messageDisplay.getDisplayedMessage(tab.id).catch(() => null)].filter(Boolean);
-  // Più mail scelte: un thread per ciascuna conversazione (quelle già raccolte non si ripetono).
+  // Several mails picked: one thread per conversation (those already gathered are not repeated).
   const done = new Set();
   for (const m of picked) if (!done.has(m.headerMessageId)) await importThread(m, done);
 });
@@ -406,7 +409,7 @@ async function check(header) {
 
 async function checkAll(page) {
   for (let p = page; p; p = p.id ? await browser.messages.continueList(p.id) : null) {
-    for (const m of p.messages) await check(m).catch(e => console.warn('Organizer: mail non passata', e));
+    for (const m of p.messages) await check(m).catch(e => console.warn('Organizer: mail not passed', e));
   }
 }
 
@@ -414,8 +417,8 @@ browser.messages.onNewMailReceived.addListener((folder, page) => {
   if (folder.specialUse?.includes('inbox') || folder.type === 'inbox') checkAll(page);
 });
 
-// Al collegamento: le mail arrivate nelle Posta in arrivo da quando l'estensione le ha guardate l'ultima volta
-// (Thunderbird chiuso, server irraggiungibile…); la prima volta, gli ultimi 7 giorni. Il server scarta i doppioni.
+// On connecting: the mails that arrived in the Inboxes since the extension last looked at them (Thunderbird
+// closed, server unreachable…); the first time, the last 7 days. The server discards duplicates.
 let catching = false;
 async function catchUp() {
   if (catching) return;
@@ -429,13 +432,13 @@ async function catchUp() {
     }
     await browser.storage.local.set({ lastCheck: started });
   } catch (e) {
-    console.warn('Organizer: recupero delle mail non riuscito', e);
+    console.warn('Organizer: fetching the mails failed', e);
   } finally {
     catching = false;
   }
 }
 
-// ---------- primo caricamento: l'ultimo mese ----------
+// ---------- first load: the last month ----------
 const SKIP_FOLDERS = ['junk', 'trash', 'drafts', 'templates', 'outbox'];
 let backfilling = false;
 async function backfill() {
@@ -444,7 +447,7 @@ async function backfill() {
   try {
     const { since } = await call('GET', '/mail/backfill');
     if (!since) return;
-    status('on', 'Carico in Organizer le mail dell\'ultimo mese…');
+    status('on', t('stBackfill'));
     const folders = (await browser.folders.query({})).filter(f => !f.isVirtual && !f.isUnified
       && !(f.specialUse || []).some(u => SKIP_FOLDERS.includes(u)) && !SKIP_FOLDERS.includes(f.type));
     const all = new Map();
@@ -452,25 +455,25 @@ async function backfill() {
       const page = await browser.messages.query({ folderId: f.id, fromDate: new Date(since) }).catch(() => null);
       for (const m of page ? await allPages(page) : []) if (!m.junk && m.headerMessageId) all.set(m.headerMessageId, m);
     }
-    // Dal più vecchio: i messaggi arrivano dopo quelli a cui rispondono e l'albero si forma da solo.
+    // From the oldest: messages arrive after the ones they reply to and the tree builds itself.
     const list = [...all.values()].sort((a, b) => new Date(a.date) - new Date(b.date));
     let n = 0;
     for (const m of list) {
-      await pass(m, { backfill: true, direction: isMine(m) ? 'out' : 'in' }).catch(e => console.warn('Organizer: mail non caricata', e));
-      if (++n % 25 === 0) status('on', `Carico in Organizer le mail dell'ultimo mese… ${n}/${list.length}`);
+      await pass(m, { backfill: true, direction: isMine(m) ? 'out' : 'in' }).catch(e => console.warn('Organizer: mail not loaded', e));
+      if (++n % 25 === 0) status('on', t('stBackfillN', n, list.length));
     }
     await call('POST', '/mail/backfill/done');
     status('on', cfg.server);
-    notify(`Caricate in Organizer le mail dell'ultimo mese (${list.length})`);
+    notify(t('ntBackfillDone', list.length));
   } catch (e) {
-    console.warn('Organizer: caricamento dell\'ultimo mese non riuscito', e);
-    status('error', `Caricamento dell'ultimo mese interrotto (${e.message}): riprovo al prossimo collegamento`);
+    console.warn('Organizer: loading the last month failed', e);
+    status('error', t('stBackfillFail', e.message));
   } finally {
     backfilling = false;
   }
 }
 
-// ---------- avvio ----------
+// ---------- start ----------
 browser.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.wsByAccount) cfg.wsByAccount = changes.wsByAccount.newValue || {};
   if (area === 'local' && (changes.server || changes.token || changes.inbox)) connect();

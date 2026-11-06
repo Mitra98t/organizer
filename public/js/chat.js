@@ -1,19 +1,20 @@
-// Chat del workspace a canali: messaggi tra i membri, con collegamenti a progetti, articoli, documenti, voci e
-// contatti (autocompletamento con @ # + e "[["). Ogni canale ha le sue persone (o è di tutti); chi gestisce i
-// canali (admin o permesso "canali") li crea, li rinomina, ne sceglie chi legge e chi scrive.
-// Gli ultimi 100 messaggi di ogni canale arrivano con /api/sync, i precedenti a richiesta.
+// Workspace chat with channels: messages between members, with links to projects, items, documents, entries and
+// contacts (autocomplete with @ # + and "[["). Each channel has its own people (or belongs to everyone); whoever
+// manages channels (admin or "channels" permission) creates them, renames them, picks who reads and who writes.
+// The last 100 messages of each channel arrive with /api/sync, earlier ones on request.
 import { h, icon, S, ui, api, act, render, userName, chatText, fmtTime, fmtLongDay, localDay, can, save, load } from './core.js';
+import { tr, trn } from './i18n.js';
 
-const GROUP_MS = 5 * 60e3; // messaggi ravvicinati della stessa persona: un'intestazione sola
-const older = new Map();   // canale → messaggi caricati con "Messaggi precedenti" (non stanno nei dati sincronizzati)
+const GROUP_MS = 5 * 60e3; // close messages from the same person: a single header
+const older = new Map();   // channel → messages loaded with "Earlier messages" (not in the synced data)
 const olderDone = new Set();
-let stick = true;          // la lista resta in fondo finché non si scorre verso l'alto
+let stick = true;          // the list stays at the bottom until it is scrolled up
 let scrollTop = 0;
-let fromBottom = null;     // dopo aver caricato i precedenti: resta fermo sul messaggio che si stava leggendo
+let fromBottom = null;     // after loading earlier ones: stays on the message being read
 ui.chatChannel ??= load('org.chatChannel', null);
 
 const myChannels = D => D.chatChannels.filter(c => c.member);
-// Il canale aperto: quello scelto, se ci si è ancora dentro, altrimenti il primo.
+// The open channel: the chosen one, if one is still in it, otherwise the first.
 export function currentChannel(D) {
   const mine = myChannels(D);
   return mine.find(c => c.id === ui.chatChannel) || mine[0] || null;
@@ -27,7 +28,7 @@ function openChannel(id) {
   render();
 }
 
-// Tutto ciò che si vede è letto (se la finestra è in primo piano).
+// Everything visible is read (if the window is in the foreground).
 function markRead(D, c, msgs) {
   const last = msgs.at(-1)?.id || 0;
   if (document.visibilityState !== 'visible' || last <= c.read_id) return;
@@ -35,7 +36,7 @@ function markRead(D, c, msgs) {
   c.read_id = last;
   c.unread = 0;
   api('POST', '/chat/read', { id: last, channel: c.id }).catch(() => {});
-  queueMicrotask(render); // aggiorna il numero sui badge
+  queueMicrotask(render); // updates the number on the badges
 }
 
 async function send(ta, c) {
@@ -70,7 +71,7 @@ function editBox(m) {
     else render();
   };
   return h('textarea.chat-edit', {
-    value: m.text, rows: 1, 'data-fk': `chat-edit-${m.id}`, 'data-ac': 'chat', 'data-ac-only': '@#+', 'aria-label': 'Modifica il messaggio',
+    value: m.text, rows: 1, 'data-fk': `chat-edit-${m.id}`, 'data-ac': 'chat', 'data-ac-only': '@#+', 'aria-label': tr('Edit the message'),
     onkeydown: ev => {
       if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); ev.target.blur(); }
       if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); ui.chatEdit = null; render(); }
@@ -85,25 +86,25 @@ function message(m, D, head, canWrite) {
   const canDelete = mine || D.me.is_admin || D.canManageChannels;
   return h('div.msg', { class: [mine && 'mine', head && 'first'].filter(Boolean).join(' ') || null, 'data-id': m.id },
     head && h('div.msg-h', h('b', userName(m.user_id)), h('span.muted', fmtTime(m.created_at).split(' ').pop())),
-    editing ? editBox(m) : h('div.msg-t', chatText(m.text), m.edited_at && h('span.muted.msg-ed', { title: `modificato ${fmtTime(m.edited_at)}` }, ' (modificato)')),
+    editing ? editBox(m) : h('div.msg-t', chatText(m.text), m.edited_at && h('span.muted.msg-ed', { title: tr('edited {when}', { when: fmtTime(m.edited_at) }) }, ` (${tr('edited')})`)),
     !editing && canDelete && canWrite && h('div.msg-a',
-      mine && h('button.icon-btn.sm', { title: 'Modifica', 'aria-label': 'Modifica', onclick: () => { ui.chatEdit = m.id; render(); } }, icon('edit')),
+      mine && h('button.icon-btn.sm', { title: tr('Edit'), 'aria-label': tr('Edit'), onclick: () => { ui.chatEdit = m.id; render(); } }, icon('edit')),
       h('button.icon-btn.sm', {
-        title: 'Elimina', 'aria-label': 'Elimina',
-        onclick: () => { if (confirm('Eliminare il messaggio?')) act(() => api('DELETE', `/chat/${m.id}`)); },
+        title: tr('Delete'), 'aria-label': tr('Delete'),
+        onclick: () => { if (confirm(tr('Delete the message?'))) act(() => api('DELETE', `/chat/${m.id}`)); },
       }, icon('trash'))));
 }
 
-// Chi sta nel canale, in breve.
+// Who is in the channel, briefly.
 function whoText(c, D) {
-  if (c.everyone) return 'tutti i membri del workspace';
+  if (c.everyone) return tr('all the workspace members');
   const ro = c.members.filter(m => !m.can_write).length;
-  return `${c.members.length} ${c.members.length === 1 ? 'persona' : 'persone'}${ro ? `, ${ro} solo in lettura` : ''}`
+  return `${trn(c.members.length, '1 person', '{n} people')}${ro ? `, ${tr('{n} read-only', { n: ro })}` : ''}`
     + (c.members.length <= 4 ? `: ${c.members.map(m => userName(m.user_id)).join(', ')}` : '');
 }
 
-// ---------- gestione di un canale ----------
-// Nome, "tutti i membri" oppure persona per persona: fuori, legge, scrive.
+// ---------- managing a channel ----------
+// Name, "all members" or person by person: out, reads, writes.
 function channelEditor(D, c) {
   const isNew = !c;
   const draft = ui.chanDraft ??= {
@@ -122,33 +123,33 @@ function channelEditor(D, c) {
       ui.chanEdit = null;
       ui.chanDraft = null;
       if (isNew) openChannel(r.id);
-    }, isNew ? `#${body.name} creato` : 'Canale aggiornato');
+    }, isNew ? tr('#{name} created', { name: body.name }) : tr('Channel updated'));
   };
-  return h('form.chan-ed', { onsubmit: ev => { ev.preventDefault(); saveIt(); }, 'aria-label': isNew ? 'Nuovo canale' : `Gestisci #${c.name}` },
-    h('div.chan-ed-h', h('b', isNew ? 'Nuovo canale' : `Gestisci #${c.name}`), h('span.grow'),
-      h('button.icon-btn.sm', { type: 'button', title: 'Chiudi', 'aria-label': 'Chiudi', onclick: close }, icon('x'))),
-    h('label.f', h('span', 'Nome'), h('input', { value: draft.name, required: true, placeholder: 'es. officina, fornitori', 'data-fk': 'chan-name', oninput: ev => { draft.name = ev.target.value; } })),
+  return h('form.chan-ed', { onsubmit: ev => { ev.preventDefault(); saveIt(); }, 'aria-label': isNew ? tr('New channel') : tr('Manage #{name}', { name: c.name }) },
+    h('div.chan-ed-h', h('b', isNew ? tr('New channel') : tr('Manage #{name}', { name: c.name })), h('span.grow'),
+      h('button.icon-btn.sm', { type: 'button', title: tr('Close'), 'aria-label': tr('Close'), onclick: close }, icon('x'))),
+    h('label.f', h('span', tr('Name')), h('input', { value: draft.name, required: true, placeholder: tr('e.g. workshop, suppliers'), 'data-fk': 'chan-name', oninput: ev => { draft.name = ev.target.value; } })),
     h('label.check-row', h('input', { type: 'checkbox', checked: draft.everyone, onchange: ev => set('everyone', ev.target.checked) }),
-      h('b', 'Tutti i membri del workspace'), h('span.muted', ' leggono e scrivono, anche chi entrerà dopo')),
+      h('b', tr('All the workspace members')), h('span.muted', tr(' read and write, also whoever joins later'))),
     !draft.everyone && h('table.chan-who',
-      h('thead', h('tr', h('th', 'Persona'), h('th', 'Fuori'), h('th', 'Legge'), h('th', 'Scrive'))),
+      h('thead', h('tr', h('th', tr('Person')), h('th', tr('Out')), h('th', tr('Reads')), h('th', tr('Writes')))),
       h('tbody', D.members.map(u => h('tr',
-        h('th', u.name || u.username, u.id === D.me.id && h('span.muted', ' (tu)')),
+        h('th', u.name || u.username, u.id === D.me.id && h('span.muted', ` (${tr('you')})`)),
         ['none', 'read', 'write'].map(l => h('td', h('input', {
-          type: 'radio', name: `who-${u.id}`, 'aria-label': `${u.name || u.username}: ${{ none: 'fuori', read: 'legge', write: 'scrive' }[l]}`,
+          type: 'radio', name: `who-${u.id}`, 'aria-label': `${u.name || u.username}: ${{ none: tr('out'), read: tr('reads'), write: tr('writes') }[l]}`,
           checked: (draft.members[u.id] || 'none') === l, onchange: () => { draft.members[u.id] = l; },
         }))))))),
     h('div.toolbar',
-      h('button.btn.primary', { type: 'submit' }, isNew ? 'Crea canale' : 'Salva'),
-      h('button.btn.ghost', { type: 'button', onclick: close }, 'Annulla'),
+      h('button.btn.primary', { type: 'submit' }, isNew ? tr('Create channel') : tr('Save')),
+      h('button.btn.ghost', { type: 'button', onclick: close }, tr('Cancel')),
       h('span.grow'),
       !isNew && h('button.btn.sm.danger', {
         type: 'button',
         onclick: () => {
-          if (!confirm(`Eliminare #${c.name}? I messaggi non si vedranno più.`)) return;
-          act(async () => { await api('DELETE', `/chat/channels/${c.id}`); close(); }, `#${c.name} eliminato`);
+          if (!confirm(tr('Delete #{name}? Its messages will no longer be visible.', { name: c.name }))) return;
+          act(async () => { await api('DELETE', `/chat/channels/${c.id}`); close(); }, tr('#{name} deleted', { name: c.name }));
         },
-      }, icon('trash'), 'Elimina')));
+      }, icon('trash'), tr('Delete'))));
 }
 
 function channelList(D, cur) {
@@ -157,20 +158,20 @@ function channelList(D, cur) {
   const item = c => h('button.chan', {
     class: c.id === cur?.id && 'on', 'aria-current': c.id === cur?.id ? 'true' : null,
     onclick: () => openChannel(c.id), title: whoText(c, D),
-  }, icon('hash'), h('span.chan-n', c.name), !c.can_write && h('span.muted', { title: 'Solo lettura' }, icon('lock')),
-  c.muted ? h('span.muted', { title: 'Silenziato: notifiche solo quando ti citano' }, icon('bell-off')) : null, c.unread > 0 && h('span.badge', c.unread));
-  return h('nav.chans', { 'aria-label': 'Canali' },
-    h('div.chans-h', h('span', 'Canali'),
-      D.canManageChannels && h('button.icon-btn.sm', { title: 'Nuovo canale', 'aria-label': 'Nuovo canale', onclick: () => { ui.chanEdit = 'new'; ui.chanDraft = null; render(); } }, icon('plus'))),
+  }, icon('hash'), h('span.chan-n', c.name), !c.can_write && h('span.muted', { title: tr('Read-only') }, icon('lock')),
+  c.muted ? h('span.muted', { title: tr('Muted: notifications only when you are mentioned') }, icon('bell-off')) : null, c.unread > 0 && h('span.badge', c.unread));
+  return h('nav.chans', { 'aria-label': tr('Channels') },
+    h('div.chans-h', h('span', tr('Channels')),
+      D.canManageChannels && h('button.icon-btn.sm', { title: tr('New channel'), 'aria-label': tr('New channel'), onclick: () => { ui.chanEdit = 'new'; ui.chanDraft = null; render(); } }, icon('plus'))),
     mine.map(item),
-    others.length > 0 && [h('div.chans-h.sub', 'Non ci sei'), others.map(c => h('button.chan.out', {
-      onclick: () => { ui.chanEdit = c.id; ui.chanDraft = null; render(); }, title: 'Gestisci',
+    others.length > 0 && [h('div.chans-h.sub', tr('Not in')), others.map(c => h('button.chan.out', {
+      onclick: () => { ui.chanEdit = c.id; ui.chanDraft = null; render(); }, title: tr('Manage'),
     }, icon('hash'), h('span.chan-n', c.name)))]);
 }
 
 export function viewChat(_id, query = {}) {
   const D = S.data;
-  // #/chat?c=ID (dalle notifiche): apre quel canale.
+  // #/chat?c=ID (from notifications): opens that channel.
   if (query.c && +query.c !== ui.chatChannel && D.chatChannels.some(c => c.id === +query.c && c.member)) {
     ui.chatChannel = +query.c;
     save('org.chatChannel', ui.chatChannel);
@@ -182,8 +183,8 @@ export function viewChat(_id, query = {}) {
   if (!cur) {
     return h('div.view.chat',
       h('div.chat-cols', channelList(D, null),
-        h('div.chat-main', editing || h('div.empty', h('p', 'Non sei in nessun canale.'),
-          h('p', D.canManageChannels ? 'Crea un canale con +.' : 'Chiedi a chi gestisce i canali di aggiungerti.')))));
+        h('div.chat-main', editing || h('div.empty', h('p', tr('You are not in any channel.')),
+          h('p', D.canManageChannels ? tr('Create a channel with +.') : tr('Ask whoever manages the channels to add you.'))))));
   }
   const synced = D.chat.filter(m => m.channel_id === cur.id);
   const ids = new Set(synced.map(m => m.id));
@@ -202,21 +203,21 @@ export function viewChat(_id, query = {}) {
   }
 
   const list = h('div.chat-list', {
-    role: 'log', 'aria-label': `Messaggi di #${cur.name}`,
+    role: 'log', 'aria-label': tr('Messages of #{name}', { name: cur.name }),
     onscroll: ev => {
       const el = ev.target;
       scrollTop = el.scrollTop;
       stick = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
     },
   },
-  synced.length >= 100 && !olderDone.has(cur.id) && h('button.btn.sm.ghost.chat-older', { onclick: () => loadOlder(cur, msgs[0].id) }, 'Messaggi precedenti'),
+  synced.length >= 100 && !olderDone.has(cur.id) && h('button.btn.sm.ghost.chat-older', { onclick: () => loadOlder(cur, msgs[0].id) }, tr('Earlier messages')),
   msgs.length ? rows : h('div.empty',
-    h('p', `Nessun messaggio in #${cur.name}.`),
-    h('p', 'Nel messaggio ', h('code.k', '@progetto'), ' ', h('code.k', '#CODICE'), ' ', h('code.k', '+persona'),
-      ' e ', h('code.k', '[['), ' per collegare un documento, una voce o un contatto: diventano link.')));
+    h('p', tr('No messages in #{name}.', { name: cur.name })),
+    h('p', tr('In a message '), h('code.k', '@project'), ' ', h('code.k', '#CODE'), ' ', h('code.k', '+person'),
+      tr(' and '), h('code.k', '[['), tr(' to link a document, an entry or a contact: they become links.'))));
 
   const input = h('textarea.chat-in', {
-    rows: 1, value: ui.chatDraft, placeholder: `Messaggio in #${cur.name}… (@ # + e [[ per collegare)`, 'aria-label': `Messaggio in #${cur.name}`,
+    rows: 1, value: ui.chatDraft, placeholder: tr('Message in #{name}… (@ # + and [[ to link)', { name: cur.name }), 'aria-label': tr('Message in #{name}', { name: cur.name }),
     'data-fk': 'chat-in', 'data-ac': 'chat', 'data-ac-only': '@#+', enterkeyhint: 'send',
     oninput: ev => { ui.chatDraft = ev.target.value; },
     onkeydown: ev => {
@@ -227,7 +228,7 @@ export function viewChat(_id, query = {}) {
     },
   });
 
-  // Dopo che la vista è nella pagina: posizione di lettura e messaggi letti.
+  // Once the view is in the page: reading position and read messages.
   queueMicrotask(() => {
     if (!list.isConnected) return;
     if (fromBottom != null) list.scrollTop = list.scrollHeight - fromBottom;
@@ -241,18 +242,18 @@ export function viewChat(_id, query = {}) {
       channelList(D, cur),
       h('div.chat-main',
         h('div.chat-h', h('b', `#${cur.name}`), h('span.muted', whoText(cur, D)), h('span.grow'),
-          // Silenziato: niente notifiche per ogni messaggio, solo quando ti citano (+persona).
+          // Muted: no notification for every message, only when you are mentioned (+person).
           h('button.btn.sm.ghost', {
             class: cur.muted ? 'on' : null, 'aria-pressed': String(!!cur.muted),
-            title: cur.muted ? 'Riattiva le notifiche per ogni messaggio' : 'Notifiche solo quando ti citano',
-            onclick: () => act(() => api('POST', `/chat/channels/${cur.id}/mute`, { muted: !cur.muted }), cur.muted ? `#${cur.name}: notifiche per ogni messaggio` : `#${cur.name} silenziato: notifiche solo quando ti citano`),
-          }, icon(cur.muted ? 'bell-off' : 'bell'), cur.muted ? 'Silenziato' : 'Silenzia'),
-          D.canManageChannels && h('button.btn.sm.ghost', { onclick: () => { ui.chanEdit = cur.id; ui.chanDraft = null; render(); } }, icon('settings'), 'Gestisci')),
+            title: cur.muted ? tr('Turn notifications for every message back on') : tr('Notifications only when you are mentioned'),
+            onclick: () => act(() => api('POST', `/chat/channels/${cur.id}/mute`, { muted: !cur.muted }), cur.muted ? tr('#{name}: notifications for every message', { name: cur.name }) : tr('#{name} muted: notifications only when you are mentioned', { name: cur.name })),
+          }, icon(cur.muted ? 'bell-off' : 'bell'), cur.muted ? tr('Muted') : tr('Mute')),
+          D.canManageChannels && h('button.btn.sm.ghost', { onclick: () => { ui.chanEdit = cur.id; ui.chanDraft = null; render(); } }, icon('settings'), tr('Manage'))),
         editing,
         list,
-        // Chi può solo leggere il canale non ha la barra per scrivere.
+        // Whoever can only read the channel has no bar to write.
         canWrite
           ? h('div.chat-bar', input,
-            h('button.btn.primary', { title: 'Invia (Invio; Maiusc+Invio per andare a capo)', 'aria-label': 'Invia', onclick: () => send(input, cur) }, icon('send')))
-          : h('p.muted.chat-ro', icon('lock'), ` In #${cur.name} puoi solo leggere.`))));
+            h('button.btn.primary', { title: tr('Send (Enter; Shift+Enter for a new line)'), 'aria-label': tr('Send'), onclick: () => send(input, cur) }, icon('send')))
+          : h('p.muted.chat-ro', icon('lock'), ' ', tr('In #{name} you can only read.', { name: cur.name })))));
 }

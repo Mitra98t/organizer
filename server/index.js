@@ -21,6 +21,7 @@ import { purgeExpired } from './trash.js';
 import { resolveAuth, resolveApiToken, workspaceById, acc } from './accounts.js';
 import { bump } from './events.js';
 import { HttpError, sendJson, parseCookies, readJson, isHttps } from './util.js';
+import { langOf, trIn, withLang } from './i18n.js';
 import { DATA_DIR, withWorkspace, closeAll } from './db.js';
 
 const PORT = +process.env.PORT || 8080;
@@ -45,36 +46,39 @@ const MIME = {
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'same-origin',
-  // wasm-unsafe-eval: PDF.js decodifica alcune immagini dei PDF con WebAssembly.
+  // wasm-unsafe-eval: PDF.js decodes some PDF images with WebAssembly.
   'Content-Security-Policy': "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; img-src 'self' data: blob:; font-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'",
 };
 
-async function handleApi(req, res, url) {
+async function handleApi(req, res, url, lang) {
   let match;
   const r = routes.find(r => r.method === req.method && (match = url.pathname.match(r.re)));
-  if (!r) throw new HttpError(404, 'Endpoint inesistente');
-  // CLI e programmi esterni si autenticano con un token API (Authorization: Bearer ...), l'app con il cookie.
+  if (!r) throw new HttpError(404, 'No such endpoint');
+  // The CLI and external programs authenticate with an API token (Authorization: Bearer ...), the app with the cookie.
   const bearer = req.headers.authorization?.match(/^Bearer\s+(\S+)$/i)?.[1];
-  // Con il cookie, le chiamate che modificano dati devono arrivare dalla nostra app (un form di un altro sito
-  // non può impostare questo header). Il token invece il browser non lo manda da solo: il controllo non serve.
-  if (!bearer && req.method !== 'GET' && req.headers['x-requested-with'] !== 'organizer') throw new HttpError(403, 'Richiesta non valida');
+  // With the cookie, calls that change data must come from our app (a form on another site cannot set this
+  // header). The browser never sends the token by itself, so the check is not needed there.
+  if (!bearer && req.method !== 'GET' && req.headers['x-requested-with'] !== 'organizer') throw new HttpError(403, 'Invalid request');
 
   const token = bearer ? null : parseCookies(req.headers.cookie).sid;
   const auth = bearer ? resolveApiToken(bearer, req.headers['x-workspace']) : resolveAuth(token);
-  if (bearer && !auth) throw new HttpError(401, 'Token non valido o revocato');
-  // user.is_admin = admin del workspace attivo; workspace_id = workspace attivo della sessione (o null).
+  if (bearer && !auth) throw new HttpError(401, 'Invalid or revoked token');
+  // user.is_admin = admin of the active workspace; workspace_id = the session's active workspace (or null).
   const user = auth && {
     id: auth.account.id, username: auth.account.username, name: auth.account.name,
     is_admin: auth.role === 'admin' ? 1 : 0, workspace_id: auth.ws?.id ?? null, api_token: auth.apiToken ?? null,
-    perms: auth.perms, // permessi per area (null = tutto)
+    perms: auth.perms, // permissions per area (null = everything)
+    lang,
   };
-  if (r.auth !== 'none' && !user) throw new HttpError(401, 'Accesso richiesto');
-  if (r.auth === 'admin' && !user.is_admin) throw new HttpError(403, 'Solo per gli admin del workspace');
-  if (r.ws && !user?.workspace_id) throw new HttpError(409, 'Non fai parte di nessun workspace');
-  // Area dell'app a cui appartiene la route: lettura per GET, scrittura per il resto (salvo level).
+  // The interface language, kept for what is written to this person later (notifications, see notify.js).
+  if (user && req.headers['x-lang'] && auth.account.lang !== lang) acc.prepare('UPDATE users SET lang = ? WHERE id = ?').run(lang, user.id);
+  if (r.auth !== 'none' && !user) throw new HttpError(401, 'Login required');
+  if (r.auth === 'admin' && !user.is_admin) throw new HttpError(403, 'Workspace admins only');
+  if (r.ws && !user?.workspace_id) throw new HttpError(409, 'You are not in any workspace');
+  // The app area the route belongs to: read for GET, write for the rest (unless level says otherwise).
   if (r.area) assertCan(user, r.area, r.level || (req.method === 'GET' ? 'read' : 'write'));
 
-  // I link per l'helper delle mail non hanno sessione: il workspace è scritto nel token (<id>x<casuale>).
+  // Links for the mail helper have no session: the workspace is written in the token (<id>x<random>).
   let ws = auth?.ws ?? null;
   if (url.pathname.startsWith('/api/mailpkg/')) ws = workspaceById(url.pathname.split('/')[3].match(/^(\d+)x/)?.[1]) || null;
 
@@ -97,18 +101,18 @@ async function handleApi(req, res, url) {
 }
 
 function serveStatic(req, res, pathname) {
-  if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Metodo non consentito');
+  if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Method not allowed');
   let rel = decodeURIComponent(pathname);
   if (rel.endsWith('/')) rel += 'index.html';
   const file = path.join(PUBLIC, path.normalize(rel));
-  if (!file.startsWith(PUBLIC + path.sep)) throw new HttpError(404, 'Non trovato');
+  if (!file.startsWith(PUBLIC + path.sep)) throw new HttpError(404, 'Not found');
   let st;
   try {
     st = fs.statSync(file);
   } catch {
-    throw new HttpError(404, 'Non trovato');
+    throw new HttpError(404, 'Not found');
   }
-  if (!st.isFile()) throw new HttpError(404, 'Non trovato');
+  if (!st.isFile()) throw new HttpError(404, 'Not found');
   const etag = `W/"${st.size}-${st.mtimeMs.toString(36)}"`;
   const headers = {
     ...SECURITY_HEADERS,
@@ -117,8 +121,8 @@ function serveStatic(req, res, pathname) {
     ETag: etag,
   };
   if (path.basename(file) === 'sw.js') headers['Service-Worker-Allowed'] = '/';
-  // Il worker che converte gli STEP (OpenCascade compilato con embind) genera funzioni con new Function: gli
-  // serve unsafe-eval. Un worker usa la policy della sua risposta, quindi vale solo lì, non nell'app.
+  // The worker that converts STEP files (OpenCascade compiled with embind) builds functions with new Function: it
+  // needs unsafe-eval. A worker uses the policy of its own response, so it applies only there, not to the app.
   if (path.basename(file) === 'step-worker.js') headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'";
   if (req.headers['if-none-match'] === etag) {
     res.writeHead(304, headers);
@@ -131,68 +135,71 @@ function serveStatic(req, res, pathname) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
-  // Arrivati in HTTPS (dal tunnel o da Caddy): il browser non deve più provare in HTTP semplice.
+  const lang = langOf(req);
+  // Reached over HTTPS (from the tunnel or Caddy): the browser must not try plain HTTP any more.
   if (isHttps(req)) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
   try {
     if (url.pathname === '/healthz') return sendJson(res, 200, { ok: true });
-    if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
-    if (req.method === 'GET' && serveAppIcon(res, url, PUBLIC)) return; // icone dell'app scelte (vedi appicons.js)
+    if (url.pathname.startsWith('/api/')) return await withLang(lang, () => handleApi(req, res, url, lang));
+    if (req.method === 'GET' && serveAppIcon(res, url, PUBLIC)) return; // the chosen app icons (see appicons.js)
     serveStatic(req, res, url.pathname);
   } catch (e) {
     let status = e instanceof HttpError ? e.status : 500;
     let message = e.message;
+    let vars = e.vars;
     if (e.code === 'ERR_SQLITE_ERROR' && /constraint/i.test(e.message)) {
       status = 409;
-      message = 'Conflitto con dati esistenti';
+      message = 'Conflict with existing data';
+      vars = null;
     }
     if (status >= 500) console.error(req.method, req.url, e);
     if (res.headersSent) return res.destroy();
-    // Se il client sta ancora inviando (upload rifiutato) chiudiamo dopo la risposta.
+    // If the client is still sending (rejected upload) close after the response.
     if (!req.complete) res.setHeader('Connection', 'close');
-    sendJson(res, status, { error: status >= 500 ? 'Errore interno del server' : message });
+    sendJson(res, status, { error: trIn(lang, status >= 500 ? 'Internal server error' : message, vars) });
   }
 });
 
-// Il cestino si svuota da solo degli elementi più vecchi di TRASH_DAYS: all'avvio e poi ogni 6 ore.
+// The trash empties itself of what is older than TRASH_DAYS: at start-up and then every 6 hours.
 const cleanTrash = () => {
-  // Ogni workspace ha il suo cestino.
+  // Every workspace has its own trash.
   try {
     let n = 0;
     for (const w of acc.prepare('SELECT id, file FROM workspaces WHERE deleted_at IS NULL').all()) n += withWorkspace(w, purgeExpired);
-    if (n) console.log(`Cestino: eliminati ${n} file scaduti`);
+    if (n) console.log(`Trash: deleted ${n} expired files`);
   } catch (e) {
-    console.error('Pulizia cestino fallita', e);
+    console.error('Emptying the trash failed', e);
   }
 };
 cleanTrash();
 setInterval(cleanTrash, 6 * 3600e3).unref();
 
-// Posta in arrivo delle versioni fino alla 0.14: diventa thread (una volta sola).
+// Inbox of versions up to 0.14: becomes threads (only once).
 try {
   migrateInbox();
 } catch (e) {
-  console.error('Spostamento della posta in arrivo nei thread non riuscito', e);
+  console.error('Moving the inbox into threads failed', e);
 }
 
-// Collegamenti automatici delle conversazioni attive, con le regole di questa versione (poco dopo l'avvio).
+// Automatic links of the active conversations, with this version's rules (shortly after start-up).
 setTimeout(() => {
   try {
     relinkAllActive();
   } catch (e) {
-    console.error('Ricontrollo dei collegamenti delle mail non riuscito', e);
+    console.error('Re-checking the mail links failed', e);
   }
 }, 1500).unref();
 
-// Collegamenti delle voci (backlink): calcolati una volta per i dati scritti prima che esistessero.
+// Entry links (backlinks): computed once for data written before they existed.
 for (const w of acc.prepare('SELECT id, file FROM workspaces WHERE deleted_at IS NULL').all()) {
   const n = withWorkspace(w, backfillLinks);
-  if (n) console.log(`Collegamenti calcolati per ${n} voci del workspace ${w.id}`);
+  if (n) console.log(`Links computed for ${n} entries of workspace ${w.id}`);
 }
 
-server.requestTimeout = 0; // upload grandi e stream SSE
+server.requestTimeout = 0; // large uploads and SSE streams
 server.listen(PORT, HOST, () => {
-  console.log(`Organizer in ascolto su http://${HOST}:${PORT}  (dati in ${DATA_DIR})`);
+  console.log(`Organizer listening on http://${HOST}:${PORT}  (data in ${DATA_DIR})`);
 });
 
-// Chiudere SQLite integra il WAL nel file principale: i backup del volume restano un singolo .db.
+// Closing SQLite folds the WAL into the main file: backups of the volume stay a single .db.
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { server.close(); closeAll(); acc.close(); process.exit(0); });

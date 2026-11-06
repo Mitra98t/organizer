@@ -1,8 +1,8 @@
-// Password, cookie di sessione e validazioni. Le sessioni stanno in accounts.js.
+// Passwords, session cookie and validation. Sessions live in accounts.js.
 import crypto from 'node:crypto';
 import { isHttps } from './util.js';
 
-const SESSION_MAX_AGE = 400 * 24 * 3600; // limite massimo dei browser: sul telefono non si vuole rifare il login
+const SESSION_MAX_AGE = 400 * 24 * 3600; // the browsers' maximum: nobody wants to log in again on the phone
 
 const scrypt = (pw, salt) => new Promise((resolve, reject) =>
   crypto.scrypt(pw, salt, 64, { N: 16384, r: 8, p: 1 }, (e, k) => (e ? reject(e) : resolve(k))));
@@ -26,7 +26,7 @@ export function sessionCookie(req, token) {
   return `sid=${token || ''}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${isHttps(req) ? '; Secure' : ''}`;
 }
 
-// "all" e "tutti" non sono nomi: +all condivide con tutti.
+// "all" and "tutti" are not names: +all shares with everyone.
 export const validUsername = u => /^[a-z0-9_.-]{2,32}$/i.test(String(u || '')) && !/^(all|tutti)$/i.test(String(u));
 export const validPassword = p => typeof p === 'string' && p.length >= 8 && p.length <= 200;
 

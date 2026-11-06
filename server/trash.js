@@ -1,4 +1,4 @@
-// Cestino: tutto ciò che si elimina resta recuperabile per TRASH_DAYS giorni, poi viene cancellato davvero.
+// Trash: everything deleted stays recoverable for TRASH_DAYS days, then it is really deleted.
 import fs from 'node:fs';
 import path from 'node:path';
 import { db, tx, UPLOAD_DIR } from './db.js';
@@ -10,27 +10,27 @@ import { allows, assertCan, entryArea, readableKinds } from './perms.js';
 export const TRASH_DAYS = +process.env.TRASH_DAYS || 30;
 
 
-// Per ogni tipo: come trovare un elemento nel cestino visibile all'utente e come ripristinarlo.
+// For each kind: how to find an item in the trash visible to the user and how to restore it.
 const TYPES = {
   entry: {
     find: (id, uid) => db.prepare(`SELECT e.* FROM entries e WHERE e.id = $id AND e.deleted_at IS NOT NULL AND ${VIS_ANY}`).get({ id, uid }),
     restore: e => {
       db.prepare('UPDATE entries SET deleted_at = NULL, deleted_by = NULL WHERE id = $id OR (parent_id = $id AND deleted_at = $t)')
         .run({ id: e.id, t: e.deleted_at });
-      // Una mail il cui thread è ora nel cestino torna in un thread suo.
+      // A mail whose thread is now in the trash goes back to a thread of its own.
       if (e.kind === 'mail' && db.prepare('SELECT 1 FROM mail_threads WHERE id = ? AND deleted_at IS NOT NULL').get(e.thread_id)) {
         db.prepare('UPDATE entries SET thread_id = NULL WHERE id = ?').run(e.id);
         ensureEntryThread({ ...e, thread_id: null });
       }
     },
   },
-  // Un thread di mail (personale) con le mail scritte in Organizer eliminate insieme a lui.
+  // A mail thread (personal) with the mails written in Organizer deleted together with it.
   thread: {
     find: (id, uid) => db.prepare('SELECT *, owner_id AS created_by FROM mail_threads WHERE id = ? AND owner_id = ? AND deleted_at IS NOT NULL').get(id, uid),
     restore: t => {
       db.prepare('UPDATE mail_threads SET deleted_at = NULL, deleted_by = NULL WHERE id = ?').run(t.id);
       db.prepare('UPDATE entries SET deleted_at = NULL, deleted_by = NULL WHERE thread_id = ? AND deleted_at = ?').run(t.id, t.deleted_at);
-      ensureTopic(t.id); // il suo topic, se nel frattempo è sparito, è nuovo
+      ensureTopic(t.id); // its topic, if it has disappeared meanwhile, is a new one
     },
   },
   project: {
@@ -61,11 +61,11 @@ const TYPES = {
 const TABLE = { entry: 'entries', project: 'projects', item: 'items', doc: 'documents', contact: 'contacts', docnote: 'doc_notes', thread: 'mail_threads' };
 
 function getTrashed(type, id, user) {
-  const t = TYPES[type] || fail(404, 'Tipo sconosciuto');
-  return t.find(+id, user.id) || fail(404, 'Elemento non trovato nel cestino');
+  const t = TYPES[type] || fail(404, 'Unknown kind');
+  return t.find(+id, user.id) || fail(404, 'Item not found in the trash');
 }
 
-// Permessi: ogni tipo nel cestino appartiene a un'area (le voci secondo il tipo: todo/note o mail).
+// Permissions: each kind in the trash belongs to an area (entries by kind: todo/note or mail).
 const AREA_OF = { project: 'progetti', item: 'magazzino', doc: 'documenti', docnote: 'documenti', contact: 'contatti', thread: 'mail' };
 const areaOf = (type, el) => (type === 'entry' ? entryArea(el.kind) : AREA_OF[type]);
 
@@ -76,8 +76,8 @@ route('GET', '/api/trash', ({ user }) => {
   const all = (area, sql, args = {}) => (can(area) ? db.prepare(sql).all(args) : []);
   return {
     days: TRASH_DAYS,
-    // Le sotto-attività eliminate insieme alla voce madre tornano con lei, le mail con il loro thread: si
-    // elencano solo le altre.
+    // Subtasks deleted together with their parent come back with it, mails with their thread: only the others
+    // are listed.
     entries: db.prepare(`SELECT e.* FROM entries e WHERE e.deleted_at IS NOT NULL AND ${VIS_ANY}
       AND e.kind IN (SELECT value FROM json_each($kinds)) AND ${TRASH_ALONE}
       ORDER BY e.deleted_at DESC`).all({ uid, kinds }),
@@ -105,7 +105,7 @@ route('DELETE', '/api/trash/:type/:id', ({ params, user }) => {
   const el = getTrashed(params.type, params.id, user);
   assertCan(user, areaOf(params.type, el), 'write');
   if (!user.is_admin && el.created_by !== user.id && el.deleted_by !== user.id) {
-    fail(403, 'Può eliminare definitivamente solo chi l\'ha creato o eliminato (o un admin)');
+    fail(403, 'Only whoever created or deleted it (or an admin) can delete it for good');
   }
   purge(`id = ${el.id}`, TABLE[params.type]);
 });
@@ -114,13 +114,13 @@ route('DELETE', '/api/trash', () => {
   purge('deleted_at IS NOT NULL');
 }, { auth: 'admin' });
 
-// Cancella davvero le righe che soddisfano `cond` (in una tabella o in tutte) e i file collegati.
+// Really deletes the rows matching `cond` (in one table or in all) and the linked files.
 function purge(cond, only) {
   const want = t => !only || only === t;
   const files = [];
   const collect = sql => files.push(...db.prepare(sql).all().map(r => r.stored));
   tx(() => {
-    // Un thread se ne va con le sue mail eliminate insieme a lui (messaggi e collegamenti cadono con il thread).
+    // A thread goes with its mails deleted together with it (messages and links fall with the thread).
     if (want('mail_threads')) {
       const threads = `SELECT id FROM mail_threads WHERE ${cond}`;
       const ents = `SELECT e.id FROM entries e JOIN mail_threads t ON t.id = e.thread_id WHERE t.id IN (${threads}) AND e.deleted_at = t.deleted_at`;
@@ -144,7 +144,7 @@ function purge(cond, only) {
     if (want('contacts')) db.prepare(`DELETE FROM contacts WHERE ${cond}`).run();
     if (want('doc_notes')) db.prepare(`DELETE FROM doc_notes WHERE ${cond}`).run();
   });
-  // Gli allegati che puntano a un documento (doc_id) non hanno file propri e spariscono con lui (ON DELETE CASCADE).
+  // Attachments pointing to a document (doc_id) have no files of their own and go with it (ON DELETE CASCADE).
   for (const f of files) fs.rmSync(path.join(UPLOAD_DIR, f), { force: true });
   return files.length;
 }

@@ -1,8 +1,8 @@
-// Trascinamento con eventi pointer (non il drag nativo HTML5), così funziona uguale con mouse e touch.
-// Mouse: parte dopo 5 px. Touch: pressione lunga, così lo scorrimento della pagina resta normale.
+// Dragging with pointer events (not native HTML5 drag), so it works the same with mouse and touch.
+// Mouse: starts after 5 px. Touch: long press, so scrolling the page stays normal.
 //
 // draggable({ handle, bodyClass, data(el), ghost(data), target(el, data) → { el, ok, value } | null, drop(data, target) })
-//   handle: selettore degli elementi trascinabili; target: dato l'elemento sotto il puntatore, dove si rilascerebbe.
+//   handle: selector of the draggable elements; target: given the element under the pointer, where it would drop.
 import { h, RS, render, isReadOnly } from './core.js';
 
 const specs = [];
@@ -14,7 +14,7 @@ export function draggable(spec) {
 
 function start() {
   drag.active = true;
-  RS.hold = true; // niente ridisegni sotto il puntatore durante il trascinamento
+  RS.hold = true; // no re-render under the pointer while dragging
   drag.ghost = h('div.drag-ghost', drag.spec.ghost(drag.data));
   document.body.append(drag.ghost);
   document.body.classList.add('dnd', drag.spec.bodyClass);
@@ -32,7 +32,7 @@ function end(drop) {
   d.el.classList.remove('dragging');
   d.target?.el.classList.remove('drop-ok', 'drop-no');
   document.body.classList.remove('dnd', d.spec.bodyClass);
-  // Il rilascio non deve diventare anche un clic sul link trascinato; se il clic non arriva il blocco scade.
+  // The drop must not also become a click on the dragged link; if the click does not come the block expires.
   const swallow = ev => { ev.preventDefault(); ev.stopPropagation(); };
   window.addEventListener('click', swallow, { capture: true, once: true });
   setTimeout(() => window.removeEventListener('click', swallow, { capture: true }), 80);
@@ -48,7 +48,7 @@ document.addEventListener('pointerdown', ev => {
   if (ev.button !== 0) return;
   for (const spec of specs) {
     const el = ev.target.closest(spec.handle);
-    if (!el || isReadOnly(el)) continue; // in sola lettura non si sposta niente
+    if (!el || isReadOnly(el)) continue; // read-only: nothing moves
     drag = { spec, el, data: spec.data(el), x: ev.clientX, y: ev.clientY, touch: ev.pointerType !== 'mouse', active: false };
     if (drag.touch) drag.timer = setTimeout(() => drag && start(), 380);
     return;
@@ -59,7 +59,7 @@ document.addEventListener('pointermove', ev => {
   if (!drag) return;
   if (!drag.active) {
     const dist = Math.hypot(ev.clientX - drag.x, ev.clientY - drag.y);
-    if (drag.touch) { if (dist > 8) end(false); } // ha iniziato a scorrere: niente trascinamento
+    if (drag.touch) { if (dist > 8) end(false); } // it started scrolling: no dragging
     else if (dist > 5) start();
     if (!drag?.active) return;
   }
@@ -72,7 +72,7 @@ document.addEventListener('pointermove', ev => {
     t?.el.classList.add(t.ok ? 'drop-ok' : 'drop-no');
   }
   drag.target = t;
-  // Scorrimento automatico vicino ai bordi della finestra.
+  // Automatic scrolling near the window's edges.
   const edge = 70;
   if (ev.clientY < edge) window.scrollBy(0, -12);
   else if (ev.clientY > window.innerHeight - edge) window.scrollBy(0, 12);
@@ -81,6 +81,6 @@ document.addEventListener('pointermove', ev => {
 document.addEventListener('pointerup', () => drag && end(true));
 document.addEventListener('pointercancel', () => drag && end(false));
 document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && drag?.active) { ev.preventDefault(); end(false); } }, true);
-// Su touch, dopo la pressione lunga, il dito non deve far scorrere la pagina né aprire il menu del link.
+// On touch, after the long press, the finger must not scroll the page nor open the link's menu.
 document.addEventListener('touchmove', ev => { if (drag?.active) ev.preventDefault(); }, { passive: false });
 document.addEventListener('contextmenu', ev => { if (drag) ev.preventDefault(); });

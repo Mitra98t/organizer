@@ -1,27 +1,28 @@
-// Barra in basso (telefono): un tasto per gruppo (Progetti, Agenda, Magazzino, Mail, Impostazioni). Un tocco apre
-// la pagina del tasto; tenendo premuto si apre attorno al dito un menu radiale con le pagine del gruppo (Agenda e
-// Diario; Magazzino e Documenti; Mail, Contatti e Chat; Impostazioni, Cestino, Novità, Feedback): si scorre col
-// dito su una e la si lascia. La pagina scelta prende il posto del tasto (si ricorda su questo dispositivo).
+// Bottom bar (phone): one button per group (Projects, Agenda, Inventory, Mail, Settings). A tap opens the button's
+// page; a long press opens a radial menu around the finger with the group's pages (Agenda and Journal; Inventory
+// and Documents; Mail, Contacts and Chat; Settings, Trash, What's new, Feedback): slide the finger onto one and
+// release. The chosen page takes the button's place (remembered on this device).
 import { h, icon, load, save } from './core.js';
+import { tr } from './i18n.js';
 
 const GROUPS = [
-  { key: 'progetti', items: [['progetti', 'Progetti', 'folder']] },
-  { key: 'agenda', items: [['agenda', 'Agenda', 'agenda'], ['diario', 'Diario', 'diary']] },
-  { key: 'magazzino', items: [['magazzino', 'Magazzino', 'box'], ['documenti', 'Documenti', 'file']] },
-  { key: 'mail', items: [['mail', 'Mail', 'mail'], ['contatti', 'Contatti', 'contacts'], ['chat', 'Chat', 'chat']] },
-  { key: 'impostazioni', items: [['impostazioni', 'Impostazioni', 'settings'], ['cestino', 'Cestino', 'trash'], ['novita', 'Novità', 'news'], ['feedback', 'Feedback', 'bug', true]] },
+  { key: 'progetti', items: [['progetti', tr('Projects'), 'folder']] },
+  { key: 'agenda', items: [['agenda', tr('Agenda'), 'agenda'], ['diario', tr('Journal'), 'diary']] },
+  { key: 'magazzino', items: [['magazzino', tr('Inventory'), 'box'], ['documenti', tr('Documents'), 'file']] },
+  { key: 'mail', items: [['mail', tr('Mail'), 'mail'], ['contatti', tr('Contacts'), 'contacts'], ['chat', tr('Chat'), 'chat']] },
+  { key: 'impostazioni', items: [['impostazioni', tr('Settings'), 'settings'], ['cestino', tr('Trash'), 'trash'], ['novita', tr('What\'s new'), 'news'], ['feedback', tr('Feedback'), 'bug', true]] },
 ];
 const HOLD_MS = 280;
-const RADIUS = 124; // lontano dal dito, che altrimenti copre i tasti
-const MARGIN = 44; // dai bordi dello schermo
+const RADIUS = 124; // far from the finger, which would otherwise cover the buttons
+const MARGIN = 44; // from the screen's edges
 
-const picks = load('org.tabPick', {}); // gruppo → pagina scelta dal menu radiale
+const picks = load('org.tabPick', {}); // group → page chosen from the radial menu
 let opts = null; // { allowed(key), action(key) }
 const slots = [];
 let state = { nav: null, badges: {} };
 
 const members = g => g.items.filter(([k, , , act]) => act || opts.allowed(k));
-// La pagina mostrata dal tasto: quella aperta, se è del gruppo; altrimenti quella scelta l'ultima volta.
+// The page the button shows: the open one, if it belongs to the group; otherwise the one chosen last time.
 function shown(g) {
   const list = members(g).filter(([, , , act]) => !act);
   return list.find(([k]) => k === state.nav) || list.find(([k]) => k === picks[g.key]) || list[0];
@@ -31,7 +32,7 @@ export function tabbar(o) {
   opts = o;
   slots.length = 0;
   const nav = h('nav.tabs', GROUPS.map(slot));
-  // La sua altezza vera (con la zona sicura in basso) in --tabs-h: ci si appoggiano le barre fisse (es. la chat).
+  // Its real height (with the bottom safe area) in --tabs-h: fixed bars lean on it (e.g. the chat).
   new ResizeObserver(() => document.documentElement.style.setProperty('--tabs-h', `${nav.offsetHeight}px`)).observe(nav);
   return nav;
 }
@@ -42,7 +43,7 @@ function slot(g) {
   const badge = h('span.nbadge');
   const a = h('a.tab', {
     'data-group': g.key,
-    oncontextmenu: ev => ev.preventDefault(), // la pressione lunga apre il menu radiale, non quello del link
+    oncontextmenu: ev => ev.preventDefault(), // the long press opens the radial menu, not the link's one
     onclick: ev => { if (press?.used) { ev.preventDefault(); press = null; } },
   }, ic, label, badge);
   a.addEventListener('pointerdown', ev => startPress(ev, s));
@@ -51,7 +52,7 @@ function slot(g) {
   return a;
 }
 
-// Dopo ogni disegno dell'app: pagina aperta (nav di app.js) e numeri dei segnalini per pagina.
+// After every render of the app: the open page (app.js nav) and the badge counts per page.
 export function updateTabbar(nav, badges) {
   state = { nav, badges };
   let visible = 0;
@@ -66,7 +67,7 @@ export function updateTabbar(nav, badges) {
     s.label.textContent = label;
     s.a.classList.toggle('on', s.g.items.some(([k]) => k === nav));
     s.a.classList.toggle('more', members(s.g).length > 1);
-    // Il segnalino della pagina mostrata; se ce l'ha solo un'altra pagina del gruppo, un pallino.
+    // The badge of the page shown; if only another page of the group has one, a dot.
     const own = badges[key];
     const other = members(s.g).some(([k]) => k !== key && badges[k]);
     s.badge.textContent = own || (other ? '•' : '');
@@ -75,7 +76,7 @@ export function updateTabbar(nav, badges) {
   slots[0]?.a.parentElement?.style.setProperty('grid-template-columns', `repeat(${visible}, 1fr)`);
 }
 
-// ---------- menu radiale ----------
+// ---------- radial menu ----------
 let press = null; // { s, x, y, timer, open, used, pick }
 const radial = h('div.radial', { hidden: true });
 
@@ -83,7 +84,7 @@ function startPress(ev, s) {
   if (ev.button > 0 || members(s.g).length < 2) return;
   press = { s, x: ev.clientX, y: ev.clientY, id: ev.pointerId, open: false, used: false, pick: null };
   press.timer = setTimeout(() => openRadial(), HOLD_MS);
-  try { s.a.setPointerCapture(ev.pointerId); } catch { /* il dito è già andato via */ }
+  try { s.a.setPointerCapture(ev.pointerId); } catch { /* the finger has already left */ }
 }
 
 function openRadial() {
@@ -92,8 +93,8 @@ function openRadial() {
   press.open = true;
   press.used = true;
   navigator.vibrate?.(12);
-  // Gli elementi su un arco attorno al dito, aperto verso il centro dello schermo (dal tasto a sinistra
-  // si aprono verso destra, da quello a destra verso sinistra); se uscirebbero dallo schermo si spostano tutti.
+  // The items on an arc around the finger, open towards the centre of the screen (from the left button they open
+  // to the right, from the right one to the left); if they would leave the screen they all move.
   const cx = press.x;
   const cy = press.y;
   const n = list.length;
@@ -131,7 +132,7 @@ function pickAt(x, y) {
 document.addEventListener('pointermove', ev => {
   if (!press || ev.pointerId !== press.id) return;
   if (!press.open) {
-    if (Math.hypot(ev.clientX - press.x, ev.clientY - press.y) > 12) cancel(); // si stava scorrendo, non tenendo premuto
+    if (Math.hypot(ev.clientX - press.x, ev.clientY - press.y) > 12) cancel(); // it was scrolling, not a long press
     return;
   }
   ev.preventDefault();
@@ -170,6 +171,6 @@ function closeRadial() {
   radial.hidden = true;
   radial.replaceChildren();
   document.body.classList.remove('radial-open');
-  // Il clic che segue il rilascio non deve aprire la pagina del tasto (lo assorbe onclick, poi press si azzera).
+  // The click after the release must not open the button's page (onclick absorbs it, then press resets).
   setTimeout(() => { press = null; }, 400);
 }

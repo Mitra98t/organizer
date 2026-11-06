@@ -1,9 +1,9 @@
-// Archivio ZIP minimale (deflate, nomi UTF-8), senza dipendenze: serve a impacchettare l'estensione di
-// Thunderbird (un .xpi è uno zip), l'esportazione dei dati (transfer.js) e i documenti di un articolo. files: [{ name, data: Buffer }].
-// unzip legge gli archivi senza cifratura né ZIP64 (quelli fatti qui, o con gli strumenti comuni).
+// Minimal ZIP archive (deflate, UTF-8 names), without dependencies: it packs the Thunderbird extension (an .xpi is
+// a zip), the data export (transfer.js) and an item's documents. files: [{ name, data: Buffer }].
+// unzip reads archives without encryption or ZIP64 (those made here, or with the common tools).
 import zlib from 'node:zlib';
 
-const DOS_DATE = (0 << 9) | (1 << 5) | 1; // 1 gennaio 1980: la data non conta, ma 0 non è valida
+const DOS_DATE = (0 << 9) | (1 << 5) | 1; // 1 January 1980: the date does not matter, but 0 is not valid
 
 export function zip(files) {
   const parts = [];
@@ -11,16 +11,16 @@ export function zip(files) {
   let offset = 0;
   for (const f of files) {
     const name = Buffer.from(f.name);
-    // PDF, immagini e firmware spesso non si comprimono: in quel caso si salvano così come sono.
+    // PDFs, images and firmware often do not compress: then they are stored as they are.
     const packed = zlib.deflateRawSync(f.data);
     const method = packed.length < f.data.length ? 8 : 0;
     const comp = method ? packed : f.data;
     const crc = zlib.crc32(f.data);
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
-    local.writeUInt16LE(20, 4); // versione necessaria
-    local.writeUInt16LE(0x0800, 6); // nomi in UTF-8
-    local.writeUInt16LE(method, 8); // deflate o senza compressione
+    local.writeUInt16LE(20, 4); // version needed
+    local.writeUInt16LE(0x0800, 6); // UTF-8 names
+    local.writeUInt16LE(method, 8); // deflate or no compression
     local.writeUInt16LE(DOS_DATE, 12);
     local.writeUInt32LE(crc, 14);
     local.writeUInt32LE(comp.length, 18);
@@ -53,18 +53,18 @@ export function zip(files) {
   return Buffer.concat([...parts, dir, end]);
 }
 
-// Nome → funzione che restituisce il contenuto (si decomprime solo quando serve).
+// Name → function returning the content (decompressed only when needed).
 export function unzip(buf) {
   let end = -1;
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) {
     if (buf.readUInt32LE(i) === 0x06054b50) { end = i; break; }
   }
-  if (end < 0) throw new Error('Il file non è un archivio zip');
+  if (end < 0) throw new Error('The file is not a zip archive');
   const count = buf.readUInt16LE(end + 10);
   let p = buf.readUInt32LE(end + 16);
   const out = new Map();
   for (let i = 0; i < count; i++) {
-    if (buf.readUInt32LE(p) !== 0x02014b50) throw new Error('Archivio zip danneggiato');
+    if (buf.readUInt32LE(p) !== 0x02014b50) throw new Error('Damaged zip archive');
     const method = buf.readUInt16LE(p + 10);
     const size = buf.readUInt32LE(p + 20);
     const nameLen = buf.readUInt16LE(p + 28);
@@ -77,7 +77,7 @@ export function unzip(buf) {
     out.set(name, () => {
       if (method === 0) return raw;
       if (method === 8) return zlib.inflateRawSync(raw);
-      throw new Error(`Compressione non supportata in ${name}`);
+      throw new Error(`Unsupported compression in ${name}`);
     });
     p += 46 + nameLen + extraLen + commentLen;
   }

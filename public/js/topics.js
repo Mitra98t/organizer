@@ -1,9 +1,9 @@
-// Posta a topic (vedi server/maildata.js). Tutto è personale: nessun altro vede la posta di una persona.
-//  - pagina Mail: i topic come schede su più colonne, ognuna con le sue conversazioni (attive o archiviate).
-//    Una conversazione si trascina su un altro topic per unirla, o su "topic a sé" per separarla;
-//  - pagina del topic (#/t/ID?th=thread): a sinistra l'albero (conversazioni e loro mail, come un forum), al
-//    centro la mail scelta (o la bozza da scrivere), a destra collegamenti, persone e allegati della conversazione.
-// Topic e conversazioni hanno stella e colore (automatico finché non se ne sceglie uno).
+// Mail by topic (see server/maildata.js). Everything is personal: nobody else sees a person's mail.
+//  - Mail page: topics as cards in several columns, each with its conversations (active or archived). A
+//    conversation is dragged onto another topic to merge it, or onto "topic of its own" to split it;
+//  - topic page (#/t/ID?th=thread): on the left the tree (conversations and their mails, like a forum), in the
+//    middle the chosen mail (or the draft to write), on the right the conversation's links, people and attachments.
+// Topics and conversations have a star and a colour (automatic until one is chosen).
 import {
   h, icon, S, ui, api, act, render, toast, save, fmtTime, fmtDay, plainRefs, contactNames, can, itemAttrs, docName, projectsOf, projHue,
   trashIt, popButton, popItem, popSep, huePicker, masonry, filterChip, fold, foldBar,
@@ -12,17 +12,18 @@ import { draggable } from './dnd.js';
 import { extractCodes } from './parse.js';
 import { mailComposer, peopleBlock, outAttachments, attList, block, fromName, addrs, addrList, lc, REF_RE } from './mail.js';
 import { backlinksBox } from './views.js';
+import { tr, trn } from './i18n.js';
 
-// ---------- dati ----------
-export const threadSubject = t => plainRefs(t.subject).replace(/(^|\s)#/g, '$1') || '(senza oggetto)';
-export const topicTitle = t => plainRefs(t.title).replace(/(^|\s)#/g, '$1') || '(senza oggetto)';
-// Colore automatico: sparso con l'angolo aureo, così topic e conversazioni vicini non si somigliano.
+// ---------- data ----------
+export const threadSubject = t => plainRefs(t.subject).replace(/(^|\s)#/g, '$1') || tr('(no subject)');
+export const topicTitle = t => plainRefs(t.title).replace(/(^|\s)#/g, '$1') || tr('(no subject)');
+// Automatic colour: spread with the golden angle, so nearby topics and conversations do not look alike.
 const autoHue = (id, shift = 0) => Math.round((id * 137.508 + shift) % 360);
 export const topicHue = t => t.hue ?? autoHue(t.id);
 export const threadHue = t => t.hue ?? autoHue(t.id, 70);
 const parseRefs = m => { try { return JSON.parse(m.refs || '[]'); } catch { return []; } };
 
-// Il riassunto di una conversazione: per le schede, i badge e i backlink.
+// A conversation's summary: for cards, badges and backlinks.
 export function threadInfo(t) {
   const D = S.data;
   const msgs = D.msgsOfThread.get(t.id) || [];
@@ -34,7 +35,7 @@ export function threadInfo(t) {
   const who = addrList(people.join(',')).filter(a => !D.mine.has(lc(a.email)) && !seen.has(lc(a.email)) && seen.add(lc(a.email)));
   const links = D.linksOfThread.get(t.id) || [];
   const projects = new Map();
-  // Progetti della conversazione, del suo topic e delle mail scritte qui.
+  // Projects of the conversation, of its topic and of the mails written here.
   for (const l of [...links, ...(D.linksOfTopic.get(t.topic_id) || [])]) if (l.kind === 'progetto' && D.projectById.has(l.target_id)) projects.set(l.target_id, D.projectById.get(l.target_id));
   for (const e of ents) for (const p of projectsOf(e)) projects.set(p.id, p);
   return {
@@ -52,7 +53,7 @@ export function threadInfo(t) {
 const whoNames = who => who.slice(0, 3).map(a => S.data.contactByEmail.get(lc(a.email))?.name || a.name || a.email).join(', ')
   + (who.length > 3 ? ` +${who.length - 3}` : '');
 
-// Il testo nuovo di un messaggio, senza la citazione dei precedenti ("Il giorno … ha scritto:", righe con >).
+// A message's new text, without the quote of the previous ones ("On … wrote:", lines with >).
 function newPart(text) {
   const lines = String(text || '').replace(/\r/g, '').split('\n');
   const quote = /^(On|Il|Am|Le|El) .{4,300}(wrote|scritto|schrieb|écrit|escribió)\s*:\s*$|^-{2,}\s*(Original Message|Messaggio originale|Forwarded)|^>|^(From|Da):\s.+/i;
@@ -60,7 +61,7 @@ function newPart(text) {
   return (cut < 0 ? lines : lines.slice(0, cut)).join('\n').trim();
 }
 
-// ---------- azioni ----------
+// ---------- actions ----------
 const patchThread = (t, f) => { Object.assign(t, f); render(); return act(() => api('PATCH', `/mail/threads/${t.id}`, f)); };
 const patchTopic = (t, f) => { Object.assign(t, f); render(); return act(() => api('PATCH', `/mail/topics/${t.id}`, f)); };
 
@@ -70,7 +71,7 @@ export function archiveThread(t, archived) {
   if (archived) for (const m of S.data.msgsOfThread.get(t.id) || []) m.read_at ||= at;
   render();
   act(() => api('PATCH', `/mail/threads/${t.id}`, { archived }));
-  toast(archived ? 'Conversazione archiviata' : 'Conversazione di nuovo attiva', { action: { label: 'Annulla', fn: () => archiveThread(t, !archived) } });
+  toast(archived ? tr('Conversation archived') : tr('Conversation active again'), { action: { label: tr('Undo'), fn: () => archiveThread(t, !archived) } });
 }
 
 function rename(label, current, fn) {
@@ -81,38 +82,38 @@ function rename(label, current, fn) {
 async function deleteThread(t) {
   const n = (S.data.entriesOfThread.get(t.id) || []).length;
   const alone = (S.data.threadsOfTopic.get(t.topic_id) || []).length === 1;
-  const ok = await trashIt('thread', `/mail/threads/${t.id}`, n ? 'Conversazione (con le sue mail)' : 'Conversazione');
+  const ok = await trashIt('thread', `/mail/threads/${t.id}`, n ? tr('Conversation (with its mails)') : tr('Conversation'));
   if (ok && alone && location.hash.startsWith(`#/t/${t.topic_id}`)) location.hash = '#/mail';
 }
 
 async function deleteTopic(topic) {
   const n = (S.data.threadsOfTopic.get(topic.id) || []).length;
-  if (n > 1 && !confirm(`Mettere nel cestino il topic e le sue ${n} conversazioni?`)) return;
+  if (n > 1 && !confirm(tr('Move the topic and its {n} conversations to the trash?', { n }))) return;
   if (await act(() => api('DELETE', `/mail/topics/${topic.id}`).then(() => true))) {
-    toast('Topic nel cestino: le conversazioni si ripristinano dal Cestino');
+    toast(tr('Topic moved to the trash: the conversations are restored from the Trash'));
     if (location.hash.startsWith(`#/t/${topic.id}`)) location.hash = '#/mail';
   }
 }
 
-// Spostare una conversazione: in un altro topic (id) o in uno tutto suo ("new").
+// Moving a conversation: to another topic (id) or to one of its own ("new").
 async function moveThread(t, to) {
   const D = S.data;
   const from = D.topicById.get(t.topic_id);
   const r = await act(() => api('PATCH', `/mail/threads/${t.id}`, { topic: to }));
   if (!r) return;
-  const dest = to === 'new' ? 'un topic a sé' : `"${topicTitle(D.topicById.get(to) || { title: '' })}"`;
-  toast(`Spostata in ${dest}`);
+  const dest = to === 'new' ? tr('a topic of its own') : `"${topicTitle(D.topicById.get(to) || { title: '' })}"`;
+  toast(tr('Moved to {dest}', { dest }));
   if (location.hash.startsWith(`#/t/${from?.id}`) && !(D.threadsOfTopic.get(from.id) || []).some(x => x.id !== t.id)) location.hash = `#/t/${r.topic}?th=${t.id}`;
 }
 
-// Segnalino delle mail da leggere (in alto a destra di conversazioni e topic, come nel menu).
-const unreadBadge = n => n > 0 && h('span.unread-n', { title: n === 1 ? '1 mail da leggere' : `${n} mail da leggere` }, n > 99 ? '99+' : n);
+// Badge of the unread mails (top right of conversations and topics, as in the menu).
+const unreadBadge = n => n > 0 && h('span.unread-n', { title: trn(n, '1 unread mail', '{n} unread mails') }, n > 99 ? '99+' : n);
 
-const star = (on, onclick, what) => h('button.star-btn', { class: on ? 'on' : null, title: on ? `Togli la stella (${what})` : `Metti la stella (${what})`, 'aria-pressed': on ? 'true' : 'false', onclick }, on ? '★' : '☆');
+const star = (on, onclick, what) => h('button.star-btn', { class: on ? 'on' : null, title: on ? tr('Remove the star ({what})', { what }) : tr('Star it ({what})', { what }), 'aria-pressed': on ? 'true' : 'false', onclick }, on ? '★' : '☆');
 
 const huePop = (key, x, auto, onPick) => popButton(key, h('span.hue-dot', { style: `--h:${x.hue ?? auto}` }), close => [
-  h('div.pop-sep', 'Colore'), huePicker(x.hue ?? null, auto, v => { close(); onPick(v); }),
-], { class: 'hue-b', title: 'Colore' });
+  h('div.pop-sep', tr('Colour')), huePicker(x.hue ?? null, auto, v => { close(); onPick(v); }),
+], { class: 'hue-b', title: tr('Colour') });
 
 function threadMenu(t) {
   const D = S.data;
@@ -120,38 +121,38 @@ function threadMenu(t) {
     .sort((a, b) => b.last - a.last).slice(0, 10).map(o => o.x);
   const alone = (D.threadsOfTopic.get(t.topic_id) || []).length === 1;
   return popButton(`thread:${t.id}`, '⋯', close => [
-    popItem([icon('edit'), 'Rinomina'], () => { close(); rename('Nome della conversazione:', threadSubject(t), subject => patchThread(t, { subject })); }),
-    !alone && popItem([icon('folder'), 'Separa in un topic a sé'], () => { close(); moveThread(t, 'new'); }),
-    others.length > 0 && popSep('Sposta nel topic'),
+    popItem([icon('edit'), tr('Rename')], () => { close(); rename(tr('Name of the conversation:'), threadSubject(t), subject => patchThread(t, { subject })); }),
+    !alone && popItem([icon('folder'), tr('Split into a topic of its own')], () => { close(); moveThread(t, 'new'); }),
+    others.length > 0 && popSep(tr('Move to the topic')),
     others.map(x => popItem(topicTitle(x), () => { close(); moveThread(t, x.id); })),
     popSep(),
-    popItem([icon('trash'), 'Elimina'], () => { close(); deleteThread(t); }),
-  ], { class: 'tc-menu', title: 'Rinomina, sposta, elimina', 'aria-label': 'Rinomina, sposta, elimina' });
+    popItem([icon('trash'), tr('Delete')], () => { close(); deleteThread(t); }),
+  ], { class: 'tc-menu', title: tr('Rename, move, delete'), 'aria-label': tr('Rename, move, delete') });
 }
 
 const topicMenu = topic => {
   const D = S.data;
   const spaces = D.workspaces.filter(w => w.id !== D.workspace?.id && !w.tour);
   return popButton(`topic:${topic.id}`, '⋯', close => [
-    popItem([icon('edit'), 'Rinomina'], () => { close(); rename('Nome del topic:', topicTitle(topic), title => patchTopic(topic, { title })); }),
-    spaces.length > 0 && popSep('Sposta nel workspace'),
+    popItem([icon('edit'), tr('Rename')], () => { close(); rename(tr('Name of the topic:'), topicTitle(topic), title => patchTopic(topic, { title })); }),
+    spaces.length > 0 && popSep(tr('Move to the workspace')),
     spaces.map(w => popItem(w.name, () => { close(); moveTopicTo(topic, w); })),
     popSep(),
-    popItem([icon('trash'), 'Elimina il topic'], () => { close(); deleteTopic(topic); }),
-  ], { class: 'tc-menu', title: 'Rinomina, sposta, elimina', 'aria-label': 'Rinomina, sposta, elimina' });
+    popItem([icon('trash'), tr('Delete the topic')], () => { close(); deleteTopic(topic); }),
+  ], { class: 'tc-menu', title: tr('Rename, move, delete'), 'aria-label': tr('Rename, move, delete') });
 };
 
-// Il topic intero in un altro workspace (con conversazioni e mail scritte qui): i collegamenti di qui si perdono.
+// The whole topic into another workspace (with conversations and mails written here): the links from here are lost.
 function moveTopicTo(topic, w) {
-  if (!confirm(`Spostare "${topicTitle(topic)}" nel workspace ${w.name}?\n\nI collegamenti ad articoli, progetti e contatti di questo workspace si perdono; quelli automatici si rifanno con il magazzino di ${w.name}.`)) return;
+  if (!confirm(tr('Move "{topic}" to the workspace {ws}?\n\nLinks to items, projects and contacts of this workspace are lost; the automatic ones are made again with the inventory of {ws}.', { topic: topicTitle(topic), ws: w.name }))) return;
   act(async () => {
     await api('POST', `/mail/topics/${topic.id}/move`, { ws: w.id });
     location.hash = '#/mail';
-  }, `Topic spostato in ${w.name}`);
+  }, tr('Topic moved to {ws}', { ws: w.name }));
 }
 
-// ---------- pagina Mail ----------
-const MAIL_STATES = [['star', '★ Con stella'], ['unread', 'Da leggere'], ['draft', 'Da mandare'], ['wait', 'In attesa di risposta']];
+// ---------- Mail page ----------
+const MAIL_STATES = [['star', tr('★ Starred')], ['unread', tr('Unread')], ['draft', tr('To send')], ['wait', tr('Awaiting reply')]];
 const STATE = {
   star: x => !!x.t.starred || !!S.data.topicById.get(x.t.topic_id)?.starred,
   unread: x => x.unread > 0,
@@ -159,13 +160,13 @@ const STATE = {
   wait: x => x.waiting.length > 0,
 };
 
-// same: l'oggetto è già il titolo del topic (la scheda ha una conversazione sola): non si ripete.
+// same: the subject is already the topic's title (the card has a single conversation): it is not repeated.
 function threadRow(x, same = false) {
   const { t } = x;
   const archived = !!t.archived_at;
   const snip = x.last ? newPart(x.last.snippet) : plainRefs(x.drafts[0]?.notes || '');
   return h('div.trow', { class: [x.unread && 'unread', archived && 'archived'].filter(Boolean).join(' '), 'data-th': t.id, style: `--h:${threadHue(t)}` },
-    h('button.check.mail', { title: archived ? 'Di nuovo attiva' : 'Archivia (la segna anche letta)', onclick: () => archiveThread(t, !archived) },
+    h('button.check.mail', { title: archived ? tr('Active again') : tr('Archive (also marks it read)'), onclick: () => archiveThread(t, !archived) },
       icon(archived ? 'restore' : 'check')),
     h('a.trow-body', { href: `#/t/${t.topic_id}?th=${t.id}` },
       h('div.trow-h', t.starred ? h('span.star-on', '★') : null,
@@ -173,8 +174,8 @@ function threadRow(x, same = false) {
       !same && x.who.length > 0 && h('div.trow-who', whoNames(x.who)),
       snip && h('div.trow-snip', snip.replace(/\s+/g, ' ').slice(0, 160)),
       h('div.tc-meta',
-        x.drafts.length > 0 && h('span.tb.draft', icon('edit'), x.drafts.length === 1 ? 'da mandare' : `${x.drafts.length} da mandare`),
-        x.waiting.length > 0 && h('span.tb.wait', icon('wait'), 'in attesa'),
+        x.drafts.length > 0 && h('span.tb.draft', icon('edit'), x.drafts.length === 1 ? tr('to send') : tr('{n} to send', { n: x.drafts.length })),
+        x.waiting.length > 0 && h('span.tb.wait', icon('wait'), tr('awaiting')),
         x.msgs.length > 1 && h('span.muted', icon('mail'), x.msgs.length),
         x.att && h('span.muted', icon('clip')),
         x.projects.map(p => h('span.tag', { style: `--h:${projHue(p)}` }, `@${p.tag}`)),
@@ -183,20 +184,20 @@ function threadRow(x, same = false) {
     threadMenu(t));
 }
 
-// Progetti collegati al topic intero.
+// Projects linked to the whole topic.
 const topicProjects = topic => (S.data.linksOfTopic.get(topic.id) || []).filter(l => l.kind === 'progetto')
   .map(l => S.data.projectById.get(l.target_id)).filter(Boolean);
 
 function topicCard(topic, rows, total) {
   return fold('mail', topic.id, h('section.topic-card', { 'data-topic': topic.id, style: `--h:${topicHue(topic)}` },
     h('div.tp-h',
-      star(!!topic.starred, () => patchTopic(topic, { starred: topic.starred ? 0 : 1 }), 'topic'),
+      star(!!topic.starred, () => patchTopic(topic, { starred: topic.starred ? 0 : 1 }), tr('topic')),
       h('a.tp-title', { href: `#/t/${topic.id}` }, topicTitle(topic)),
       topicProjects(topic).length > 0 && h('span.tp-tags', topicProjects(topic).map(p => h('span.tag', { style: `--h:${projHue(p)}` }, `@${p.tag}`))),
       unreadBadge((S.data.threadsOfTopic.get(topic.id) || []).reduce((n, t) => n + (S.data.msgsOfThread.get(t.id) || []).filter(m => m.direction === 'in' && !m.read_at).length, 0)),
-      // Il numero di conversazioni; con una sola si vede solo su telefono (serve a scheda chiusa).
-      h(`span.muted.tp-n${total > 1 ? '' : '.only-mobile'}`, { title: `${total} ${total === 1 ? 'conversazione' : 'conversazioni'} in questo topic` }, `${total} conv.`),
-      // Il colore si sceglie nella pagina del topic: qui la scheda lo mostra soltanto (bordo in alto).
+      // The number of conversations; with only one it shows only on a phone (useful with the card closed).
+      h(`span.muted.tp-n${total > 1 ? '' : '.only-mobile'}`, { title: trn(total, '1 conversation in this topic', '{n} conversations in this topic') }, tr('{n} conv.', { n: total })),
+      // The colour is chosen on the topic page: here the card only shows it (top border).
       topicMenu(topic)),
     rows.map(x => threadRow(x, total === 1 && threadSubject(x.t) === topicTitle(topic)))));
 }
@@ -212,7 +213,7 @@ export function viewMail() {
   const shown = all.filter(x => has(x) && (!ui.mailAtt || x.att) && (!proj || x.projects.some(p => p.id === proj.id)));
   const inView = v => shown.filter(x => !!x.t.archived_at === (v === 'archive'));
   const rows = inView(view).filter(x => !ui.mailType || STATE[ui.mailType](x));
-  // Per topic: con stella prima, poi il più recente.
+  // By topic: starred first, then the most recent.
   const byTopic = new Map();
   for (const x of rows) {
     if (!byTopic.has(x.t.topic_id)) byTopic.set(x.t.topic_id, []);
@@ -224,7 +225,7 @@ export function viewMail() {
   const setView = v => { ui.mailView = v; ui.mailType = null; save('org.mailView', v); render(); };
   const projects = [...new Map(all.flatMap(x => x.projects).map(p => [p.id, p])).values()].sort((a, b) => a.tag.localeCompare(b.tag));
   const filtered = !!(f || ui.mailAtt || proj || ui.mailType);
-  // Mail condivise da altri: i thread sono personali, di queste non ho la conversazione.
+  // Mails shared by others: threads are personal, I do not have the conversation of these.
   const shared = D.entries.filter(e => e.kind === 'mail' && e.created_by !== D.me.id && !D.threadById.has(e.thread_id)
     && (view === 'archive') === !!(e.done_at && !e.awaiting_reply) && (!f || [e.title, e.contact, e.notes].some(v => lc(v).includes(f))));
   const nTopics = v => new Set(inView(v).map(x => x.t.topic_id)).size;
@@ -232,36 +233,36 @@ export function viewMail() {
   return h('div.view.mailpage',
     h('div.toolbar',
       h('input.filter', {
-        type: 'search', placeholder: 'Filtra per oggetto, persona, indirizzo, testo…', value: ui.mailFilter, 'data-fk': 'mailfilter',
+        type: 'search', placeholder: tr('Filter by subject, person, address, text…'), value: ui.mailFilter, 'data-fk': 'mailfilter',
         oninput: ev => { ui.mailFilter = ev.target.value; render(); },
       }),
       h('div.seg',
-        h('button', { class: view === 'active' && 'on', onclick: () => setView('active'), title: 'Topic con conversazioni in corso' }, 'Attivi', h('span.n', nTopics('active'))),
-        h('button', { class: view === 'archive' && 'on', onclick: () => setView('archive'), title: 'Conversazioni archiviate: tornano attive se arriva o parte un messaggio' }, 'Archiviati', h('span.n', nTopics('archive'))))),
+        h('button', { class: view === 'active' && 'on', onclick: () => setView('active'), title: tr('Topics with ongoing conversations') }, tr('Active'), h('span.n', nTopics('active'))),
+        h('button', { class: view === 'archive' && 'on', onclick: () => setView('archive'), title: tr('Archived conversations: they become active again if a message arrives or leaves') }, tr('Archived'), h('span.n', nTopics('archive'))))),
     h('div.toolbar.cats',
       MAIL_STATES.map(([k, label]) => filterChip({
         on: ui.mailType === k, label, n: inView(view).filter(STATE[k]).length, cls: k === 'unread' ? 'tint k-mail' : null,
         onclick: () => { ui.mailType = ui.mailType === k ? null : k; render(); },
       })),
       h('span.tsep'),
-      filterChip({ on: ui.mailAtt, label: [icon('clip'), 'con allegati'], onclick: () => { ui.mailAtt = !ui.mailAtt; render(); } }),
+      filterChip({ on: ui.mailAtt, label: [icon('clip'), tr('with attachments')], onclick: () => { ui.mailAtt = !ui.mailAtt; render(); } }),
       projects.length > 0 && h('select.sm', {
-        value: proj ? String(proj.id) : '', title: 'Solo le conversazioni di un progetto',
+        value: proj ? String(proj.id) : '', title: tr('Only the conversations of a project'),
         onchange: ev => { ui.mailProj = +ev.target.value || null; render(); },
-      }, h('option', { value: '' }, 'tutti i progetti'), projects.map(p => h('option', { value: p.id }, `@${p.tag}`)))),
-    h('div.topic-new', 'Rilascia qui per farne un topic a sé'),
+      }, h('option', { value: '' }, tr('all projects')), projects.map(p => h('option', { value: p.id }, `@${p.tag}`)))),
+    h('div.topic-new', tr('Drop here to make it a topic of its own')),
     topics.length > 0 && foldBar('mail'),
     topics.length > 0 && masonry('topic-cols', topics.map(o => topicCard(o.topic, o.list, (D.threadsOfTopic.get(o.topic.id) || []).length))),
-    topics.length > 1 && view === 'active' && h('p.muted.fhint', 'Trascina una conversazione su un altro topic per unirle.'),
-    shared.length > 0 && h('section.sec', h('div.sec-h', h('span.sec-t', 'Condivise con te'), h('span.count', shared.length)),
+    topics.length > 1 && view === 'active' && h('p.muted.fhint', tr('Drag a conversation onto another topic to merge them.')),
+    shared.length > 0 && h('section.sec', h('div.sec-h', h('span.sec-t', tr('Shared with you')), h('span.count', shared.length)),
       h('div.sec-b', shared.map(e => h('a.trow.shared', { href: `#/v/${e.id}` }, h('span.trow-subj', plainRefs(e.title)), h('span.muted', contactNames(e.contact || '')))))),
     !topics.length && !shared.length && h('div.empty', filtered
-      ? h('p', 'Nessuna conversazione corrisponde ai filtri.')
+      ? h('p', tr('No conversation matches the filters.'))
       : view === 'active'
-        ? [h('p', 'Nessuna conversazione attiva.'),
-          !D.mailExt && h('p', 'Collega Thunderbird (Impostazioni → Mail e Thunderbird): al primo collegamento carica qui le mail dell\'ultimo mese.'),
-          h('p', 'Nuova mail dalla barra in alto, ad esempio: ', h('code.k', 'offerta 50 schede >acquisti@ditta.it !ven'))]
-        : h('p', 'Nessuna conversazione archiviata.')));
+        ? [h('p', tr('No active conversation.')),
+          !D.mailExt && h('p', tr('Connect Thunderbird (Settings → Mail and Thunderbird): the first time it loads the mails of the last month here.')),
+          h('p', tr('New mail from the bar at the top, for example: '), h('code.k', tr('offer for 50 boards >purchasing@company.example !fri')))]
+        : h('p', tr('No archived conversation.'))));
 }
 
 draggable({
@@ -282,8 +283,8 @@ draggable({
   drop: (id, target) => moveThread(S.data.threadById.get(id), target.value),
 });
 
-// ---------- pagina del topic ----------
-const full = new Map(); // id del topic → { key, data }: i messaggi interi, letti dal server quando cambiano
+// ---------- topic page ----------
+const full = new Map(); // topic id → { key, data }: the full messages, read from the server when they change
 function fullTopic(topic) {
   const D = S.data;
   const threads = D.threadsOfTopic.get(topic.id) || [];
@@ -296,13 +297,13 @@ function fullTopic(topic) {
   return f.data;
 }
 
-// L'albero di una conversazione: ogni messaggio sotto quello a cui risponde (In-Reply-To, poi References); le
-// mail scritte qui sotto il messaggio a cui rispondono. Senza riferimenti (client che non li mandano) un
-// messaggio è una radice: una conversazione può averne più d'una.
+// A conversation's tree: each message under the one it replies to (In-Reply-To, then References); the mails written
+// here under the message they reply to. Without references (clients that do not send them) a message is a root: a
+// conversation may have more than one.
 function treeOf(x) {
   const D = S.data;
   const byMid = new Map(x.msgs.map(m => [m.message_id, m]));
-  const nodes = new Map(); // "m12" / "e5" → nodo
+  const nodes = new Map(); // "m12" / "e5" → node
   const add = (key, n) => { nodes.set(key, { ...n, kids: [] }); };
   for (const m of x.msgs) add(`m${m.id}`, { type: 'msg', id: m.id, m, date: m.date });
   const withMsg = new Set(x.msgs.map(m => m.entry_id).filter(Boolean));
@@ -333,11 +334,11 @@ function selectNode(topic, n) {
   const th = new URLSearchParams(location.hash.split('?')[1] || '').get('th') || undefined;
   ui.mailSel = { topic: topic.id, type: n.type, id: n.id, from: th };
   render();
-  // Su telefono l'albero sta sopra la mail: si scende a leggerla.
+  // On a phone the tree sits above the mail: scroll down to read it.
   if (innerWidth <= 800) document.querySelector('.tp-mail')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
-// Aprire una mail ricevuta la legge (resta dov'è).
+// Opening a received mail reads it (it stays where it is).
 function markRead(m) {
   if (!m || m.direction !== 'in' || m.read_at) return;
   m.read_at = new Date().toISOString();
@@ -387,69 +388,69 @@ function threadTree(topic, x, sel) {
   const nodes = flatten(treeOf(x));
   return h('div.tthread', { class: [archived && 'archived', sel?.thread === t.id && 'cur'].filter(Boolean).join(' '), style: `--h:${threadHue(t)}`, 'data-th': t.id },
     h('div.tt-h',
-      h('button.check.mail', { title: archived ? 'Di nuovo attiva' : 'Archivia la conversazione', onclick: () => archiveThread(t, !archived) }, icon(archived ? 'restore' : 'check')),
-      star(!!t.starred, () => patchThread(t, { starred: t.starred ? 0 : 1 }), 'conversazione'),
+      h('button.check.mail', { title: archived ? tr('Active again') : tr('Archive the conversation'), onclick: () => archiveThread(t, !archived) }, icon(archived ? 'restore' : 'check')),
+      star(!!t.starred, () => patchThread(t, { starred: t.starred ? 0 : 1 }), tr('conversation')),
       h('span.tt-subj', { title: threadSubject(t) }, threadSubject(t)),
       archived && h('span.muted.tt-arch', 'archiviata'),
       unreadBadge(x.unread),
       huePop(`hue-th:${t.id}`, t, autoHue(t.id, 70), v => patchThread(t, { hue: v })),
       threadMenu(t)),
-    nodes.length ? nodes.map(([n, d]) => nodeRow(topic, n, d, sel)) : h('p.muted.tn-empty', 'Nessun messaggio.'));
+    nodes.length ? nodes.map(([n, d]) => nodeRow(topic, n, d, sel)) : h('p.muted.tn-empty', tr('No messages.')));
 }
 
-// La mail scelta, intera.
+// The chosen mail, in full.
 function mailView(topic, sel, data, x) {
   const D = S.data;
   if (sel.type === 'entry') {
     const e = D.entryById.get(sel.id);
-    if (!e) return h('p.muted', 'Mail non trovata.');
+    if (!e) return h('p.muted', tr('Mail not found.'));
     if (!e.done_at) {
       return h('div.tm-draft',
-        h('div.tm-dh', h('span.kpill.k-mail', 'bozza'), h('a', { href: `#/v/${e.id}`, title: 'Apri come voce (data, progetti, condivisione…)' }, plainRefs(e.title)),
+        h('div.tm-dh', h('span.kpill.k-mail', tr('draft')), h('a', { href: `#/v/${e.id}`, title: tr('Open as an entry (date, projects, sharing…)') }, plainRefs(e.title)),
           e.due && h('span.muted', icon('cal'), fmtDay(e.due)), h('span.grow'),
-          h('button.icon-btn.sm', { title: 'Elimina la bozza', onclick: () => trashIt('entry', `/entries/${e.id}`, 'Bozza') }, icon('trash'))),
+          h('button.icon-btn.sm', { title: tr('Delete the draft'), onclick: () => trashIt('entry', `/entries/${e.id}`, tr('Draft')) }, icon('trash'))),
         mailComposer(e),
-        h('div.tm-att', h('div.ms-h', 'Allegati'), outAttachments(e)));
+        h('div.tm-att', h('div.ms-h', tr('Attachments')), outAttachments(e)));
     }
     return h('article.tm',
       h('h2.tm-subj', plainRefs(e.mail_subject || e.title)),
-      h('div.tm-head', h('div', h('span.muted', 'A '), contactNames(e.contact || '')), e.mail_cc && h('div', h('span.muted', 'Cc '), contactNames(e.mail_cc)),
-        h('div.muted', `mandata ${fmtTime(e.done_at)}`)),
+      h('div.tm-head', h('div', h('span.muted', `${tr('To')} `), contactNames(e.contact || '')), e.mail_cc && h('div', h('span.muted', 'Cc '), contactNames(e.mail_cc)),
+        h('div.muted', tr('sent {when}', { when: fmtTime(e.done_at) }))),
       h('div.tm-body', plainRefs(e.notes || '')),
       (D.attachmentsOf.get(e.id) || []).length > 0 && h('div.tm-att', outAttachments(e)));
   }
   const brief = x.msgs.find(m => m.id === sel.id);
   const m = data?.threads.flatMap(t => t.messages).find(y => y.id === sel.id);
-  if (!brief) return h('p.muted', 'Mail non trovata.');
+  if (!brief) return h('p.muted', tr('Mail not found.'));
   const body = m ? newPart(m.body) : newPart(brief.snippet);
   const more = m && m.body && body.length < m.body.trim().length;
   const replied = x.drafts.some(e => e.reply_to === brief.id);
   return h('article.tm',
-    h('h2.tm-subj', brief.subject || '(senza oggetto)'),
+    h('h2.tm-subj', brief.subject || tr('(no subject)')),
     h('div.tm-head',
-      h('div', h('span.muted', 'Da '), h('b', fromName(brief.from_addr)), h('span.muted.mono', ` ${addrs(brief.from_addr)}`)),
-      h('div', h('span.muted', 'A '), contactNames(addrs(brief.to_addr))),
+      h('div', h('span.muted', `${tr('From')} `), h('b', fromName(brief.from_addr)), h('span.muted.mono', ` ${addrs(brief.from_addr)}`)),
+      h('div', h('span.muted', `${tr('To')} `), contactNames(addrs(brief.to_addr))),
       brief.cc && h('div', h('span.muted', 'Cc '), contactNames(addrs(brief.cc))),
       h('div.muted', fmtTime(brief.date))),
-    h('div.tm-body', body || (m ? '(nessun testo)' : 'Caricamento…')),
-    more && h('details', h('summary.muted', 'messaggio completo'), h('div.tm-body', m.body.trim())),
-    m?.attachments?.length > 0 && h('div.tm-att', h('div.ms-h', 'Allegati'), attList(m.attachments, m.id)),
+    h('div.tm-body', body || (m ? tr('(no text)') : tr('Loading…'))),
+    more && h('details', h('summary.muted', tr('full message')), h('div.tm-body', m.body.trim())),
+    m?.attachments?.length > 0 && h('div.tm-att', h('div.ms-h', tr('Attachments')), attList(m.attachments, m.id)),
     h('div.tm-actions',
-      can('mail', 'write') && replied && h('span.muted', 'C\'è già una bozza di risposta: '),
+      can('mail', 'write') && replied && h('span.muted', tr('There is already a draft reply: ')),
       can('mail', 'write') && [false, true].map(all => h('button.btn.sm', {
         onclick: () => act(async () => {
           const r = await api('POST', `/mail/messages/${brief.id}/reply`, { all });
           ui.mailSelNext = { topic: topic.id, type: 'entry', id: r.id };
         }),
-      }, icon('send'), all ? 'Rispondi a tutti' : 'Rispondi')),
+      }, icon('send'), all ? tr('Reply all') : tr('Reply'))),
       S.data.mailExt && h('button.btn.sm.ghost', {
-        title: 'Apre questo messaggio in Thunderbird, in una scheda',
-        onclick: () => act(() => api('POST', `/mail/messages/${brief.id}/open`), 'Aperta in Thunderbird'),
-      }, icon('mail'), 'Apri in Thunderbird')));
+        title: tr('Opens this message in Thunderbird, in a tab'),
+        onclick: () => act(() => api('POST', `/mail/messages/${brief.id}/open`), tr('Opened in Thunderbird')),
+      }, icon('mail'), tr('Open in Thunderbird'))));
 }
 
-// Collegamenti della conversazione: scelti qui, trovati nei messaggi (codici e progetti) o citati nelle mail
-// scritte qui. Tutti si possono togliere (quelli automatici non tornano).
+// The conversation's links: picked here, found in the messages (codes and projects) or mentioned in mails written
+// here. All of them can be removed (automatic ones do not come back).
 const LINK_ICON = { articolo: 'box', doc: 'file', progetto: 'folder', contatto: 'user', voce: 'log', mail: 'mail' };
 function linkTarget(kind, id) {
   const D = S.data;
@@ -467,12 +468,12 @@ async function addLinks(base, text) {
   const want = [];
   for (const c of extractCodes(text)) { const it = D.itemByCode.get(c.toUpperCase()); if (it) want.push(['articolo', it.id]); }
   for (const m of text.matchAll(/(?:^|\s)@([\p{L}\d_.-]+)/gu)) { const p = D.projectByTag.get(m[1].toLowerCase()); if (p) want.push(['progetto', p.id]); }
-  for (const m of text.matchAll(REF_RE)) if (m[1] !== 'nota') want.push([m[1], +m[2]]); // le note sui documenti non si collegano alle mail
-  if (!want.length) return toast('Scrivi #codice, @progetto o [[ per scegliere cosa collegare', { err: true });
+  for (const m of text.matchAll(REF_RE)) if (m[1] !== 'nota') want.push([m[1], +m[2]]); // notes on documents are not linked to mails
+  if (!want.length) return toast(tr('Write #code, @project or [[ to choose what to link'), { err: true });
   for (const [kind, id] of want) await api('POST', `${base}/links`, { kind, id });
 }
 
-// Collegamenti di una conversazione (base /mail/threads/ID) o del topic intero (/mail/topics/ID, solo a mano).
+// Links of a conversation (base /mail/threads/ID) or of the whole topic (/mail/topics/ID, by hand only).
 function linksBlock(base, links, { title, empty, fk }) {
   const seen = new Map();
   for (const l of links) {
@@ -489,14 +490,14 @@ function linksBlock(base, links, { title, empty, fk }) {
       h('a', { href: x.href, ...(x.it ? itemAttrs(x.it) : {}), class: x.it ? 'code' : null }, x.label),
       x.sub && h('span.muted', x.sub),
       h('span.grow'),
-      l.auto ? h('span.muted.tl-auto', { title: l.manual ? 'Trovato nei messaggi' : 'Citato in una mail scritta qui' }, 'auto') : null,
+      l.auto ? h('span.muted.tl-auto', { title: l.manual ? tr('Found in the messages') : tr('Mentioned in a mail written here') }, 'auto') : null,
       h('button.icon-btn.sm', {
-        title: l.auto ? 'Togli (non torna più da solo)' : 'Scollega',
+        title: l.auto ? tr('Remove (it no longer comes back by itself)') : tr('Unlink'),
         onclick: () => act(() => api('DELETE', `${base}/links/${l.kind}/${l.target_id}`)),
       }, icon('x')))),
     !rows.length && h('p.muted', empty),
     h('input.sub-in', {
-      placeholder: '+ #codice, @progetto, [[ altro', 'data-fk': fk, 'data-ac': 'mail', 'data-ac-only': '#@', autocomplete: 'off', spellcheck: 'false',
+      placeholder: tr('+ #code, @project, [[ other'), 'data-fk': fk, 'data-ac': 'mail', 'data-ac-only': '#@', autocomplete: 'off', spellcheck: 'false',
       onkeydown: ev => {
         if (ev.key !== 'Enter' || ev.isComposing || document.querySelector('.ac:not([hidden])')) return;
         ev.preventDefault();
@@ -510,8 +511,8 @@ function linksBlock(base, links, { title, empty, fk }) {
 
 function topicLinks(topic) {
   return linksBlock(`/mail/topics/${topic.id}`, S.data.linksOfTopic.get(topic.id) || [], {
-    title: 'Topic collegato a', fk: `toplink-${topic.id}`,
-    empty: 'Collega il topic intero a un progetto (o altro): vale per tutte le sue conversazioni.',
+    title: tr('Topic linked to'), fk: `toplink-${topic.id}`,
+    empty: tr('Link the whole topic to a project (or something else): it applies to all its conversations.'),
   });
 }
 
@@ -522,48 +523,48 @@ function sideColumn(topic, x, data) {
   return h('aside.mail-side',
     topicLinks(topic),
     h('div.ms-b.tside-h', { style: `--h:${threadHue(t)}` },
-      h('div.ms-h', 'Conversazione'),
+      h('div.ms-h', tr('Conversation')),
       h('div.tside-subj', threadSubject(t)),
       h('div.ms-add',
-        h('button.btn.sm', { onclick: () => archiveThread(t, !t.archived_at) }, icon(t.archived_at ? 'restore' : 'check'), t.archived_at ? 'Di nuovo attiva' : 'Archivia'),
+        h('button.btn.sm', { onclick: () => archiveThread(t, !t.archived_at) }, icon(t.archived_at ? 'restore' : 'check'), t.archived_at ? tr('Active again') : tr('Archive')),
         can('mail', 'write') && h('button.btn.sm.ghost', {
           onclick: () => act(async () => {
             const r = await api('POST', `/mail/threads/${t.id}/draft`);
             ui.mailSelNext = { topic: topic.id, type: 'entry', id: r.id };
           }),
-        }, icon('plus'), 'Nuova mail'))),
+        }, icon('plus'), tr('New mail')))),
     linksBlock(`/mail/threads/${t.id}`, S.data.linksOfThread.get(t.id) || [], {
-      title: 'Conversazione collegata a', fk: `tlink-${t.id}`,
-      empty: 'Articoli e progetti scritti nelle mail si collegano da soli; qui aggiungi o togli quello che vuoi.',
+      title: tr('Conversation linked to'), fk: `tlink-${t.id}`,
+      empty: tr('Items and projects written in the mails link by themselves; here you add or remove what you like.'),
     }),
     peopleBlock([...x.msgs.flatMap(m => [m.from_addr, m.to_addr, m.cc]), ...x.ents.flatMap(e => [e.contact, e.mail_cc])].filter(Boolean)),
-    block('Allegati ricevuti', received.map(m => attList(m.attachments, m.id))),
-    backlinksBox('mail', t.id, { title: 'Citata in', compact: true }));
+    block(tr('Attachments received'), received.map(m => attList(m.attachments, m.id))),
+    backlinksBox('mail', t.id, { title: tr('Mentioned in'), compact: true }));
 }
 
 export function viewTopic(id, q = {}) {
   const D = S.data;
   let topic = D.topicById.get(+id);
-  // Link di prima dei topic (#/t/thread): si va al topic della conversazione.
+  // Links from before topics (#/t/thread): go to the conversation's topic.
   if (!topic && D.threadById.has(+id)) {
     const t = D.threadById.get(+id);
     location.replace(`#/t/${t.topic_id}?th=${t.id}`);
     return h('div.view');
   }
   if (!topic) {
-    return h('div.view', h('div.empty', h('p', h('b', 'Topic non trovato.')),
-      h('p', 'Forse è nel cestino o in un altro workspace: la posta è personale.'), h('a', { href: '#/mail' }, 'Torna alla posta')));
+    return h('div.view', h('div.empty', h('p', h('b', tr('Topic not found.'))),
+      h('p', tr('Maybe it is in the trash or in another workspace: mail is personal.')), h('a', { href: '#/mail' }, tr('Back to the mail'))));
   }
   const threads = (D.threadsOfTopic.get(topic.id) || []).map(threadInfo)
     .sort((a, b) => !!a.t.archived_at - !!b.t.archived_at || a.t.created_at.localeCompare(b.t.created_at));
   const data = fullTopic(topic);
-  // La mail scelta: quella appena chiesta (Rispondi), quella di prima, la prima da leggere (della conversazione
-  // indicata, se c'è), altrimenti l'ultima.
+  // The chosen mail: the one just requested (Reply), the previous one, the first unread (of the given conversation,
+  // if any), otherwise the last.
   const trees = new Map(threads.map(x => [x.t.id, flatten(treeOf(x)).map(([n]) => n)]));
   const allNodes = [...trees.values()].flat();
   const find = s => s && allNodes.find(n => sameSel(n, s));
   if (ui.mailSelNext?.topic === topic.id && find(ui.mailSelNext)) {
-    // La bozza appena chiesta (Rispondi): resta scelta anche con ?th= nell'indirizzo.
+    // The draft just requested (Reply): it stays chosen even with ?th= in the address.
     ui.mailSel = { ...ui.mailSelNext, from: q.th };
     ui.mailSelNext = null;
   }
@@ -581,31 +582,31 @@ export function viewTopic(id, q = {}) {
 
   return h('div.view.topicpage', { style: `--h:${topicHue(topic)}` },
     h('div.th-head',
-      h('a.icon-btn', { href: '#/mail', title: 'Torna alla posta' }, icon('back')),
-      star(!!topic.starred, () => patchTopic(topic, { starred: topic.starred ? 0 : 1 }), 'topic'),
-      h('h2.th-subj', { title: 'Rinomina', onclick: () => rename('Nome del topic:', topicTitle(topic), title => patchTopic(topic, { title })) }, topicTitle(topic)),
+      h('a.icon-btn', { href: '#/mail', title: tr('Back to the mail') }, icon('back')),
+      star(!!topic.starred, () => patchTopic(topic, { starred: topic.starred ? 0 : 1 }), tr('topic')),
+      h('h2.th-subj', { title: tr('Rename'), onclick: () => rename(tr('Name of the topic:'), topicTitle(topic), title => patchTopic(topic, { title })) }, topicTitle(topic)),
       huePop(`thue:${topic.id}`, topic, autoHue(topic.id), v => patchTopic(topic, { hue: v })),
       h('span.grow'),
-      h('span.muted.th-count', threads.length === 1 ? '1 conversazione' : `${threads.length} conversazioni${active < threads.length ? `, ${threads.length - active} archiviate` : ''}`),
+      h('span.muted.th-count', threads.length === 1 ? tr('1 conversation') : `${tr('{n} conversations', { n: threads.length })}${active < threads.length ? `, ${tr('{n} archived', { n: threads.length - active })}` : ''}`),
       topicMenu(topic)),
     h('div.tp-cols',
-      h('nav.tp-tree', { 'aria-label': 'Conversazioni e mail' }, threads.map(x => threadTree(topic, x, sel)),
-        // Una conversazione nuova in questo topic, con la bozza già aperta a destra.
+      h('nav.tp-tree', { 'aria-label': tr('Conversations and mails') }, threads.map(x => threadTree(topic, x, sel)),
+        // A new conversation in this topic, with the draft already open on the right.
         can('mail', 'write') && h('button.btn.ghost.tp-new', {
           onclick: () => act(async () => {
             const r = await api('POST', `/mail/topics/${topic.id}/draft`);
             ui.mailSelNext = { topic: topic.id, type: 'entry', id: r.id };
           }),
-        }, icon('plus'), 'Nuova mail')),
-      h('div.tp-mail', node ? mailView(topic, sel, data, cur) : h('p.muted', 'Nessuna mail.')),
+        }, icon('plus'), tr('New mail'))),
+      h('div.tp-mail', node ? mailView(topic, sel, data, cur) : h('p.muted', tr('No mail.'))),
       sideColumn(topic, cur, data)));
 }
 
-// Nell'editor di una mail scritta in Organizer: la conversazione di cui fa parte.
+// In the editor of a mail written in Organizer: the conversation it belongs to.
 export function threadLink(e) {
   const t = e.thread_id && S.data.threadById.get(e.thread_id);
   if (!t) return null;
   const n = (S.data.msgsOfThread.get(t.id) || []).length;
-  return h('a.thread-link', { href: `#/t/${t.topic_id}?th=${t.id}` }, icon('mail'), h('b', 'Conversazione'), h('span', threadSubject(t)),
-    h('span.muted', n ? `${n} ${n === 1 ? 'messaggio' : 'messaggi'}` : ''), h('span.grow'), '→');
+  return h('a.thread-link', { href: `#/t/${t.topic_id}?th=${t.id}` }, icon('mail'), h('b', tr('Conversation')), h('span', threadSubject(t)),
+    h('span.muted', n ? trn(n, '1 message', '{n} messages') : ''), h('span.grow'), '→');
 }
