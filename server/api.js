@@ -1055,11 +1055,30 @@ route('POST', '/api/items/:id/docs', async ({ req, params, query, user, body }) 
   return { id };
 }, { area: 'documenti' });
 
-// When downloaded, the file gets the name given in the app (with the original file's extension).
-function downloadName(d) {
-  const ext = path.extname(d.filename || '');
-  const label = (d.label || '').replace(/[\\/:*?"<>|\r\n]+/g, ' ').replace(/\s+/g, ' ').replace(/\s+(\.\w+)$/, '$1').trim();
-  return label ? (ext && !label.toLowerCase().endsWith(ext.toLowerCase()) ? `${label}${ext}` : label) : d.filename || `document-${d.id}`;
+// When downloaded, the file gets the name given in the app, always with the original file's extension: renaming
+// "datasheet.pdf" to "datasheet" (or to "datasheet.") still downloads "datasheet.pdf". The extension comes from the
+// original name (also double ones like .tar.gz); a file uploaded without one takes it from its type.
+const MIME_EXT = {
+  'application/pdf': '.pdf', 'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp',
+  'image/svg+xml': '.svg', 'text/plain': '.txt', 'text/csv': '.csv', 'text/tab-separated-values': '.tsv',
+  'text/html': '.html', 'text/markdown': '.md', 'application/json': '.json', 'application/xml': '.xml', 'text/xml': '.xml',
+  'application/zip': '.zip', 'application/gzip': '.gz', 'application/x-7z-compressed': '.7z', 'model/stl': '.stl',
+  'model/3mf': '.3mf', 'application/step': '.step', 'image/vnd.dxf': '.dxf', 'application/dxf': '.dxf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx', 'application/msword': '.doc',
+  'application/vnd.ms-excel': '.xls',
+};
+function extOf(d) {
+  const f = d.filename || '';
+  const ext = f.match(/\.tar\.(gz|bz2|xz|zst)$/i)?.[0] || path.extname(f);
+  return /^\.[\w-]+(\.[\w-]+)?$/.test(ext) ? ext : MIME_EXT[(d.mime || '').split(';')[0].trim().toLowerCase()] || '';
+}
+// Characters not allowed in file names (Windows, macOS) become spaces; no trailing dots or spaces.
+const cleanName = n => (n || '').replace(/[\\/:*?"<>|\r\n]+/g, ' ').replace(/\s+/g, ' ').replace(/\s+(\.\w+)$/, '$1').replace(/[.\s]+$/, '').trim();
+export function downloadName(d) {
+  const ext = extOf(d);
+  const name = cleanName(d.label) || cleanName(d.filename) || `document-${d.id}`;
+  return ext && !name.toLowerCase().endsWith(ext.toLowerCase()) ? `${name}${ext}` : name;
 }
 
 const attachment = name => `attachment; filename="${name.replace(/[^\x20-\x7e]|"/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`;
