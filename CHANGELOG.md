@@ -3,6 +3,9 @@
 What's new in each version, most recent first. Versions are the git tags (`v0.7`, `v0.6.2`…); the number in `package.json` is the same.
 Updating needs nothing by hand: the database migrates by itself at startup (the schema version is given when it changes).
 
+## 0.25.3 — 2026-11-08
+- **Downloaded documents always keep their extension**: a renamed document takes the original file's extension also when the new name ends with a dot ("datasheet." → `datasheet.pdf`, not `datasheet..pdf`), when the original has a double extension (`.tar.gz`) and when it was uploaded without one (then it comes from the file's type, e.g. a PDF gets `.pdf`). Same in "Download all".
+
 ## 0.25.2 — 2026-11-08
 - **The app's own windows instead of the browser's**: renaming a document, new workspace, new kind or category, adding a link (address and label in one window), confirmations before deleting, tokens and passwords to copy now open in a window in the app's style instead of the browser's grey boxes. Enter confirms, Esc or Cancel closes; deletions have a red button with what it does ("Move to the trash", "Delete for good"…); a token comes with a Copy button.
 
