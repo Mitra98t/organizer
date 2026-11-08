@@ -3,7 +3,7 @@
 // can be chosen to open side by side. Document kinds are added here too.
 import {
   h, icon, S, ui, api, act, render, save, toast, fmtSize, fmtTime, itemAttrs, catStyle, docKinds, dkAttrs, kindLabel, newDocKind, docName, renameDoc, masonry, filterChip, aliasCodes, can, roClass,
-  fold, foldBar,
+  fold, foldBar, capFirst,
 } from './core.js';
 import { docMeta, docPeek } from './docview.js';
 import { peekable } from './views.js';
@@ -56,7 +56,7 @@ function byCategory(docs) {
     items.get(it.id).push(d);
   }
   return [...cats].sort(([a], [b]) => (!a) - (!b) || a.localeCompare(b)).map(([cat, items]) => fold('documenti', `c:${cat}`, h('section.dgroup', { class: cat ? 'cat' : null, style: catStyle(cat) },
-    h('div.dgroup-h', h('span.dgroup-cat', cat || tr('no category')), h('span.count', [...items.values()].flat().length)),
+    h('div.dgroup-h', h('span.dgroup-cat', capFirst(cat) || tr('no category')), h('span.count', [...items.values()].flat().length)),
     [...items].map(([id]) => D.itemById.get(id)).sort((a, b) => a.code.localeCompare(b.code)).map(it => [
       h('div.dgroup-item', h('a.code', { href: `#/i/${it.id}`, ...itemAttrs(it) }, it.code), h('span.muted', it.name || '')),
       items.get(it.id).map(d => docRow(d, { showItem: false })),

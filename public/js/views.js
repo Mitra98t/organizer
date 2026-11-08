@@ -5,7 +5,7 @@ import {
   updatePending, removePending,
   descendants, ancestors, catStyle, itemAttrs, docFileUrl, projectsOf, DOC_KINDS, kindLabel, projHue, catHue, huePicker,
   switchWorkspace, newWorkspace, docName, renameDoc, richField, backlinks, plainRefs, CONTACT_COLOR, masonry, filterChip, aliasCodes, kindPicker, can, canEntry, roClass,
-  fold, foldBar,
+  fold, foldBar, capFirst,
 } from './core.js';
 import { docMeta, docPeek } from './docview.js';
 import { openFeedback } from './feedback.js';
@@ -948,7 +948,7 @@ export function viewItems() {
         h('div.cat-h',
           c ? h('button.cdot.pick', { class: 'cat', style: catStyle(c), title: tr('Change the category colour'), onclick: () => { ui.catPicker = ui.catPicker === c ? null : c; render(); } })
             : h('span.cdot'),
-          h('span', c || NO_CAT), h('span.count', list.length)),
+          h('span', capFirst(c) || NO_CAT), h('span.count', list.length)),
         c && ui.catPicker === c && h('div.cat-pick', catColorPicker(c)),
         h('div.cat-items', list.map(i => peekable(h('a.cat-item', { href: `#/i/${i.id}`, 'data-iid': i.id, draggable: 'false', class: i.status ? `st-${i.status}` : null },
           statusDot(i),
@@ -1038,7 +1038,7 @@ function docSection(it) {
   const body = [
     h('div.upload',
       kindPicker(ui.docKind, k => { ui.docKind = k; render(); }, { title: tr('Kind of the documents to upload') }),
-      h('input', { placeholder: 'versione', size: 9, value: ui.docVer, 'data-fk': `docver-${it.id}`, oninput: ev => { ui.docVer = ev.target.value; } }),
+      h('input', { placeholder: tr('version'), size: 9, value: ui.docVer, 'data-fk': `docver-${it.id}`, oninput: ev => { ui.docVer = ev.target.value; } }),
       h('button.btn', { onclick: () => fileInput.click() }, icon('upload'), tr('File')),
       h('button.btn.ghost', { onclick: addLink }, icon('link'), tr('Link')),
       fileInput,

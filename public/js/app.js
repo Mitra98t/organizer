@@ -577,7 +577,7 @@ function updateOfflineBar() {
 }
 
 const updateBar = h('div.update-bar', { hidden: true, role: 'status' },
-  icon('news'), updateText, h('span.grow'),
+  icon('up'), updateText, h('span.grow'),
   h('a.btn.sm.ghost', { href: '#/novita' }, tr('What\'s new')),
   h('button.btn.sm.primary', { onclick: reloadApp }, icon('restore'), tr('Reload')));
 

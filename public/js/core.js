@@ -183,7 +183,7 @@ const ICONS = {
   keyboard: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10"/>',
   bug: '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9a1.5 1.5 0 0 1-1.5 1.5H10l-5 4v-4h.5A1.5 1.5 0 0 1 4 14.5z"/><path d="M12 7v4M12 13.5v.5"/>',
   logout: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 8l-4 4 4 4M6 12h10"/>',
-  news: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15v4M17 17h4"/>',
+  news: '<path d="M4 20h15a2 2 0 0 0 2-2V5a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v13a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-7h5"/><path d="M11 8h6M11 12h6M11 16h4"/>',
   up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
   wait: '<path d="M7 3h10M7 21h10M8 3c0 5 8 6 8 9s-8 4-8 9M16 3c0 5-8 6-8 9s8 4 8 9"/>',
   chat: '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9a1.5 1.5 0 0 1-1.5 1.5H10l-5 4v-4h.5A1.5 1.5 0 0 1 4 14.5z"/><path d="M8 9h8M8 12h5"/>',
@@ -607,6 +607,8 @@ export function renameDoc(d) {
 export const DOC_KINDS = ['firmware', 'datasheet', 'schema', 'footprint', 'manuale', 'foto', 'altro'];
 const KIND_LABELS = { schema: tr('schematic'), manuale: tr('manual'), foto: tr('photo'), altro: tr('other') };
 export const kindLabel = k => KIND_LABELS[k] || k;
+// Labels written in lower case (kinds, categories) shown as a tag: sentence case.
+export const capFirst = s => (typeof s === 'string' && s ? s[0].toUpperCase() + s.slice(1) : s);
 // All the kinds of the workspace: the built-in ones plus the added ones (whose colour comes from the name).
 export const docKinds = () => S.data?.docKinds || DOC_KINDS;
 export const dkAttrs = k => (DOC_KINDS.includes(k) ? { class: `k-${k}` } : { class: 'k-custom', style: `--h:${hue(k)}` });
@@ -628,7 +630,7 @@ export function kindPicker(value, onPick, { title = tr('Document kind') } = {}) 
   const btn = h('button.dk-sel.kpick', {
     ...dkAttrs(value), type: 'button', title, 'aria-haspopup': 'listbox',
     onclick: ev => { ev.stopPropagation(); openKindMenu(btn, value, onPick); },
-  }, kindLabel(value), h('span.kpick-caret', '▾'));
+  }, capFirst(kindLabel(value)), h('span.kpick-caret', '▾'));
   return btn;
 }
 
@@ -708,7 +710,7 @@ export function huePicker(current, auto, onPick) {
 // Filter chip, the same on every page. With "tint" it is the word on a background of its colour (category,
 // document kind, entry kind, status); when on it has a solid border. Without "tint" it is a neutral chip.
 export function filterChip({ on, onclick, label, n, cls, style, title }) {
-  return h('button.chip.fchip', { class: [on && 'on', cls].filter(Boolean).join(' ') || null, style, title, onclick }, label, n != null && h('span.n', n));
+  return h('button.chip.fchip', { class: [on && 'on', cls].filter(Boolean).join(' ') || null, style, title, onclick }, capFirst(label), n != null && h('span.n', n));
 }
 
 // An item's alternative codes (text), for filters and searches.
