@@ -63,6 +63,8 @@ tx(() => {
   updateEntry(entry(solder), { done: true }, demo);
 
   add('calibrate humidity sensors #SCH-051 @greenhouse-iot !today +marco', marco);
+  // Projects are private to whoever creates them: Marco's is shared with everyone, so demo works on it too.
+  db.prepare("UPDATE projects SET shared_all = 1 WHERE tag = 'greenhouse-iot'").run();
   const ota = add('OTA over MQTT on #ESP32-S3-DEVKIT @greenhouse-iot !2w');
   log(ota, 'the broker cannot handle payloads > 256 KB, the image must be split', marco);
   add('order 2 #CAB-JTAG !3d', marco);

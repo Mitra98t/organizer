@@ -3,6 +3,13 @@
 What's new in each version, most recent first. Versions are the git tags (`v0.7`, `v0.6.2`…); the number in `package.json` is the same.
 Updating needs nothing by hand: the database migrates by itself at startup (the schema version is given when it changes).
 
+## 0.25.0 — 2026-11-08
+- **Web pages as documents**: a link document that is not a PDF now shows the page itself, drawn as on a computer and shrunk like a PDF page, with notes on its points (click, drag the pin, → todo, as in PDFs). The first time it opens the server saves a copy of the page, so notes stay in place even if the site changes and the page survives if it disappears; **Update** in the toolbar downloads it again. The copy has no scripts: pages built by JavaScript may come out incomplete, and sites that refuse automatic downloads say so, with the original link at hand.
+- **Page preview of an item's link**: the globe next to the link opens a small browser over the app; its links open inside it (← to go back, ⌘/Ctrl+click in the browser). **Save as document** turns the page into a document of the item, ready for notes.
+- `REMOTE_ALLOW_LAN=1` lets the server load links on the local network too (an internal wiki), for PDF and page previews. Off by default.
+- The reason of an error from a remote site (not answering, too large, refusing automatic downloads) now reaches the app instead of a generic "internal server error".
+- Data schema v24.
+
 ## 0.24.0 — 2026-11-06
 - **English and Italian**: the app, the server's messages and notifications, the guided tour, the CLI and the Thunderbird extension speak English, with Italian as a second language. In the app: Settings → App and help → Language (per device; by default the browser's language). Notifications arrive in the language each person last used. The CLI follows `ORG_LANG=it` or an Italian `LANG`; the extension follows Thunderbird's language. The quick bar understands the date words of both (`!tomorrow`, `!domani`, `!fri`, `!ven`, `!3d`, `!3g`…).
 - **Open source** under the AGPL-3.0 license; the bundled libraries and their licenses are listed in `THIRD-PARTY.md`.

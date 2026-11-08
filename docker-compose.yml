@@ -12,6 +12,8 @@ services:
     environment:
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-200}
       TRASH_DAYS: ${TRASH_DAYS:-30}
+      # 1 = the server also loads links to the local network (previews of an internal wiki or repo).
+      REMOTE_ALLOW_LAN: ${REMOTE_ALLOW_LAN:-0}
       # Behind Cloudflare the real address of whoever connects arrives in this header (used by the login
       # attempts limit). It is used only if present; the app cannot be reached from outside except through the tunnel.
       CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-cf-connecting-ip}

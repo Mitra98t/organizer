@@ -488,6 +488,16 @@ const MIGRATIONS = [
   ALTER TABLE doc_notes ADD COLUMN quote TEXT;
   ALTER TABLE doc_notes ADD COLUMN marks TEXT;
   `,
+  // v24: saved copy of the web page of link documents (server/webpage.js): the cleaned page, its final address
+  // (after redirects) and when it was downloaded. It goes away with the document.
+  `
+  CREATE TABLE doc_pages (
+    doc_id INTEGER PRIMARY KEY REFERENCES documents ON DELETE CASCADE,
+    url TEXT NOT NULL,
+    html TEXT NOT NULL,
+    saved_at TEXT NOT NULL
+  );
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

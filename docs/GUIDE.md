@@ -115,8 +115,9 @@ Clicking a document on an item's page opens the viewer with the notes on the sid
 - **Text files**: preview of the content.
 - **CSV and TSV tables** (`.csv`, `.tsv`, `.scsv`): the columns in a table with zebra rows, a header that stays in view while scrolling and row numbers. The separator (comma, semicolon, tab or `|`) is recognised by itself; quoted fields may contain the separator and line breaks; CSVs saved by Excel with accented letters read correctly. The first 5000 rows are shown (up to 8 MB): beyond that, download the file.
 - **Search in the document**: ⌘F (Ctrl+F on Linux) opens the search in the open PDF, text file or table; Enter and Shift+Enter move from one result to the next, Esc closes. In the side-by-side review it searches the document touched last. It works on PDFs with real text (not on scans).
-- **Link to a PDF** (e.g. a datasheet on mouser.com): the server downloads it on the spot and shows it like an uploaded PDF, with the same notes. Only public internet addresses (never the local network), only PDFs, at most 60 MB (`REMOTE_MAX_MB`); if the site shows a page or an anti-bot protection instead of the file, the reason and the original link show up.
-- **Any other file or link** (firmware, archives, …): no preview, but the **general notes** on the file work for all.
+- **Link to a PDF** (e.g. a datasheet on mouser.com): the server downloads it on the spot and shows it like an uploaded PDF, with the same notes. Only public internet addresses (not the local network, unless `REMOTE_ALLOW_LAN=1`), only PDFs, at most 60 MB (`REMOTE_MAX_MB`); if the site shows a page or an anti-bot protection instead of the file, the reason and the original link show up.
+- **Link to a web page** (a product page, a repo, a wiki page): the page itself, drawn as on a computer screen (1280 px wide) and shrunk to the space like a PDF page, with notes on its points. The first time it is opened the server saves a **copy** of the page (date in the toolbar): the notes stay where they were put even if the site changes, and the page is still there if the site removes it. **Update** downloads it again (the notes keep their position on the page, which may have moved). The copy has no scripts (it is only to look at): pages that build themselves with JavaScript may come out empty or incomplete, and some sites refuse downloads that do not come from a browser; in both cases **Open the original link** is there. Same limits as the PDFs (public addresses, at most 6 MB of page).
+- **Any other file** (firmware, archives, …): no preview, but the **general notes** on the file work for all.
 
 On a wide screen the document page (and the review) is as tall as the window: only the document scrolls.
 
@@ -183,7 +184,7 @@ Each item has its **code** (the one it is known by) and can have **alternative c
 
 Each item has a **status**: active, **being evaluated** (it is being tried), **outdated** (superseded) or **discarded** (evaluated and dropped), chosen on its page. In the lists and columns it shows as a dot (blue / orange / red) and at the top there are the status filters and "hide discarded".
 
-Each item can have an optional **link** (product page, repo, wiki). In the view by category an item moves to another category by **dragging it** into the column (or into "New category").
+Each item can have an optional **link** (product page, repo, wiki). The globe next to it opens the **page preview**: a small browser over the app, where the page's links open one after the other (back with ←, ⌘/Ctrl+click to open one in the browser). **Save as document** adds the page you are looking at to the item's documents, where you can leave notes on it (see Documents). In the view by category an item moves to another category by **dragging it** into the column (or into "New category").
 
 **Colours**: projects and categories have an automatic colour, which can be changed (project page → Colour; category → click on the coloured dot in the view by category or on the item's page; "A" goes back to automatic).
 
@@ -284,7 +285,7 @@ make make-admin NAME=marco WS=2
 make invite WS=2
 ```
 
-Variables: `APP_PORT` (published port, default 8080), `APP_BIND` (default `127.0.0.1`), `MAX_UPLOAD_MB` (default 200), `TRASH_DAYS` (default 30), `ORG_LANG` (language of the server's own command-line messages).
+Variables: `APP_PORT` (published port, default 8080), `APP_BIND` (default `127.0.0.1`), `MAX_UPLOAD_MB` (default 200), `TRASH_DAYS` (default 30), `ORG_LANG` (language of the server's own command-line messages), `REMOTE_ALLOW_LAN=1` (the server also loads links to the local network for the previews of PDFs and web pages: only if everyone who uses the instance may reach those machines).
 
 ## Structure
 

@@ -18,7 +18,7 @@ Type `SCH-042` in a mail, a to-do or the chat: it becomes a link. The part knows
 | | |
 |---|---|
 | 📦 [**Inventory**](#-inventory) | part numbers, locations, stock, firmware, assemblies |
-| 📄 [**Documents**](#-documents) | PDF, 3D and DXF, with notes pinned to the right spot |
+| 📄 [**Documents**](#-documents) | PDF, 3D, DXF and web pages, with notes pinned to the right spot |
 | 📬 [**Mail**](#-mail) | Thunderbird, threaded conversations, everything linked |
 | ⚡ [**Quick capture**](#-quick-capture) | one line for a to-do, with due date and people |
 | 💬 [**Chat**](#-chat) | channels, mentions, push notifications |
@@ -42,7 +42,7 @@ Categories are colored columns: drag a part to move it.
 
 ## 📄 Documents
 
-PDFs, images, 3D models and DXF drawings open right in the app.
+PDFs, images, 3D models, DXF drawings and linked web pages open right in the app.
 Click a spot, leave a note. On that hole, on that line.
 
 <img src="docs/img/pdf.png" alt="A PDF with pinned notes" width="100%">

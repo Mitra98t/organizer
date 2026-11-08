@@ -11,6 +11,7 @@ import { serveAppIcon } from './appicons.js';
 import './backup.js';
 import './workspaces.js';
 import './remote.js';
+import './webpage.js';
 import './tokens.js';
 import './chat.js';
 import './feedback.js';
@@ -152,11 +153,14 @@ const server = http.createServer(async (req, res) => {
       message = 'Conflict with existing data';
       vars = null;
     }
-    if (status >= 500) console.error(req.method, req.url, e);
+    // Unexpected errors (not an HttpError) are logged and not described to the client; the 5xx thrown on purpose
+    // (e.g. 502 for a site that does not answer) keep their message.
+    const known = e instanceof HttpError;
+    if (status >= 500 && !known) console.error(req.method, req.url, e);
     if (res.headersSent) return res.destroy();
     // If the client is still sending (rejected upload) close after the response.
     if (!req.complete) res.setHeader('Connection', 'close');
-    sendJson(res, status, { error: trIn(lang, status >= 500 ? 'Internal server error' : message, vars) });
+    sendJson(res, status, { error: trIn(lang, status >= 500 && !known ? 'Internal server error' : message, vars) });
   }
 });
 

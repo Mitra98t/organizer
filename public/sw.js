@@ -4,9 +4,9 @@
 // Files are always re-checked with the server (cache: 'no-cache'), whatever the HTTP cache says: behind Cloudflare
 // JS and CSS arrive with "keep them 4 hours" and after an update the app would use the old code.
 // With the ETag an unchanged file is not downloaded again (304 response).
-const CACHE = 'organizer-v78';
+const CACHE = 'organizer-v79';
 const SHELL = [
-  './', 'index.html', 'css/app.css', 'js/app.js', 'js/core.js', 'js/views.js', 'js/parse.js', 'js/autocomplete.js', 'js/mail.js', 'js/contacts.js', 'js/trash.js', 'js/docview.js', 'js/documents.js', 'js/dnd.js', 'js/chat.js', 'js/changelog.js', 'js/themes.js', 'js/perms.js', 'js/model3d.js', 'js/step-worker.js', 'js/feedback.js', 'js/notifiche.js', 'js/tour.js', 'js/cad.js', 'js/topics.js', 'js/pickers.js', 'js/tabbar.js', 'js/palette.js', 'js/appicons.js', 'js/i18n.js',
+  './', 'index.html', 'css/app.css', 'js/app.js', 'js/core.js', 'js/views.js', 'js/parse.js', 'js/autocomplete.js', 'js/mail.js', 'js/contacts.js', 'js/trash.js', 'js/docview.js', 'js/documents.js', 'js/dnd.js', 'js/chat.js', 'js/changelog.js', 'js/themes.js', 'js/perms.js', 'js/model3d.js', 'js/step-worker.js', 'js/feedback.js', 'js/notifiche.js', 'js/tour.js', 'js/cad.js', 'js/topics.js', 'js/pickers.js', 'js/tabbar.js', 'js/palette.js', 'js/appicons.js', 'js/i18n.js', 'js/web.js',
   'js/locales/it.js', 'js/locales/it/ac.js', 'js/locales/it/app.js', 'js/locales/it/common.js', 'js/locales/it/core.js', 'js/locales/it/docs.js', 'js/locales/it/docview.js', 'js/locales/it/mail.js', 'js/locales/it/palette.js', 'js/locales/it/people.js', 'js/locales/it/small.js', 'js/locales/it/topics.js', 'js/locales/it/tour.js', 'js/locales/it/views.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/apple-touch-icon.png',
 ];

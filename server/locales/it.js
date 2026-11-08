@@ -151,6 +151,9 @@ export default {
   'Too many redirects': 'Troppi redirect',
   'The site answered {status}': 'Il sito ha risposto {status}',
   'PDF too large (max {mb} MB)': 'PDF troppo grande (max {mb} MB)',
+  'Page too large (max {mb} MB)': 'Pagina troppo grande (max {mb} MB)',
+  'The link does not lead to a web page ({type})': 'Il link non porta a una pagina web ({type})',
+  'The site does not let the server download the page ({status}): open the original link': 'Il sito non lascia scaricare la pagina al server ({status}): apri il link originale',
   'The link does not return a PDF (the site may show a page or an anti-bot protection)': 'Il link non restituisce un PDF (il sito potrebbe mostrare una pagina o una protezione anti-bot)',
   // mail.js, chat.js
   'Document not found (external links cannot be attached)': 'Documento non trovato (i link esterni non si possono allegare)',

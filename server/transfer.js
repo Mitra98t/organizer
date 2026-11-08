@@ -47,6 +47,7 @@ route('GET', '/api/export', ({ res, user }) => {
   if (can('documenti')) {
     T.documents = json('SELECT d.* FROM documents d JOIN items i ON i.id = d.item_id WHERE d.deleted_at IS NULL AND i.deleted_at IS NULL');
     T.doc_kinds = json('SELECT * FROM doc_kinds');
+    T.doc_pages = json('SELECT p.* FROM doc_pages p JOIN documents d ON d.id = p.doc_id JOIN items i ON i.id = d.item_id WHERE d.deleted_at IS NULL AND i.deleted_at IS NULL');
     T.doc_notes = json(`SELECT n.* FROM doc_notes n JOIN documents d ON d.id = n.doc_id
       WHERE n.created_by = $uid AND n.deleted_at IS NULL AND d.deleted_at IS NULL`, { uid });
   }
@@ -179,6 +180,11 @@ function importAll(meta, files, user) {
       if (!d.url && !stored) continue; // the file is not in the archive
       M.documents.set(d.id, insert('documents', { ...mine(d), item_id: item, stored }));
       n.documenti++;
+    }
+    // Saved copies of link pages, for the documents that do not have one yet.
+    for (const p of T.doc_pages || []) {
+      const doc = M.documents.get(p.doc_id);
+      if (doc && !db.prepare('SELECT 1 FROM doc_pages WHERE doc_id = ?').get(doc)) insert('doc_pages', { ...p, doc_id: doc });
     }
   }
 

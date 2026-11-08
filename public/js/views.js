@@ -18,6 +18,7 @@ import { APP_ICONS, currentIcon, setIcon, applyIcon, themeIcon } from './appicon
 import { AREAS, LEVELS, CAPS, WRITE_NEEDS, READ_NEEDS, PRIVACY_NOTE, fullAccess, setLevel, isRestricted } from './perms.js';
 import { draggable } from './dnd.js';
 import { moveDoc } from './pickers.js';
+import { openBrowser } from './web.js';
 import { startTour, deleteTour, tourState } from './tour.js';
 import { tr, trn, LANG, LANGS, setLang } from './i18n.js';
 
@@ -1134,6 +1135,7 @@ export function viewItem(id) {
       h('label.f', h('span', tr('Link (optional)')),
         h('span.url-f',
           h('input', { value: it.url || '', type: 'url', placeholder: tr('product page, repo, wiki…'), 'data-fk': `it-url-${it.id}`, onchange: ev => patch({ url: ev.target.value.trim() }) }),
+          /^https?:\/\//i.test(it.url || '') && h('button.icon-btn', { type: 'button', title: tr('Preview the page'), onclick: () => openBrowser(it.url, { item: it }) }, icon('globe')),
           it.url && h('a.icon-btn', { href: it.url, target: '_blank', rel: 'noopener noreferrer', title: tr('Open the link') }, icon('link')))),
       h('datalist#item-cats', [...new Set(D.items.map(i => i.category).filter(Boolean))].map(c => h('option', { value: c })))),
     richField({

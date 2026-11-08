@@ -188,8 +188,11 @@ Parameters: `kind`, `name` (file name), `version`, `label` (shown name). A `firm
 | `GET /api/docs/:id/file` | downloads; the name in the `Content-Disposition` is `label` plus the original extension (`?inline=1` to see it in the browser) |
 | `GET /api/items/:id/docs.zip` | all the item's files in a `.zip` (`CODE-documents.zip`), with the names as in the single download; two equal names become `name (2).ext`; 404 if the item has no files |
 | `GET /api/docs/:id/remote` | the PDF of an external link, downloaded by the server (public addresses only, max 60 MB) |
+| `GET /api/docs/:id/page` | the web page of a link, cleaned (no scripts, frames or forms; style sheets put inside), from the copy saved the first time; HTML with a `sandbox` CSP, for a frame of the app |
+| `POST /api/docs/:id/page` | downloads the page again and replaces the saved copy → `{saved_at}` |
+| `GET /api/web?url=…` | the same cleaning for any page, as it is now (the little browser of an item's link; kept 10 minutes) |
 | `PATCH /api/docs/:id` `{label?, kind?, version?, item_id?}` | renames, changes kind or version; `item_id` moves it to another item (with the notes) |
-| `POST /api/docs/:id/copy` `{item_id}` | copies to another item: new file, without notes → `{id}` |
+| `POST /api/docs/:id/copy` `{item_id}` | copies to another item: new file (or the saved page of a link), without notes → `{id}` |
 | `DELETE /api/docs/:id` | to the trash |
 | `POST /api/docs/:id/notes` `{text, page?, x?, y?, z?, quote?, marks?}` | note: without `page` it is general, with `page`/`x`/`y` (0..1) it is a pin (`z` in 3D models); `quote` and `marks` (`[[page, x, y, w, h], …]` in 0..1, max 300) for a note on a piece of a PDF's text |
 | `PATCH /api/doc-notes/:id` `{text?, resolved?, page?, x?, y?, z?}` · `DELETE /api/doc-notes/:id` | edits, resolves, moves; to the trash |

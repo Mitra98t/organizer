@@ -1141,7 +1141,7 @@ route('PATCH', '/api/docs/:id', async ({ params, body }) => {
   });
 }, { area: 'documenti' });
 
-// A copy in another item (or the same one): a file of its own, without the notes.
+// A copy in another item (or the same one): a file of its own (or the saved page of a link), without the notes.
 route('POST', '/api/docs/:id/copy', async ({ params, user, body }) => {
   const d = liveDoc(params.id);
   const it = targetItem((await body()).item_id);
@@ -1156,6 +1156,7 @@ route('POST', '/api/docs/:id/copy', async ({ params, user, body }) => {
     const id = insertId(db.prepare(`INSERT INTO documents (item_id, kind, label, version, filename, mime, size, sha256, stored, url, created_by, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(it.id, d.kind, d.label, d.version, d.filename, d.mime, d.size, d.sha256, stored, d.url, user.id, now()));
     if (d.kind === 'firmware') refreshFirmware(it.id);
+    db.prepare('INSERT INTO doc_pages (doc_id, url, html, saved_at) SELECT ?, url, html, saved_at FROM doc_pages WHERE doc_id = ?').run(id, d.id);
     return id;
   });
   return { id };

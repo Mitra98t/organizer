@@ -201,7 +201,7 @@ export function mailSide(e) {
 // With Thunderbird connected, every attachment of a received mail can be viewed without saving it (Preview, for the
 // kinds the document viewer can show) and can become an item's document: item and kind are chosen in a modal and
 // the file comes from the preview just seen or from Thunderbird.
-const canPreview = a => !!a.part && !['none', 'link'].includes(kindOf({ filename: a.name, mime: a.type }));
+const canPreview = a => !!a.part && !['none', 'web'].includes(kindOf({ filename: a.name, mime: a.type }));
 const previewHash = (msgId, n) => `#/allegato/${msgId}?n=${n}`;
 
 function saveToItem(a, msgId, n) {

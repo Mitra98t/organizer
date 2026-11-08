@@ -1,5 +1,5 @@
-// Document viewer with notes: PDF (PDF.js), images, DXF drawings (cad.js, as images), text, tables and 3D models
-// (model3d.js), plus a side bar of notes.
+// Document viewer with notes: PDF (PDF.js), images, DXF drawings (cad.js, as images), text, tables, 3D models
+// (model3d.js) and web pages of links (web.js), plus a side bar of notes.
 // Notes with a page and coordinates (0..1) are pins on a point of the file (in 3D models also z, page = 1); the
 // others are general notes.
 //
@@ -11,6 +11,7 @@ import { h, icon, S, ui, api, act, render, richText, mdText, fmtTime, fmtSize, u
 import { moveDoc } from './pickers.js';
 import { today } from './parse.js';
 import { tr, trn } from './i18n.js';
+import { WEB_W, checkPage, webFrame, pageInfo, placeOver, unplace } from './web.js';
 
 const PDFJS = new URL('../vendor/pdfjs/', import.meta.url).href;
 // PDF.js resources: standard fonts, character maps (cMaps: without them, text in Asian fonts, frequent in
@@ -41,7 +42,7 @@ const CAD_MAX = 40 * 1024 * 1024;
 
 export function kindOf(d) {
   if (isPdfLink(d)) return 'pdf';
-  if (d.url) return 'link';
+  if (d.url) return 'web';
   if (MODEL_EXT.test(d.filename || '')) return 'model';
   if (/\.dxf$/i.test(d.filename || '')) return 'cad';
   if (d.mime === 'application/pdf' || /\.pdf$/i.test(d.filename || '')) return 'pdf';
@@ -51,7 +52,7 @@ export function kindOf(d) {
   return 'none';
 }
 
-const pinnable = v => v.kind === 'pdf' || v.kind === 'image' || v.kind === 'cad' || v.kind === 'model';
+const pinnable = v => v.kind === 'pdf' || v.kind === 'image' || v.kind === 'cad' || v.kind === 'model' || v.kind === 'web';
 
 // ---------- small preview (card on hover in the Documents page) ----------
 // PDF: the first page drawn once and kept in memory; images: the file; text: the first lines.
@@ -102,7 +103,7 @@ export function docThumb(d, width = 300) {
 function getViewer(d) {
   if (viewers.has(d.id)) return viewers.get(d.id);
   const v = { id: d.id, kind: kindOf(d), preview: !!d.src, zoom: 1, scroll: 0, pages: [], draft: null, status: 'loading' };
-  v.scroller = h(`div.dv-scroll${v.kind === 'model' || v.kind === 'table' ? `.${v.kind}` : ''}`, { onscroll: () => { v.scroll = v.scroller.scrollTop; updatePageLabel(v); } });
+  v.scroller = h(`div.dv-scroll${v.kind === 'model' || v.kind === 'table' || v.kind === 'web' ? `.${v.kind}` : ''}`, { onscroll: () => { v.scroll = v.scroller.scrollTop; updatePageLabel(v); } });
   v.pagesEl = h('div.dv-pages');
   v.scroller.append(v.pagesEl);
   v.pageLabel = h('span.dv-pl');
@@ -116,6 +117,10 @@ function getViewer(d) {
         h('button.btn.sm.ghost', { onclick: () => setZoom(v, 1) }, tr('Fit')),
         v.pageLabel,
       ],
+      v.kind === 'web' && [
+        v.savedLabel = h('span.muted.dv-saved'),
+        h('button.btn.sm.ghost', { title: tr('Download the page again from the site'), onclick: () => refreshWeb(v) }, icon('restore'), tr('Update')),
+      ],
       h('span.grow'),
       h('span.muted.dv-hint', v.preview ? '' : v.kind === 'model'
         ? tr('Drag to rotate, right button to pan, wheel to zoom. Click on the model for a note at that point')
@@ -123,13 +128,15 @@ function getViewer(d) {
           : pinnable(v) ? tr('Click on the document to add a note at that point, drag a pin to move it') : ''),
       searchable(v) && h('button.icon-btn', { title: tr('Search in the document ({key}F)', { key: MOD }), onclick: () => openSearch(v) }, icon('search'))),
     searchBar(v),
-    v.scroller,
+    // Web page: the scrolling box stays out of the view (see web.js), here only its space.
+    v.kind === 'web' ? (v.slot = h('div.dv-scroll.web-slot')) : v.scroller,
     v.kind === 'pdf' && (v.selBtn = h('button.btn.sm.primary.dv-selbtn', {
       hidden: true,
       onpointerdown: ev => ev.preventDefault(), // the selection must stay
       onclick: () => { const sel = selectionIn(v); if (sel) textDraft(v, sel); },
     }, icon('log'), tr('Note on the text'))));
-  v.el.addEventListener('pointerdown', ev => { lastActive = v; v.pointer = ev.pointerType; });
+  for (const el of [v.el, v.scroller]) el.addEventListener('pointerdown', ev => { lastActive = v; v.pointer = ev.pointerType; });
+  if (v.kind === 'web') placeOver(v.scroller, v.slot);
   if (v.kind === 'pdf') v.pagesEl.addEventListener('pointerup', ev => textPointerUp(v, ev));
   if (v.kind !== 'model' && pinnable(v)) pinchZoom(v);
   v.resize = new ResizeObserver(() => { clearTimeout(v.rt); v.rt = setTimeout(() => layout(v), 120); });
@@ -141,6 +148,7 @@ function getViewer(d) {
   else if (v.kind === 'text') openText(v, d);
   else if (v.kind === 'table') openTable(v, d);
   else if (v.kind === 'model') openModel(v, d);
+  else if (v.kind === 'web') openWeb(v, d);
   else v.status = 'ready';
   return v;
 }
@@ -154,6 +162,8 @@ function destroyViewer(v) {
   v.stage?.dispose();
   if (v.blobUrl) URL.revokeObjectURL(v.blobUrl);
   closePdf(v);
+  v.webObs?.disconnect();
+  if (v.kind === 'web') unplace(v.scroller);
   viewers.delete(v.id);
 }
 
@@ -232,6 +242,62 @@ function openImage(v, d) {
     ready(v);
   };
   img.onerror = () => fail(v, tr('Cannot load the image'));
+}
+
+// Web page (link document): the saved copy of the page, drawn WEB_W px wide and as tall as its content, then shrunk
+// to the space like a PDF page. The frame does not take the clicks (they make notes); its height is measured again
+// while the images arrive.
+const WEB_MAX_H = 60000;
+async function openWeb(v, d) {
+  v.pagesEl.replaceChildren(h('div.empty', tr('Loading the page…')));
+  v.src = `api/docs/${d.id}/page`;
+  try {
+    await checkPage(v.src);
+  } catch (e) {
+    return viewers.get(v.id) === v && fail(v, tr('Cannot show the page: {error}', { error: e.message }));
+  }
+  if (viewers.get(v.id) !== v) return;
+  const frame = webFrame(v.src);
+  const wrap = newPage(v, 1, WEB_W, 900, { frame });
+  wrap.classList.add('web');
+  frame.addEventListener('load', () => webLoaded(v, frame));
+  v.pagesEl.replaceChildren(wrap);
+}
+
+function webLoaded(v, frame) {
+  const doc = frame.contentDocument;
+  if (!doc?.documentElement) return fail(v, tr('Cannot show the page'));
+  doc.head?.append(Object.assign(doc.createElement('style'), { textContent: 'html{scrollbar-width:none}html::-webkit-scrollbar{display:none}' }));
+  const info = pageInfo(frame);
+  if (v.savedLabel) {
+    v.savedLabel.textContent = info.saved ? tr('copy of {date}', { date: fmtTime(info.saved) }) : '';
+    v.savedLabel.title = info.url;
+  }
+  const p = v.pages[0];
+  const measure = () => {
+    const H = Math.min(WEB_MAX_H, Math.max(200, doc.documentElement.scrollHeight, doc.body?.scrollHeight || 0));
+    if (Math.abs(H - p.h) < 2 && frame.style.height) return;
+    p.h = H;
+    frame.style.height = `${H}px`;
+    layout(v);
+  };
+  frame.style.height = '900px'; // the window the page is drawn for, then as tall as the content
+  measure();
+  v.webObs?.disconnect();
+  v.webObs = new ResizeObserver(() => measure());
+  v.webObs.observe(doc.documentElement);
+  setTimeout(() => v.webObs?.disconnect(), 20000); // then the page stays still (the notes are fractions of its height)
+  if (v.status !== 'ready') ready(v);
+  else updatePins(v);
+}
+
+async function refreshWeb(v) {
+  if (!confirm(tr('Download the page again from the site? The notes stay at the same point of the page, which may have changed.'))) return;
+  const frame = v.pages[0]?.frame;
+  const r = await act(() => api('POST', `/docs/${v.id}/page`));
+  if (!r) return;
+  if (frame) frame.src = `${v.src}?t=${Date.now()}`;
+  else openWeb(v, S.data.docById.get(v.id));
 }
 
 // DXF: the drawing becomes an SVG image (cad.js) and from then on it is an image like the others.
@@ -468,6 +534,7 @@ function newPage(v, num, w, h0, extra) {
   const marks = h('div.dv-marks');
   const wrap = h('div.dv-page', { 'data-page': num, onclick: ev => clickPage(v, num, wrap, ev) });
   if (extra.img) wrap.append(extra.img);
+  else if (extra.frame) wrap.append(extra.frame);
   else wrap.append(extra.canvas = h('canvas'));
   wrap.append(hits, marks);
   // PDF: above the drawing, the page's real text (transparent) to select it.
@@ -497,6 +564,7 @@ function layout(v) {
     p.wrap.style.setProperty('--total-scale-factor', p.cssW / p.w); // size of the selectable text
     p.wrap.style.width = `${p.cssW}px`;
     p.wrap.style.height = `${Math.round(p.cssW * p.h / p.w)}px`;
+    if (p.frame) p.frame.style.transform = `scale(${p.cssW / p.w})`;
     if (p.visible && !v.quickZoom) renderPage(v, p);
   }
   if (v.zoomLabel) v.zoomLabel.textContent = `${Math.round(v.zoom * 100)}%`;
@@ -1305,9 +1373,7 @@ const focusChip = focus => h('button.chip.only-desktop', {
 // Body: preview (or message for files without a preview) + notes, and restoring the scroll after re-attaching.
 function docBody(d, v) {
   updatePins(v);
-  const preview = v.kind === 'link'
-    ? h('div.dv-main', h('div.empty', h('p', tr('External document')), h('a.btn', { href: d.url, target: '_blank', rel: 'noopener noreferrer' }, icon('link'), d.url)))
-    : v.kind === 'none'
+  const preview = v.kind === 'none'
       ? h('div.dv-main', h('div.empty',
         h('p', tr('No preview for this kind of file.')),
         h('a.btn', { href: docFileUrl(d), download: '' }, icon('download'), tr('Download {name}', { name: d.filename }))))
