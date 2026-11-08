@@ -3,6 +3,9 @@
 What's new in each version, most recent first. Versions are the git tags (`v0.7`, `v0.6.2`…); the number in `package.json` is the same.
 Updating needs nothing by hand: the database migrates by itself at startup (the schema version is given when it changes).
 
+## 0.25.2 — 2026-11-08
+- **The app's own windows instead of the browser's**: renaming a document, new workspace, new kind or category, adding a link (address and label in one window), confirmations before deleting, tokens and passwords to copy now open in a window in the app's style instead of the browser's grey boxes. Enter confirms, Esc or Cancel closes; deletions have a red button with what it does ("Move to the trash", "Delete for good"…); a token comes with a Copy button.
+
 ## 0.25.1 — 2026-11-08
 - **A quieter interface**: section titles, entry kinds, document kinds, menus and categories are written normally instead of in spaced capitals; fewer bold texts and one scale of text sizes; spacing and rounded corners made regular. The kind of an entry (Todo, Mail, Note) is a coloured word without a background, and "new" next to What's new is plain text.
 - Light theme: the green is a little darker, so white text on it reads well.

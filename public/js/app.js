@@ -1,7 +1,7 @@
 import {
   h, icon, S, ui, RS, api, sync, setRenderer, render, renderStatus, connectLive, disconnectLive, liveClosed,
   flushOutbox, addEntry, loadCache, clearLocal, dueInfo, autosize, toast, isMine, dayDiff, save, hue, act, catStyle, tagStyle,
-  switchWorkspace, newWorkspace, kindMenuCheck, popCheck, can, applyReadOnly,
+  switchWorkspace, newWorkspace, kindMenuCheck, popCheck, can, applyReadOnly, askConfirm
 } from './core.js';
 import { initAutocomplete, acCheck } from './autocomplete.js';
 import { viewContacts } from './contacts.js';
@@ -548,7 +548,7 @@ function renderAuth() {
 }
 
 async function logout() {
-  if (S.outbox.length && !confirm(tr('There are {n} entries queued offline that will be lost. Log out?', { n: S.outbox.length }))) return;
+  if (S.outbox.length && !await askConfirm(tr('There are {n} entries queued offline that will be lost. Log out?', { n: S.outbox.length }), { ok: tr('Log out'), danger: true })) return;
   try { await api('POST', '/logout'); } catch { /* offline: si esce comunque in locale */ }
   disconnectLive();
   clearLocal();

@@ -7,7 +7,7 @@
 // included) stays in memory and is only re-attached; the pins are updated.
 // Several viewers can be open together (side-by-side review, #/review?d=1,2,3).
 import { backlinksBox } from './views.js';
-import { h, icon, S, ui, api, act, render, richText, mdText, fmtTime, fmtSize, userName, toast, trashIt, autosize, itemAttrs, save, docFileUrl, dkAttrs, kindLabel, kindPicker, docName, renameDoc, can, roClass, isReadOnly, shareBox } from './core.js';
+import { h, icon, S, ui, api, act, render, richText, mdText, fmtTime, fmtSize, userName, toast, trashIt, autosize, itemAttrs, save, docFileUrl, dkAttrs, kindLabel, kindPicker, docName, renameDoc, can, roClass, isReadOnly, shareBox, askConfirm} from './core.js';
 import { moveDoc } from './pickers.js';
 import { today } from './parse.js';
 import { tr, trn } from './i18n.js';
@@ -292,7 +292,7 @@ function webLoaded(v, frame) {
 }
 
 async function refreshWeb(v) {
-  if (!confirm(tr('Download the page again from the site? The notes stay at the same point of the page, which may have changed.'))) return;
+  if (!await askConfirm(tr('Download the page again from the site? The notes stay at the same point of the page, which may have changed.'), { ok: tr('Update') })) return;
   const frame = v.pages[0]?.frame;
   const r = await act(() => api('POST', `/docs/${v.id}/page`));
   if (!r) return;

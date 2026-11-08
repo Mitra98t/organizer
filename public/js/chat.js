@@ -2,7 +2,7 @@
 // contacts (autocomplete with @ # + and "[["). Each channel has its own people (or belongs to everyone); whoever
 // manages channels (admin or "channels" permission) creates them, renames them, picks who reads and who writes.
 // The last 100 messages of each channel arrive with /api/sync, earlier ones on request.
-import { h, icon, S, ui, api, act, render, userName, chatText, fmtTime, fmtLongDay, localDay, can, save, load } from './core.js';
+import { h, icon, S, ui, api, act, render, userName, chatText, fmtTime, fmtLongDay, localDay, can, save, load, askConfirm } from './core.js';
 import { tr, trn } from './i18n.js';
 
 const GROUP_MS = 5 * 60e3; // close messages from the same person: a single header
@@ -91,7 +91,7 @@ function message(m, D, head, canWrite) {
       mine && h('button.icon-btn.sm', { title: tr('Edit'), 'aria-label': tr('Edit'), onclick: () => { ui.chatEdit = m.id; render(); } }, icon('edit')),
       h('button.icon-btn.sm', {
         title: tr('Delete'), 'aria-label': tr('Delete'),
-        onclick: () => { if (confirm(tr('Delete the message?'))) act(() => api('DELETE', `/chat/${m.id}`)); },
+        onclick: async () => { if (await askConfirm(tr('Delete the message?'), { ok: tr('Delete'), danger: true })) act(() => api('DELETE', `/chat/${m.id}`)); },
       }, icon('trash'))));
 }
 
@@ -145,8 +145,8 @@ function channelEditor(D, c) {
       h('span.grow'),
       !isNew && h('button.btn.sm.danger', {
         type: 'button',
-        onclick: () => {
-          if (!confirm(tr('Delete #{name}? Its messages will no longer be visible.', { name: c.name }))) return;
+        onclick: async () => {
+          if (!await askConfirm(tr('Delete #{name}? Its messages will no longer be visible.', { name: c.name }), { ok: tr('Delete'), danger: true })) return;
           act(async () => { await api('DELETE', `/chat/channels/${c.id}`); close(); }, tr('#{name} deleted', { name: c.name }));
         },
       }, icon('trash'), tr('Delete'))));

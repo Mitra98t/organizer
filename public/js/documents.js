@@ -3,7 +3,7 @@
 // can be chosen to open side by side. Document kinds are added here too.
 import {
   h, icon, S, ui, api, act, render, save, toast, fmtSize, fmtTime, itemAttrs, catStyle, docKinds, dkAttrs, kindLabel, newDocKind, docName, renameDoc, masonry, filterChip, aliasCodes, can, roClass,
-  fold, foldBar, capFirst,
+  fold, foldBar, capFirst, askConfirm
 } from './core.js';
 import { docMeta, docPeek } from './docview.js';
 import { peekable } from './views.js';
@@ -69,8 +69,8 @@ function byKind(docs, filtered) {
   const groups = new Map(docKinds().map(k => [k, []]));
   for (const d of docs) (groups.get(d.kind) || groups.get('altro')).push(d);
   const custom = new Set(D.customDocKinds);
-  const remove = (k, n) => {
-    if (confirm(n ? tr('Delete the kind "{kind}"? Its {n} documents become "other".', { kind: k, n }) : tr('Delete the kind "{kind}"?', { kind: k }))) act(() => api('DELETE', `/doc-kinds/${encodeURIComponent(k)}`));
+  const remove = async (k, n) => {
+    if (await askConfirm(n ? tr('Delete the kind "{kind}"? Its {n} documents become "other".', { kind: k, n }) : tr('Delete the kind "{kind}"?', { kind: k }), { ok: tr('Delete'), danger: true })) act(() => api('DELETE', `/doc-kinds/${encodeURIComponent(k)}`));
   };
   return [...groups].filter(([k, list]) => list.length || (custom.has(k) && !filtered)).map(([k, list]) => fold('documenti', `k:${k}`, h('section.dgroup',
     h('div.dgroup-h', h('span.dk', dkAttrs(k), kindLabel(k)), h('span.count', list.length),

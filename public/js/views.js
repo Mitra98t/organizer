@@ -5,7 +5,7 @@ import {
   updatePending, removePending,
   descendants, ancestors, catStyle, itemAttrs, docFileUrl, projectsOf, DOC_KINDS, kindLabel, projHue, catHue, huePicker,
   switchWorkspace, newWorkspace, docName, renameDoc, richField, backlinks, plainRefs, CONTACT_COLOR, masonry, filterChip, aliasCodes, kindPicker, can, canEntry, roClass,
-  fold, foldBar, capFirst,
+  fold, foldBar, capFirst, askConfirm, askText, askFields, notice, showText
 } from './core.js';
 import { docMeta, docPeek } from './docview.js';
 import { openFeedback } from './feedback.js';
@@ -626,12 +626,12 @@ draggable({
     const it = S.data.itemById.get(id);
     return { el: col, value: col.dataset.cat, ok: col.dataset.new != null || col.dataset.cat !== (it.category || '') };
   },
-  drop: (id, t) => {
+  drop: async (id, t) => {
     const it = S.data.itemById.get(id);
     const before = it.category || '';
     let category = t.value;
     if (t.el.dataset.new != null) {
-      category = (prompt(tr('New category for {code}:', { code: it.code })) || '').trim();
+      category = ((await askText(tr('New category for {code}:', { code: it.code }), { title: tr('New category'), ok: tr('Move') })) || '').trim();
       if (!category) return;
     }
     if (category === before) return;
@@ -690,8 +690,8 @@ export function viewProject(id) {
       shareBox('project', p),
       h('span.grow'),
       (p.created_by === me.id || me.is_admin) && h('button.btn.sm.danger', {
-        onclick: () => {
-          if (!confirm(tr('Move @{tag} to the trash? Its entries stay visible, without a project.', { tag: p.tag }))) return;
+        onclick: async () => {
+          if (!await askConfirm(tr('Move @{tag} to the trash? Its entries stay visible, without a project.', { tag: p.tag }), { ok: tr('Move to the trash'), danger: true })) return;
           trashIt('project', `/projects/${p.id}`, `@${p.tag}`).then(ok => { if (ok) location.hash = '#/progetti'; });
         },
       }, icon('trash'), tr('Delete'))),
@@ -1029,10 +1029,14 @@ function docSection(it) {
   const docs = D.docsOf.get(it.id) || [];
   const files = docs.filter(d => !d.url).length;
   const fileInput = h('input', { type: 'file', multiple: true, hidden: true, onchange: ev => { const files = [...ev.target.files]; ev.target.value = ''; uploadDocs(it, files); } });
-  const addLink = () => {
-    const url = prompt(tr('URL of the document (repo, wiki, drive…)'));
+  const addLink = async () => {
+    const f = await askFields([
+      { name: 'url', label: tr('URL of the document (repo, wiki, drive…)'), type: 'url', placeholder: 'https://' },
+      { name: 'label', label: tr('Label'), placeholder: tr('optional') },
+    ], { title: tr('Link'), ok: tr('Add') });
+    const url = f?.url.trim();
     if (!url) return;
-    const label = prompt(tr('Label'), '') || '';
+    const label = f.label.trim();
     act(() => api('POST', `/items/${it.id}/docs`, { url, label, kind: ui.docKind, version: ui.docVer.trim() }));
   };
   const body = [
@@ -1176,8 +1180,8 @@ export function viewItem(id) {
     h('div.danger-zone',
       h('span.muted', tr('Created {when} by {name}', { when: fmtTime(it.created_at), name: userName(it.created_by) })),
       h('button.btn.sm.danger', {
-        onclick: () => {
-          if (!confirm(tr('Move {code} and its documents to the trash?', { code: it.code }))) return;
+        onclick: async () => {
+          if (!await askConfirm(tr('Move {code} and its documents to the trash?', { code: it.code }), { ok: tr('Move to the trash'), danger: true })) return;
           trashIt('item', `/items/${it.id}`, it.code).then(ok => { if (ok) location.hash = '#/magazzino'; });
         },
       }, icon('trash'), tr('Delete item'))));
@@ -1229,13 +1233,13 @@ function loadTokens() {
 // Tokens for the CLI and external programs (bots, scripts): shown only once, when created.
 function tokensSection() {
   if (ui.tokens == null) loadTokens();
-  const create = () => {
-    const name = prompt(tr('Name of the token (e.g. "telegram bot", "backup script"):'));
+  const create = async () => {
+    const name = await askText(tr('Name of the token (e.g. "telegram bot", "backup script"):'), { title: tr('Create token'), ok: tr('Create') });
     if (!name?.trim()) return;
     act(async () => {
       const r = await api('POST', '/tokens', { name });
       loadTokens();
-      prompt(tr('Copy the token now: it will not be shown again.'), r.token);
+      showText(tr('Copy the token now: it will not be shown again.'), r.token);
     });
   };
   return card('set-tokens', tr('CLI and API tokens'), [
@@ -1249,7 +1253,7 @@ function tokensSection() {
       h('span.grow'),
       h('button.icon-btn', {
         title: tr('Revoke'),
-        onclick: () => { if (confirm(tr('Revoke the token "{name}"? Whoever uses it will no longer have access.', { name: t.name }))) act(async () => { await api('DELETE', `/tokens/${t.id}`); loadTokens(); }, tr('Token revoked')); },
+        onclick: async () => { if (await askConfirm(tr('Revoke the token "{name}"? Whoever uses it will no longer have access.', { name: t.name }), { ok: tr('Revoke'), danger: true })) act(async () => { await api('DELETE', `/tokens/${t.id}`); loadTokens(); }, tr('Token revoked')); },
       }, icon('x')))),
   ], { count: ui.tokens.length || '', collapsed: true });
 }
@@ -1259,7 +1263,7 @@ function thunderbirdToken() {
   act(async () => {
     const r = await api('POST', '/tokens', { name: 'Thunderbird' });
     loadTokens();
-    prompt(tr('Copy the token and paste it in the extension\'s options: it will not be shown again.'), r.token);
+    showText(tr('Copy the token and paste it in the extension\'s options: it will not be shown again.'), r.token);
   });
 }
 
@@ -1506,7 +1510,7 @@ function settingsPane(sec, D) {
         h('p.muted', tr('A guided tour of the features, on a test workspace with fake content (Anna and Luca do not exist). You can touch everything; at the end you delete it with one click.')),
         h('div.toolbar',
           h('button.btn.primary', { onclick: () => act(startTour) }, icon('help'), tourState() ? tr('Resume the tour') : tr('Take the tour')),
-          D.tourWs && h('button.btn.ghost', { onclick: () => confirm(tr('Delete the test workspace and everything in it?')) && act(deleteTour) },
+          D.tourWs && h('button.btn.ghost', { onclick: async () => (await askConfirm(tr('Delete the test workspace and everything in it?'), { ok: tr('Delete'), danger: true })) && act(deleteTour) },
             icon('trash'), tr('Delete the test workspace'))),
       ]),
       card('set-help', tr('What\'s new and feedback'), [
@@ -1600,13 +1604,13 @@ function peopleCard(D) {
       me.is_admin && u.id !== me.id && [
         h('button.btn.sm.ghost', { onclick: () => act(() => api('PATCH', `/admin/users/${u.id}`, { is_admin: !u.is_admin })) }, u.is_admin ? tr('Remove admin') : tr('Make admin')),
         h('button.btn.sm.ghost', {
-          onclick: () => {
-            if (!confirm(tr('Generate a new password for {user}?', { user: u.username }))) return;
-            act(async () => { const r = await api('PATCH', `/admin/users/${u.id}`, { reset_password: true }); prompt(tr('New password for {user}:', { user: u.username }), r.password); });
+          onclick: async () => {
+            if (!await askConfirm(tr('Generate a new password for {user}?', { user: u.username }), { ok: tr('Reset password') })) return;
+            act(async () => { const r = await api('PATCH', `/admin/users/${u.id}`, { reset_password: true }); showText(tr('New password for {user}:', { user: u.username }), r.password); });
           },
         }, tr('Reset password')),
         h('button.btn.sm.danger', {
-          onclick: () => { if (confirm(tr('Remove {user} from "{ws}"? Their entries stay; their account and their other workspaces are not touched.', { user: u.username, ws: D.workspace.name }))) act(() => api('DELETE', `/admin/users/${u.id}`)); },
+          onclick: async () => { if (await askConfirm(tr('Remove {user} from "{ws}"? Their entries stay; their account and their other workspaces are not touched.', { user: u.username, ws: D.workspace.name }), { ok: tr('Remove'), danger: true })) act(() => api('DELETE', `/admin/users/${u.id}`)); },
         }, tr('Remove')),
       ])),
     me.is_admin && h('div.invites',
@@ -1650,7 +1654,7 @@ const importInput = h('input', {
   onchange: async ev => {
     const f = ev.target.files[0];
     ev.target.value = '';
-    if (!f || !confirm(tr('Import "{file}" into this workspace? The data is added to what is there, without overwriting it.', { file: f.name }))) return;
+    if (!f || !await askConfirm(tr('Import "{file}" into this workspace? The data is added to what is there, without overwriting it.', { file: f.name }), { ok: tr('Import') })) return;
     toast(tr('Importing…'));
     try {
       const r = await api('POST', '/import', f);
@@ -1661,7 +1665,7 @@ const importInput = h('input', {
         r.contatti && trn(r.contatti, '1 new contact', '{n} new contacts'), r.contattiUniti && trn(r.contattiUniti, '1 contact merged', '{n} contacts merged'),
         r.note && trn(r.note, '1 note on documents', '{n} notes on documents'), r.conversazioni && trn(r.conversazioni, '1 mail conversation', '{n} mail conversations'),
       ].filter(Boolean);
-      alert(`${tr('Import done.')}\n${parts.join('\n') || tr('Nothing new to add.')}${r.saltati.length ? `\n\n${tr('Skipped (you do not have permission to write): {list}.', { list: r.saltati.map(a => tr(AREAS[a] || a)).join(', ') })}` : ''}`);
+      notice(`${tr('Import done.')}\n${parts.join('\n') || tr('Nothing new to add.')}${r.saltati.length ? `\n\n${tr('Skipped (you do not have permission to write): {list}.', { list: r.saltati.map(a => tr(AREAS[a] || a)).join(', ') })}` : ''}`);
     } catch (e) {
       toast(e.message, { err: true });
     }
@@ -1673,11 +1677,11 @@ const restoreInput = h('input', {
   onchange: async ev => {
     const f = ev.target.files[0];
     ev.target.value = '';
-    if (!f || !confirm(tr('Restore "{file}"? All the current data will be replaced (a safety copy stays on the server).', { file: f.name }))) return;
+    if (!f || !await askConfirm(tr('Restore "{file}"? All the current data will be replaced (a safety copy stays on the server).', { file: f.name }), { ok: tr('Restore'), danger: true })) return;
     toast(tr('Restoring…'));
     try {
       const r = await api('POST', '/admin/restore', f);
-      alert(`${tr('Backup restored.')}${r.missing ? ` ${tr('{n} documents or attachments have no file on the server.', { n: r.missing })}` : ''}\n${tr('Safety copy: {file}', { file: r.safetyCopy })}`);
+      await notice(`${tr('Backup restored.')}${r.missing ? ` ${tr('{n} documents or attachments have no file on the server.', { n: r.missing })}` : ''}\n${tr('Safety copy: {file}', { file: r.safetyCopy })}`);
       location.reload();
     } catch (e) {
       toast(e.message, { err: true });
@@ -1703,14 +1707,14 @@ function workspaceSection(D) {
       h('button.btn', { onclick: newWorkspace }, icon('plus'), tr('New workspace')),
       h('span.grow'),
       h('button.btn.sm.ghost', {
-        onclick: () => {
-          if (!confirm(tr('Leave "{ws}"? To come back you will need a new invite.', { ws: ws.name }))) return;
+        onclick: async () => {
+          if (!await askConfirm(tr('Leave "{ws}"? To come back you will need a new invite.', { ws: ws.name }), { ok: tr('Leave the workspace'), danger: true })) return;
           act(async () => { await api('POST', `/workspaces/${ws.id}/leave`); location.hash = '#/agenda'; location.reload(); });
         },
       }, tr('Leave the workspace')),
       admin && h('button.btn.sm.danger', {
-        onclick: () => {
-          const name = prompt(tr('Delete "{ws}" for all the members? Type the workspace name to confirm:', { ws: ws.name }));
+        onclick: async () => {
+          const name = await askText(tr('Delete "{ws}" for all the members? Type the workspace name to confirm:', { ws: ws.name }), { placeholder: ws.name, title: tr('Delete workspace'), ok: tr('Delete') });
           if (name == null) return;
           act(async () => { await api('DELETE', `/workspaces/${ws.id}`, { confirm: name }); location.hash = '#/agenda'; location.reload(); });
         },

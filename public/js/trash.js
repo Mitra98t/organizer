@@ -1,5 +1,5 @@
 // Trash: deleted items, restorable for a few weeks before they are deleted for good.
-import { h, icon, S, ui, api, act, render, fmtTime, userName, richText } from './core.js';
+import { h, icon, S, ui, api, act, render, fmtTime, userName, richText, askConfirm } from './core.js';
 import { tr, trn } from './i18n.js';
 
 const KINDS = { todo: 'todo', mail: 'mail', note: 'nota' };
@@ -33,7 +33,7 @@ export function viewTrash() {
     h('button.btn.sm', { onclick: () => act(() => api('POST', `/trash/${type}/${el.id}/restore`), tr('Restored')) }, icon('restore'), tr('Restore')),
     canPurge(el) && h('button.icon-btn', {
       title: tr('Delete for good'),
-      onclick: () => { if (confirm(tr('Delete for good? It can no longer be recovered.'))) act(() => api('DELETE', `/trash/${type}/${el.id}`)); },
+      onclick: async () => { if (await askConfirm(tr('Delete for good? It can no longer be recovered.'), { ok: tr('Delete for good'), danger: true })) act(() => api('DELETE', `/trash/${type}/${el.id}`)); },
     }, icon('trash')));
 
   const block = (title, rows) => rows.length > 0 && h('section.sec',
@@ -60,6 +60,6 @@ export function viewTrash() {
     total > 0 && me.is_admin && h('div.danger-zone',
       h('span.muted', trn(total, '1 item', '{n} items')),
       h('button.btn.sm.danger', {
-        onclick: () => { if (confirm(tr('Empty the trash? {n} items will be deleted for good.', { n: total }))) act(() => api('DELETE', '/trash'), tr('Trash emptied')); },
+        onclick: async () => { if (await askConfirm(tr('Empty the trash? {n} items will be deleted for good.', { n: total }), { ok: tr('Empty the trash'), danger: true })) act(() => api('DELETE', '/trash'), tr('Trash emptied')); },
       }, icon('trash'), tr('Empty the trash'))));
 }

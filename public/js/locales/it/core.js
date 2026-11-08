@@ -69,4 +69,13 @@ export default {
   'There is nobody else in the workspace.': 'Non ci sono altre persone nel workspace.',
   'From the bar too: +person, ++person (also assigns it to them), +all.': 'Anche dalla barra: +persona, ++persona (e gliela assegni), +all.',
   'Choose who to share with': 'Scegli con chi condividere',
+  // the app's windows (askText, askConfirm, notice, showText)
+  'OK': 'OK',
+  'Create': 'Crea',
+  'New kind': 'Nuovo tipo',
+  'Log out': 'Esci',
+  'Move': 'Sposta',
+  'Move to the trash': 'Sposta nel cestino',
+  'optional': 'facoltativo',
+  'Import': 'Importa',
 };

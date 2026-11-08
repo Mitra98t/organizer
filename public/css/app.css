@@ -1413,6 +1413,21 @@ button.nav.fb-btn { width: 100%; border: 0; background: transparent; font: inher
 /* Feedback dialog and page for whoever runs the instance. */
 dialog.fb { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); box-shadow: 0 20px 60px rgb(0 0 0 / 45%); }
 dialog.fb::backdrop { background: rgb(0 0 0 / 50%); }
+/* The app's windows instead of prompt/confirm/alert (core.js: askText, askConfirm, notice, showText). */
+dialog.mdl { width: min(440px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); box-shadow: 0 16px 48px rgb(0 0 0 / 35%); }
+dialog.mdl::backdrop { background: rgb(0 0 0 / 45%); }
+dialog.mdl[open] { animation: pop 0.16s cubic-bezier(0.22, 1, 0.36, 1); }
+.mdl-f { display: flex; flex-direction: column; gap: 12px; padding: 20px; }
+.mdl-t { margin: 0; font-size: 16px; font-weight: 600; }
+.mdl-m { margin: 0; font-size: 14px; line-height: 1.5; white-space: pre-line; overflow-wrap: anywhere; }
+.mdl-t + .mdl-m { color: var(--muted); }
+.mdl-l { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.mdl-in { display: flex; gap: 8px; }
+.mdl-in input { flex: 1; min-width: 0; font-size: 14px; color: var(--text); }
+.mdl-in input[readonly] { font-family: var(--mono); font-size: 13px; }
+.mdl-b { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.btn.danger-fill { background: var(--danger); border-color: var(--danger); color: var(--panel); }
+.btn.danger-fill:hover { filter: brightness(1.08); }
 dialog.fb form { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
 .fb-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .fb-h h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 16px; }

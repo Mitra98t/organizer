@@ -6,7 +6,7 @@
 // Topics and conversations have a star and a colour (automatic until one is chosen).
 import {
   h, icon, S, ui, api, act, render, toast, save, fmtTime, fmtDay, plainRefs, contactNames, can, itemAttrs, docName, projectsOf, projHue,
-  trashIt, popButton, popItem, popSep, huePicker, masonry, filterChip, fold, foldBar,
+  trashIt, popButton, popItem, popSep, huePicker, masonry, filterChip, fold, foldBar, askConfirm, askText
 } from './core.js';
 import { draggable } from './dnd.js';
 import { extractCodes } from './parse.js';
@@ -74,8 +74,8 @@ export function archiveThread(t, archived) {
   toast(archived ? tr('Conversation archived') : tr('Conversation active again'), { action: { label: tr('Undo'), fn: () => archiveThread(t, !archived) } });
 }
 
-function rename(label, current, fn) {
-  const name = prompt(label, current);
+async function rename(label, current, fn) {
+  const name = await askText(label, { value: current, ok: tr('Rename') });
   if (name?.trim()) fn(name.trim());
 }
 
@@ -88,7 +88,7 @@ async function deleteThread(t) {
 
 async function deleteTopic(topic) {
   const n = (S.data.threadsOfTopic.get(topic.id) || []).length;
-  if (n > 1 && !confirm(tr('Move the topic and its {n} conversations to the trash?', { n }))) return;
+  if (n > 1 && !await askConfirm(tr('Move the topic and its {n} conversations to the trash?', { n }), { ok: tr('Move to the trash'), danger: true })) return;
   if (await act(() => api('DELETE', `/mail/topics/${topic.id}`).then(() => true))) {
     toast(tr('Topic moved to the trash: the conversations are restored from the Trash'));
     if (location.hash.startsWith(`#/t/${topic.id}`)) location.hash = '#/mail';
@@ -143,8 +143,8 @@ const topicMenu = topic => {
 };
 
 // The whole topic into another workspace (with conversations and mails written here): the links from here are lost.
-function moveTopicTo(topic, w) {
-  if (!confirm(tr('Move "{topic}" to the workspace {ws}?\n\nLinks to items, projects and contacts of this workspace are lost; the automatic ones are made again with the inventory of {ws}.', { topic: topicTitle(topic), ws: w.name }))) return;
+async function moveTopicTo(topic, w) {
+  if (!await askConfirm(tr('Move "{topic}" to the workspace {ws}?\n\nLinks to items, projects and contacts of this workspace are lost; the automatic ones are made again with the inventory of {ws}.', { topic: topicTitle(topic), ws: w.name }))) return;
   act(async () => {
     await api('POST', `/mail/topics/${topic.id}/move`, { ws: w.id });
     location.hash = '#/mail';

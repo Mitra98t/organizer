@@ -337,7 +337,7 @@ export async function switchWorkspace(id, hash = '#/agenda') {
 }
 
 export async function newWorkspace() {
-  const name = prompt(tr('Name of the new workspace (you will be its admin):'));
+  const name = await askText(tr('Name of the new workspace (you will be its admin):'), { title: tr('New workspace'), ok: tr('Create') });
   if (!name?.trim()) return;
   try {
     await api('POST', '/workspaces', { name: name.trim() });
@@ -596,8 +596,8 @@ export function hue(s) {
 // A document's name: the one given in the app, otherwise the file name (or the link).
 export const docName = d => d.label || d.filename || d.url;
 
-export function renameDoc(d) {
-  const name = prompt(tr('New name for the document (empty = back to the file name):'), d.label || d.filename || '');
+export async function renameDoc(d) {
+  const name = await askText(tr('New name for the document (empty = back to the file name):'), { value: d.label || d.filename || '', title: tr('Rename'), ok: tr('Rename') });
   if (name == null) return;
   act(() => api('PATCH', `/docs/${d.id}`, { label: name.trim() }));
 }
@@ -615,7 +615,7 @@ export const dkAttrs = k => (DOC_KINDS.includes(k) ? { class: `k-${k}` } : { cla
 
 // New document kind: asks for the name, creates it and returns it (null if cancelled or on error).
 export async function newDocKind() {
-  const name = prompt(tr('New document kind (one word, e.g. "certificate", "gerber", "bom"):'));
+  const name = await askText(tr('New document kind (one word, e.g. "certificate", "gerber", "bom"):'), { title: tr('New kind'), ok: tr('Create') });
   if (!name?.trim()) return null;
   const r = await act(() => api('POST', '/doc-kinds', { name: name.trim() }));
   return r?.name ?? null;
@@ -1177,9 +1177,69 @@ export async function copy(text) {
     await navigator.clipboard.writeText(text);
     toast(tr('Copied'));
   } catch {
-    prompt(tr('Copy:'), text);
+    showText(tr('Copy:'), text);
   }
 }
+
+// ---------- dialogs ----------
+// The app's own windows (<dialog>) instead of the browser's prompt, confirm and alert: same look as the app,
+// Enter confirms, Esc or Cancel closes. Each returns a Promise: the text (null if cancelled), true/false, nothing.
+function modal({ title, message, fields = [], ok = tr('OK'), cancel = tr('Cancel'), danger = false, read = null }) {
+  return new Promise(resolve => {
+    let done = false;
+    const inputs = fields.map(f => h('input', {
+      name: f.name, type: f.type || 'text', value: f.value ?? '', placeholder: f.placeholder || null,
+      readonly: f.readonly || null, autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false',
+    }));
+    const finish = v => {
+      if (done) return;
+      done = true;
+      dlg.close();
+      dlg.remove();
+      resolve(v);
+    };
+    const dlg = h('dialog.mdl', { 'aria-label': title || message || '' },
+      h('form.mdl-f', { method: 'dialog', onsubmit: ev => { ev.preventDefault(); finish(read ? read(inputs) : true); } },
+        title && h('h3.mdl-t', title),
+        message && h('p.mdl-m', message),
+        fields.map((f, i) => h('label.mdl-l',
+          f.label && h('span', f.label),
+          h('span.mdl-in', inputs[i], f.copy && h('button.btn', { type: 'button', onclick: () => copy(inputs[i].value) }, icon('copy'), tr('Copy'))))),
+        h('div.mdl-b',
+          cancel && h('button.btn.ghost', { type: 'button', onclick: () => finish(read ? null : false) }, cancel),
+          h(`button.btn.${danger ? 'danger-fill' : 'primary'}`, { type: 'submit' }, ok))));
+    dlg.addEventListener('cancel', ev => { ev.preventDefault(); finish(read ? null : false); }); // Esc
+    // The app's shortcuts (Esc goes up a page, n and / open the quick bar, ⌘K) stay out while the window is open.
+    dlg.addEventListener('keydown', ev => ev.stopPropagation());
+    // A click outside closes only the windows without fields (nothing typed is lost).
+    if (!fields.length) dlg.addEventListener('click', ev => { if (ev.target === dlg) finish(false); });
+    document.body.append(dlg);
+    dlg.showModal();
+    const first = inputs.find(i => !i.readOnly) || inputs[0];
+    if (first) {
+      first.focus();
+      first.select();
+    } else dlg.querySelector('[type="submit"]').focus();
+  });
+}
+
+// A line of text; null if cancelled. Options: value, placeholder, title, ok.
+export const askText = (message, { value = '', placeholder, title, ok } = {}) =>
+  modal({ title, message, ok, fields: [{ name: 'v', value, placeholder }], read: ([i]) => i.value });
+
+// Several fields at once ({name, label, value, placeholder, type}); null if cancelled, otherwise {name: value}.
+export const askFields = (fields, { title, message, ok } = {}) =>
+  modal({ title, message, ok, fields, read: ins => Object.fromEntries(fields.map((f, i) => [f.name, ins[i].value])) });
+
+// Yes or no. danger: the button is red (deletions). ok: the button's text (e.g. "Delete").
+export const askConfirm = (message, { ok, danger = false, title } = {}) => modal({ title, message, ok, danger });
+
+// A message with only OK.
+export const notice = (message, { title } = {}) => modal({ title, message, cancel: null }).then(() => undefined);
+
+// Text to copy (a token, a password): selected, with a Copy button.
+export const showText = (message, text, { title } = {}) =>
+  modal({ title, message, cancel: null, ok: tr('Done'), fields: [{ name: 'v', value: text, readonly: true, copy: true }], read: () => undefined });
 
 export function updateBadge() {
   if (!S.data || !navigator.setAppBadge) return;
