@@ -3,6 +3,13 @@
 What's new in each version, most recent first. Versions are the git tags (`v0.7`, `v0.6.2`…); the number in `package.json` is the same.
 Updating needs nothing by hand: the database migrates by itself at startup (the schema version is given when it changes).
 
+## 0.25.1 — 2026-11-08
+- **A quieter interface**: section titles, entry kinds, document kinds, menus and categories are written normally instead of in spaced capitals; fewer bold texts and one scale of text sizes; spacing and rounded corners made regular. The kind of an entry (Todo, Mail, Note) is a coloured word without a background, and "new" next to What's new is plain text.
+- Light theme: the green is a little darker, so white text on it reads well.
+- What's new has a newspaper icon instead of the sparkle; the update bar an arrow.
+- The radial menu on the phone opens without bouncing.
+- The version field in an item's documents bar was not translated.
+
 ## 0.25.0 — 2026-11-08
 - **Web pages as documents**: a link document that is not a PDF now shows the page itself, drawn as on a computer and shrunk like a PDF page, with notes on its points (click, drag the pin, → todo, as in PDFs). The first time it opens the server saves a copy of the page, so notes stay in place even if the site changes and the page survives if it disappears; **Update** in the toolbar downloads it again. The copy has no scripts: pages built by JavaScript may come out incomplete, and sites that refuse automatic downloads say so, with the original link at hand.
 - **Page preview of an item's link**: the globe next to the link opens a small browser over the app; its links open inside it (← to go back, ⌘/Ctrl+click in the browser). **Save as document** turns the page into a document of the item, ready for notes.
