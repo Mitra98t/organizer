@@ -12,7 +12,7 @@ export function entryRow(D, e, indent = '') {
   const who = e.assignee_id && e.assignee_id !== D.me.id ? c.blue(`+${userName(D, e.assignee_id)}`) : null;
   const to = e.kind === 'mail' && e.contact ? c.dim(`→ ${e.contact}`) : null;
   const title = done ? c.dim(linkRefs(D, e.title)) : linkRefs(D, rich(e.title), c.blue);
-  return [c.dim(e.id), fmtDue(e.due, { done }), `${indent}${done ? c.green('✓') : MARK[e.kind]} ${[title, to, ...projects, who].filter(Boolean).join(' ')}`];
+  return [c.dim(e.id), e.eventually && !done ? c.dim(tr('eventually')) : fmtDue(e.due, { done }), `${indent}${done ? c.green('✓') : MARK[e.kind]} ${[title, to, ...projects, who].filter(Boolean).join(' ')}`];
 }
 
 // Reads the entry again from the server and prints it on one row (after a change: the real result shows).

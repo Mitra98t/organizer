@@ -16,7 +16,7 @@
 // In the top bar: 'item' mode (/category, @project) and 'project' mode (@parent project).
 // A single floating menu for the whole app, attached to the focused field: it survives re-renders.
 import { h, S, api, fmtDay, hue, catStyle, projHue, docName, userName, plainRefs, kindLabel } from './core.js';
-import { parseDate, parseQuick, today, fromYmd } from './parse.js';
+import { parseDate, parseQuick, today, fromYmd, EVENTUALLY } from './parse.js';
 import { tr, trn, LANG } from './i18n.js';
 
 const box = h('div.ac', { hidden: true, role: 'listbox' });
@@ -27,8 +27,8 @@ const lc = s => String(s ?? '').toLowerCase();
 // Date shortcuts in the interface language (the parser understands both).
 const IT = LANG === 'it';
 const DOW = IT ? ['dom', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab'] : ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-const FUTURE_DATES = IT ? ['oggi', 'domani', 'dopodomani', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom', '1s', '2s', '1m', 'fm', 'no']
-  : ['today', 'tomorrow', '2d', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun', '1w', '2w', '1m', 'eom', 'no'];
+const FUTURE_DATES = IT ? ['oggi', 'domani', 'dopodomani', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom', '1s', '2s', '1m', 'fm', 'primaopoi', 'no']
+  : ['today', 'tomorrow', '2d', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun', '1w', '2w', '1m', 'eom', 'eventually', 'no'];
 const PAST_DATES = IT ? ['oggi', 'ieri', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom', 'no']
   : ['today', 'yesterday', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun', 'no'];
 const STATUS = { paused: tr('paused'), closed: tr('closed') };
@@ -441,13 +441,13 @@ function suggest(sig, q, kind, self = 0) {
   if (/^\d{1,3}$/.test(q)) toks = past ? [] : IT ? [`${q}g`, `${q}s`, `${q}m`] : [`${q}d`, `${q}w`, `${q}m`];
   else if (/^\d{1,2}[/.-]\d{1,2}([/.-]\d{2,4})?$/.test(q)) toks = [q];
   const t = today();
-  return toks.map(tok => ({ tok, d: parseDate(tok, t, { past }) }))
+  return toks.map(tok => ({ tok, d: EVENTUALLY.includes(tok) ? 'ev' : parseDate(tok, t, { past }) }))
     .filter(x => x.d !== undefined)
     .map(({ tok, d }) => ({
       insert: `!${tok}`,
       label: `!${tok}`,
-      hint: d === null ? tr('remove the date') : `${DOW[fromYmd(d).getDay()]} ${fmtDay(d)}`,
-      extra: d === null ? '' : relative(d, t),
+      hint: d === 'ev' ? tr('no date, it will happen') : d === null ? tr('remove the date') : `${DOW[fromYmd(d).getDay()]} ${fmtDay(d)}`,
+      extra: d === 'ev' || d === null ? '' : relative(d, t),
     }));
 }
 

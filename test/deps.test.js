@@ -90,3 +90,23 @@ test('dependencies: ^ID in the text, from the entry, loops refused, shown both w
   assert.deepEqual(sync.entryDeps.filter(d => d.entry_id === party), [{ entry_id: party, after_id: ps5 }]); // ps5 in the trash: still there
   assert.equal(sync.entries.some(x => x.id === ps5), false); // but the app does not have it: party is no longer waiting
 });
+
+test('!eventually: set from the text, from the date menu, removed by a date', async () => {
+  const { id } = (await json('POST', '/entries', { text: 'visit the warehouse !eventually' })).body;
+  const get = async () => (await json('GET', `/entries/${id}`)).body;
+  let e = await get();
+  assert.deepEqual([e.eventually, e.due, e.title], [1, null, 'visit the warehouse']);
+  await json('PATCH', `/entries/${id}`, { due: 'fri' });
+  e = await get();
+  assert.equal(e.eventually, 0);
+  assert.match(e.due, /^\d{4}-/);
+  await json('PATCH', `/entries/${id}`, { eventually: true });
+  e = await get();
+  assert.deepEqual([e.eventually, e.due], [1, null]);
+  assert.match(e.logs.at(-1).text, /→ eventually/);
+  await json('PATCH', `/entries/${id}`, { due: null }); // "No due date": no longer eventually either
+  assert.equal((await get()).eventually, 0);
+  await json('PATCH', `/entries/${id}`, { due: '!primaopoi' });
+  assert.equal((await get()).eventually, 1);
+});
+

@@ -106,3 +106,14 @@ test('^ID: the entry waits for another', () => {
   assert.deepEqual(parseQuick('2^10 is 1024').after, []); // not at the start of a word
   assert.equal(parseQuick('2^10 is 1024').title, '2^10 is 1024');
 });
+
+test('!eventually: no date, it will happen (the last date written wins)', () => {
+  assert.deepEqual([parseQuick('try the PS5 !eventually', { today: T }).eventually, parseQuick('try the PS5 !eventually', { today: T }).due], [true, null]);
+  assert.equal(parseQuick('provare la PS5 !primaopoi', { today: T }).eventually, true);
+  const p = parseQuick('try the PS5 !eventually !fri', { today: T });
+  assert.deepEqual([p.eventually, p.due], [false, '2026-10-30']);
+  assert.equal(parseQuick('try the PS5 !fri', { today: T }).eventually, false);
+  assert.equal(parseQuick('try the PS5', { today: T }).eventually, undefined); // nothing said: unchanged
+  assert.equal(parseQuick('n: it happened !eventually', { today: T }).title, 'it happened !eventually'); // not for notes
+});
+

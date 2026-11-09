@@ -120,13 +120,15 @@ An entry has `kind` (`todo`, `mail`, `note`), `title`, `notes`, `due`, `done_at`
 | `+user` | assignee |
 | `>who` | the mail's recipient (an email, or a name from the address book) |
 | `^ID` | waits for entry ID (a todo or mail one can see): until it is done the app shows it under ID instead of by its date |
+| `!eventually` (`!primaopoi`) | no date, but it will happen: `eventually = 1`, `due = null` |
 
 Other optional fields: `kind`, `parent_id`, `project_id`, `assignee_id`, `private`, `after_id` (waits for that entry). Response `{"id"}`.
 
 **`PATCH /api/entries/:id`**, all optional:
 - `title`: accepts the same tokens (`!mon` moves the due date, `@tag` adds a project);
 - `notes`, `kind`, `done` (true/false), `pinned`, `private` (only the creator);
-- `due`: `"2026-11-25"`, a quick bar date (`"fri"`, `"3d"`, `"25/11"`), `"none"` or `null` to remove it. A postponement leaves a trace in the history;
+- `due`: `"2026-11-25"`, a quick bar date (`"fri"`, `"3d"`, `"25/11"`), `"none"` or `null` to remove it, `"eventually"`. A postponement leaves a trace in the history; any date (also `null`) sets `eventually = 0`;
+- `eventually` (true/false): it will happen, nobody knows when (removes the date);
 - `assignee_id` (or `null`), `project_id` (or `null`);
 - for mails: `contact` (To), `mail_cc`, `mail_subject` (`null` = follows the title);
 - `awaiting` (true/false): the sent mail awaits a reply. Marking a mail as done (`done: true`) automatically sets `awaiting_reply = 1`; `awaiting: false` closes the thread (the history keeps "reply received"). Mails awaiting reply stay in `/api/sync` even after 30 days.

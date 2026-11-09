@@ -57,6 +57,7 @@ Type a few words and press Enter. The tokens do the rest:
 | `+marco` `++marco` `+all` | shares with Marco; shares and assigns the entry to Marco; shares with everyone (without: only you) |
 | `>purchasing@company.example` | the mail's recipient |
 | `^Mirko` → `^17` | the entry **waits for** another one (pick it from the menu that opens after `^`) |
+| `!eventually` | no date, but it **will happen** sooner or later (Italian: `!primaopoi`) |
 
 ```
 flash new fw #SCH-042 @rover !fri
@@ -67,6 +68,10 @@ n: rev B of SCH-042 needs bootloader >= 2.3 #SCH-042
 **Updating as you go**: open an entry and write an update ("the JTAG cable is missing, postponed !mon"). A history with dates stays, and the due date moves, leaving a trace of how much it slipped. The same tokens work when editing the title. Subtasks are born when you find out that one thing contains others.
 
 **Entries that wait for others**: some things can only be done after something else, whose date you do not know ("try the PS5 with Mirko" after "Mirko lands"). Write `^` and part of the other entry's title (`try the PS5 with Mirko ^mirko`): the menu offers the open todos and mails, the choice becomes `^17`. Or open the entry and add it under **Waits for**; under **Then** you write directly what comes after. Until what it waits for is done, the entry is not in Overdue, Today or the other dates of the Agenda: it sits **under** that entry, indented, in a chain (what waits for it under it, and so on). When the first one is done, the next one goes back to its date (if it had one, possibly already overdue) and whoever has it is told they can go on. An entry may wait for several; it shows under the first one still open. If what it waits for is not in the Agenda (another kind filtered out, or "only mine"), it ends up in **Waiting**, with "after …" next to it. Two entries cannot wait for each other, not even through others; notes cannot wait (they are never done).
+
+**Dragging in the Agenda**: drag an entry onto another and it waits for it (it moves under it; "Undo" in the message). On a phone hold the entry for a moment, then drag.
+
+**Eventually**: "No due date" is for things still to be scheduled. Things that will happen but nobody knows when ("Mirko lands", "repaint the lab") get `!eventually` (`!primaopoi`), or **Eventually** in the date menu, or are dragged onto the column: on a wide screen the Agenda keeps them in a column on the right, a third of the width, with what waits for them underneath; on a phone the column is below. They never become overdue. A date (or "No due date") takes them out of the column.
 
 **Autocomplete**: as soon as you type `@`, `#`, `!`, `+`, `>` or `^` a menu shows projects, items (with firmware), dates already computed ("fri 30 Oct · in 3d"), users, recently used recipients and the open entries to wait for. `↑↓` to choose, `Tab` or `Enter` to complete, `Esc` to close; on a phone just tap. It also works in an entry's title, in subtasks and in updates.
 

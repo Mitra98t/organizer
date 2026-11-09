@@ -510,6 +510,11 @@ const MIGRATIONS = [
   );
   CREATE INDEX entry_deps_after ON entry_deps(after_id);
   `,
+  // v26: entries that will happen "eventually" (!eventually): no date, but not to be scheduled either. In the
+  // agenda they have a column of their own. A date removes the flag, the flag removes the date.
+  `
+  ALTER TABLE entries ADD COLUMN eventually INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

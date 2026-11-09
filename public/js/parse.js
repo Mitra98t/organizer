@@ -8,6 +8,8 @@
 //   t: m: n:   kind prefix (todo, mail, note)
 //   !date      due date: today, tomorrow, yesterday, mon..sun, 3d, 2w, 1m, eom, 25/11, 2026-11-25, no
 //              (Italian: oggi, domani, dopodomani, ieri, lun..dom, 3g, 2s, fm)
+//   !eventually  no date, but it will happen sooner or later (Italian: !primaopoi)
+//   ^ID        waits for entry ID
 //   @tag       project (created if missing)
 //   +user      shared with; ++user also assigned
 //   >who       recipient (mail)
@@ -25,6 +27,8 @@ const WEEKDAYS = [
   ['sunday', 'domenica'], ['monday', 'lunedi'], ['tuesday', 'martedi'], ['wednesday', 'mercoledi'],
   ['thursday', 'giovedi'], ['friday', 'venerdi'], ['saturday', 'sabato'],
 ];
+// !eventually: not "no due date" (forgotten, to be scheduled) but "it will happen, nobody knows when".
+export const EVENTUALLY = ['eventually', 'primaopoi'];
 const KIND_PREFIX = { t: 'todo', todo: 'todo', m: 'mail', mail: 'mail', n: 'note', nota: 'note', note: 'note' };
 const WORDS = {
   today: 0, oggi: 0,
@@ -90,7 +94,8 @@ export function parseQuick(text, { today: base = today(), kind = 'todo' } = {}) 
   // shares: +person (they see it too); shareAll: +all (everyone sees it); assignee: ++person (they see it and
   // it is assigned to them). Without any of the three the entry is private to whoever writes it.
   // after: ^12 = the entry waits for entry 12 (it comes after it).
-  const out = { kind, kindExplicit: false, title: '', due: undefined, project: null, projects: [], assignee: null, shares: [], shareAll: false, contact: null, codes: [], after: [] };
+  // eventually: true with !eventually, false with any other date (the last date written wins).
+  const out = { kind, kindExplicit: false, title: '', due: undefined, eventually: undefined, project: null, projects: [], assignee: null, shares: [], shareAll: false, contact: null, codes: [], after: [] };
 
   const pm = s.match(/^([a-z]+)\s*:\s*/i);
   if (pm && KIND_PREFIX[pm[1].toLowerCase()]) {
@@ -103,8 +108,9 @@ export function parseQuick(text, { today: base = today(), kind = 'todo' } = {}) 
   for (const w of s.split(/\s+/)) {
     let m;
     if ((m = w.match(/^!(\S+)$/))) {
+      if (out.kind !== 'note' && EVENTUALLY.includes(m[1].toLowerCase())) { out.due = null; out.eventually = true; continue; }
       const d = parseDate(m[1], base, { past: out.kind === 'note' });
-      if (d !== undefined) { out.due = d; continue; }
+      if (d !== undefined) { out.due = d; out.eventually = false; continue; }
     } else if ((m = w.match(/^@([\p{L}\d_][\p{L}\d_-]*)[.,;:]?$/u))) {
       // Several @projects: the first is the main one (out.project), all of them are in out.projects.
       if (!out.projects.some(t => t.toLowerCase() === m[1].toLowerCase())) out.projects.push(m[1]);

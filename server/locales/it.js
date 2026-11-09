@@ -152,6 +152,7 @@ export default {
   'The site answered {status}': 'Il sito ha risposto {status}',
   'PDF too large (max {mb} MB)': 'PDF troppo grande (max {mb} MB)',
   'Page too large (max {mb} MB)': 'Pagina troppo grande (max {mb} MB)',
+  'eventually': 'prima o poi',
   'An entry cannot wait for itself': 'Una voce non può aspettare sé stessa',
   'Only todos and mails can wait for each other': 'Solo todo e mail possono aspettarsi tra loro',
   '"{title}" already waits for this entry: they would wait for each other': '"{title}" aspetta già questa voce: si aspetterebbero a vicenda',

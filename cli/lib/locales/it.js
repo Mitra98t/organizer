@@ -29,6 +29,7 @@ export default {
   'document {id}': 'documento {id}',
   'Subtasks': 'Sotto-attività',
   'Waits for': 'Aspetta',
+  'eventually': 'prima o poi',
   'Then': 'Poi',
   'History': 'Storico',
   'Mentioned in': 'Citata in',

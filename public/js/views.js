@@ -5,7 +5,7 @@ import {
   updatePending, removePending,
   descendants, ancestors, catStyle, itemAttrs, docFileUrl, projectsOf, DOC_KINDS, kindLabel, projHue, catHue, huePicker,
   switchWorkspace, newWorkspace, docName, renameDoc, richField, backlinks, plainRefs, CONTACT_COLOR, masonry, filterChip, aliasCodes, kindPicker, can, canEntry, roClass,
-  fold, foldBar, capFirst, askConfirm, askText, askFields, notice, showText, openBlockers, isWaiting, waitersOf,
+  fold, foldBar, capFirst, askConfirm, askText, askFields, notice, showText, openBlockers, isWaiting, waitersOf, isReadOnly,
 } from './core.js';
 import { docMeta, docPeek } from './docview.js';
 import { openFeedback } from './feedback.js';
@@ -135,6 +135,7 @@ export function entryRow(e, opt = {}) {
     // Waiting for something: the date is not "overdue" (it cannot start yet).
     meta.push(h('span.due', { class: e.kind === 'note' || isWaiting(e) ? null : d.cls }, icon('cal'), e.kind === 'note' ? fmtDay(e.due) : d.label));
   }
+  if (e.eventually && !e.done_at && !opt.inEventually) meta.push(h('span.due.ev', icon('wait'), tr('eventually')));
   if (e.done_at && e.kind !== 'note') meta.push(h('span.muted', e.kind === 'mail' ? tr('sent {when}', { when: fmtTime(e.done_at) }) : tr('done {when}', { when: fmtTime(e.done_at) })));
   if (e.kind === 'mail' && e.done_at && e.awaiting_reply) meta.push(h('span.awaiting', icon('wait'), tr('awaiting reply {since}', { since: waitingFor(e) })));
   for (const p of projs) meta.push(projTag(p));
@@ -175,6 +176,7 @@ export function entryRow(e, opt = {}) {
     }, step ? icon(step.icon) : e.done_at ? icon('check') : null);
 
   return h('div.entry', {
+    'data-eid': e.id,
     class: [`k-${e.kind}`, e.done_at && 'done', e.done_at && e.awaiting_reply && 'waiting', open && 'open', e.pinned && 'pinned', opt.nested && 'nested', opt.chain && 'chained',
       e.pending ? 'rw' : roClass(canEntry(e))].filter(Boolean).join(' '),
   },
@@ -220,7 +222,7 @@ function duePop(e) {
   const isNote = e.kind === 'note';
   const t = today();
   const dow = new Date(`${t}T12:00:00`).getDay();
-  const label = e.due ? (isNote ? fmtDay(e.due) : dueInfo(e.due).label) : (isNote ? tr('no date') : tr('none'));
+  const label = e.due ? (isNote ? fmtDay(e.due) : dueInfo(e.due).label) : isNote ? tr('no date') : e.eventually ? tr('eventually') : tr('none');
   return popButton(`due:${e.id}`, [icon('cal'), label], close => {
     const set = v => { close(); if (v !== e.due) patchEntry(e, { due: v }); };
     const opts = isNote
@@ -230,8 +232,9 @@ function duePop(e) {
       popSep(isNote ? tr('When it happened') : tr('Due date')),
       opts.map(([l, v]) => popItem(l, () => set(v), { on: e.due === v, hint: fmtDay(v) })),
       h('label.pop-date', h('span', tr('Another date')), h('input', { type: 'date', value: e.due || '', onchange: ev => set(ev.target.value || null) })),
-      e.due && popItem(isNote ? tr('Remove the date') : tr('No due date'), () => set(null)),
-      h('p.muted.pop-note', tr('From the bar too: !fri, !3d, !25/11, !no.')),
+      !isNote && popItem(tr('Eventually'), () => { close(); if (!e.eventually) patchEntry(e, { eventually: true }); }, { on: !!e.eventually, hint: tr('no date, it will happen') }),
+      (e.due || e.eventually) && popItem(isNote ? tr('Remove the date') : tr('No due date'), () => { close(); patchEntry(e, { due: null }); }),
+      h('p.muted.pop-note', isNote ? tr('From the bar too: !fri, !3d, !25/11, !no.') : tr('From the bar too: !fri, !3d, !25/11, !eventually, !no.')),
     ];
   }, { title: isNote ? tr('Date') : tr('Due date'), class: e.due && !isNote ? dueInfo(e.due).cls : null });
 }
@@ -506,9 +509,10 @@ export function viewAgenda() {
     const host = openBlockers(w).find(a => inList.has(a.id));
     if (host) chainOf.set(host.id, [...(chainOf.get(host.id) || []), w]);
   }
-  const g = { over: [], today: [], tomorrow: [], week: [], later: [], none: [] };
+  const g = { over: [], today: [], tomorrow: [], week: [], later: [], none: [], ev: [] };
   for (const e of list) {
     if (isWaiting(e)) continue;
+    if (e.eventually) { g.ev.push(e); continue; } // !eventually: the column on the right
     if (!e.due) { g.none.push(e); continue; }
     const d = dayDiff(e.due);
     (d < 0 ? g.over : d === 0 ? g.today : d === 1 ? g.tomorrow : d <= 7 ? g.week : g.later).push(e);
@@ -518,15 +522,22 @@ export function viewAgenda() {
   const setKind = k => { ui.agendaKind = k; save('org.agendaKind', k); render(); };
   const placed = new Set();
   // An entry and, under it, what waits for it (and so on, a few levels).
-  const withChain = (e, depth = 0) => {
+  const withChain = (e, depth = 0, extra = {}) => {
     placed.add(e.id);
     const next = depth < 6 ? (chainOf.get(e.id) || []).filter(x => !placed.has(x.id)).sort((a, b) => byDue(a, b) || a.id - b.id) : [];
-    return [entryRow(e, { showParent: true, chain: depth > 0, hideThen: next.length > 0 }),
+    return [entryRow(e, { showParent: true, chain: depth > 0, hideThen: next.length > 0, ...extra }),
       next.length > 0 && h('div.chain', next.map(x => withChain(x, depth + 1)))];
   };
-  const rows = arr => arr.map(e => withChain(e));
+  const rows = (arr, extra) => arr.map(e => withChain(e, 0, extra));
 
-  return h('div.view',
+  // Built first: the chains under these entries must not end up in "Waiting".
+  // Always there (also empty): it is where entries are dropped to make them "eventually".
+  const side = section('ag-ev', tr('Eventually'), [
+    rows(g.ev.sort(byRecent), { inEventually: true }),
+    h('p.muted.ag-hint', g.ev.length ? tr('Drop an entry here to make it "eventually".')
+      : tr('Things that will happen, nobody knows when: !eventually in the bar, "Eventually" in the date menu, or drop an entry here.')),
+  ], { cls: 'ev', count: g.ev.length });
+  return h('div.view.agenda',
     h('div.toolbar',
       [['all', tr('Everything')], ['todo', tr('Todo')], ['mail', tr('Mail')]].filter(([k]) => k === 'all' || can(k === 'mail' ? 'mail' : 'voci')).map(([k, label]) => filterChip({
         on: ui.agendaKind === k, label, n: kindCount[k], cls: k === 'all' ? null : `tint k-${k}`, onclick: () => setKind(k),
@@ -541,6 +552,7 @@ export function viewAgenda() {
       h('p', kbd(tr('flash new fw #SCH-042 @rover !fri'))),
       h('p', kbd(tr('m: ask for a quote >supplier@company.example !tomorrow'))),
       h('p', kbd(tr('n: rev B needs bootloader 2.x #SCH-042')))),
+    h('div.ag-cols', h('div.ag-main',
     g.over.length > 0 && section('ag-over', tr('Overdue'), rows(g.over.sort(byDue)), { cls: 'over' }),
     g.today.length > 0 && section('ag-today', tr('Today'), rows(g.today.sort(byDue)), { cls: 'today' }),
     g.tomorrow.length > 0 && section('ag-tom', tr('Tomorrow'), rows(g.tomorrow.sort(byDue))),
@@ -551,7 +563,8 @@ export function viewAgenda() {
       const rest = waiting.filter(w => !placed.has(w.id)).sort(byRecent);
       return rest.length > 0 && section('ag-wait', tr('Waiting'), rows(rest));
     })(),
-    done.length > 0 && section('ag-done', tr('Done in the last 24 hours'), rows(done.sort(byDoneDesc)), { collapsed: true }));
+    done.length > 0 && section('ag-done', tr('Done in the last 24 hours'), rows(done.sort(byDoneDesc)), { collapsed: true })),
+    h('aside.ag-side', side)));
 }
 
 // ---------- projects ----------
@@ -638,6 +651,53 @@ export function viewProjects() {
       h('span.active', tr('Drop here to make it a main project'))),
     h('div.pforest', roots.map(p => tree(p, 0))));
 }
+
+// ---------- drag and drop in the agenda ----------
+// An entry dropped on another waits for it (it goes under it); dropped on the "Eventually" column it becomes
+// "eventually". Loops are refused here already (the server checks again).
+const waitsFor = (id, other) => {
+  const seen = new Set();
+  for (const stack = [id]; stack.length;) {
+    const x = stack.pop();
+    if (x === other) return true;
+    if (seen.has(x)) continue;
+    seen.add(x);
+    stack.push(...(S.data.afterOf.get(x) || []).map(d => d.after_id));
+  }
+  return false;
+};
+draggable({
+  handle: '.agenda .entry[data-eid]:not(.open) > .row',
+  bodyClass: 'edd',
+  data: el => +el.closest('.entry').dataset.eid,
+  ghost: id => [h('span', plainRefs(S.data.entryById.get(id)?.title || ''))],
+  target: (el, id) => {
+    const D = S.data;
+    const row = el.closest('.agenda .entry[data-eid]');
+    if (row) {
+      const tid = +row.dataset.eid;
+      const t = D.entryById.get(tid);
+      const already = (D.afterOf.get(id) || []).some(d => d.after_id === tid);
+      return { el: row, value: tid, ok: !!t && tid !== id && t.kind !== 'note' && !t.done_at && !already && !waitsFor(tid, id) && !isReadOnly(row) };
+    }
+    const col = el.closest('.ag-side');
+    if (col) return { el: col, value: 'eventually', ok: !D.entryById.get(id)?.eventually };
+    return null;
+  },
+  drop: (id, t) => {
+    const D = S.data;
+    const e = D.entryById.get(id);
+    if (t.value === 'eventually') {
+      const before = { due: e.due };
+      return act(() => api('PATCH', `/entries/${id}`, { eventually: true })).then(() =>
+        toast(tr('"{title}": eventually', { title: plainRefs(e.title).slice(0, 60) }), { action: { label: tr('Undo'), fn: () => act(() => api('PATCH', `/entries/${id}`, before)) } }));
+    }
+    const other = D.entryById.get(t.value);
+    act(() => api('POST', `/entries/${id}/after`, { after_id: t.value })).then(() =>
+      toast(tr('"{title}" waits for "{other}"', { title: plainRefs(e.title).slice(0, 40), other: plainRefs(other.title).slice(0, 40) }),
+        { action: { label: tr('Undo'), fn: () => act(() => api('DELETE', `/entries/${id}/after/${t.value}`)) } }));
+  },
+});
 
 // ---------- drag and drop of the projects tree ----------
 draggable({

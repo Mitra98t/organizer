@@ -138,6 +138,7 @@ const HELP = {
   entry: () => [
     h('span', h('code.k', 't: m: n:'), ' ', tr('kind')),
     h('span', h('code.k', tr('!fri !3d !25/11')), ' ', tr('due date')),
+    h('span', h('code.k', tr('!eventually')), ' ', tr('no date, it will happen')),
     h('span', h('code.k', tr('@project'))),
     h('span', h('code.k', tr('#CODE')), ' ', tr('inventory')),
     h('span', h('code.k', tr('+person')), ' ', tr('they see it too')),
@@ -215,7 +216,8 @@ function renderPreview() {
     const p = parseQuick(text, { today: today(), kind: ctx.kind || 'todo' });
     const D = S.data;
     if (p.kind !== 'todo' || p.kindExplicit) chips.push(h('span.kpill', { class: `k-${p.kind}` }, { todo: 'todo', mail: 'mail', note: tr('note') }[p.kind]));
-    if (p.due === null) chips.push(h('span.pv', tr('no due date')));
+    if (p.eventually) chips.push(h('span.pv', icon('wait'), tr('eventually')));
+    else if (p.due === null) chips.push(h('span.pv', tr('no due date')));
     else if (p.due) { const d = dueInfo(p.due); chips.push(h('span.pv.due', { class: d.cls || null }, icon('cal'), d.label)); }
     if (p.project) chips.push(h('span.pv.tag', { style: tagStyle(p.project) }, `@${p.project}`, !D?.projectByTag.has(p.project.toLowerCase()) && h('i', ` ${tr('new')}`)));
     for (const c of p.codes) chips.push(h('span.pv.code', c, !D?.itemByCode.has(c.toUpperCase()) && h('i', ` ${tr('new')}`)));

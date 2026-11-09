@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { db, tx, DATA_DIR, UPLOAD_DIR } from './db.js';
-import { parseQuick, parseDate, extractCodes, isYmd, today, ALL, parseShares } from '../public/js/parse.js';
+import { parseQuick, parseDate, extractCodes, isYmd, today, ALL, parseShares, EVENTUALLY } from '../public/js/parse.js';
 import { hashPassword, verifyPassword, sessionCookie, validUsername, validPassword, randomCode } from './auth.js';
 import {
   acc, atx, userCount, getAccount, workspaceById, workspacesOf, membersOf, roleIn, adminCount,
@@ -529,9 +529,9 @@ export function createEntry(b, user) {
   // done: a todo marked done while offline arrives already done (at its time).
   const doneAt = b.done ? (typeof b.done === 'string' && !Number.isNaN(Date.parse(b.done)) ? new Date(b.done).toISOString() : t) : null;
   const id = insertId(db.prepare(`INSERT INTO entries
-    (kind, title, contact, due, project_id, parent_id, assignee_id, created_by, created_at, updated_at, client_id, done_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(kind, title, contact, p.due ?? null, projectId, parent?.id ?? null, assigneeId, user.id, t, t, clientId, kind === 'note' ? null : doneAt));
+    (kind, title, contact, due, eventually, project_id, parent_id, assignee_id, created_by, created_at, updated_at, client_id, done_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(kind, title, contact, p.due ?? null, kind !== 'note' && p.eventually ? 1 : 0, projectId, parent?.id ?? null, assigneeId, user.id, t, t, clientId, kind === 'note' ? null : doneAt));
   addShares('entry', id, sh.ids.filter(x => x !== user.id), p.shareAll || bool(b.shared_all));
   notifyEntry(user, { id, kind, title }, sh.ids, assigneeId);
   for (const pid of projectIds.slice(1)) addEntryProject(id, pid);
@@ -555,6 +555,7 @@ export function updateEntry(e, b, user) {
     f.title = p.title;
     if (p.kindExplicit) f.kind = p.kind;
     if (p.due !== undefined) f.due = p.due;
+    if (p.eventually !== undefined) f.eventually = p.eventually ? 1 : 0;
     // @project in the title adds the project (does not remove the others); if there is no main one, it becomes it.
     for (const tag of p.projects) {
       const pid = resolveProject(tag, user);
@@ -583,10 +584,19 @@ export function updateEntry(e, b, user) {
     f.kind = b.kind;
   }
   if (b.due !== undefined) {
-    // Besides YYYY-MM-DD, the quick-bar dates: "fri", "3d", "25/11", "no" (= none).
-    const due = b.due === null || isYmd(b.due) ? b.due : parseDate(str(b.due, 30).replace(/^!/, ''), base, { past: (f.kind ?? e.kind) === 'note' });
-    if (due === undefined) fail(400, 'Invalid date');
-    f.due = due;
+    // Besides YYYY-MM-DD, the quick-bar dates: "fri", "3d", "25/11", "no" (= none), "eventually".
+    const word = b.due === null ? '' : str(b.due, 30).replace(/^!/, '').toLowerCase();
+    if (EVENTUALLY.includes(word)) b.eventually = true;
+    else {
+      const due = b.due === null || isYmd(b.due) ? b.due : parseDate(word, base, { past: (f.kind ?? e.kind) === 'note' });
+      if (due === undefined) fail(400, 'Invalid date');
+      f.due = due;
+      f.eventually = 0; // a date, or "no due date": no longer "eventually"
+    }
+  }
+  if (b.eventually !== undefined) {
+    f.eventually = bool(b.eventually) && (f.kind ?? e.kind) !== 'note' ? 1 : 0;
+    if (f.eventually) f.due = null;
   }
   if (b.contact !== undefined) f.contact = str(b.contact, 1000) || null;
   if (b.mail_cc !== undefined) f.mail_cc = str(b.mail_cc, 1000) || null;
@@ -627,7 +637,7 @@ export function updateEntry(e, b, user) {
   // Assigned to someone else (with ++person or from the Assigned menu): tell them.
   if (f.assignee_id && f.assignee_id !== e.assignee_id) notifyEntry(user, { ...e, ...f }, [], f.assignee_id);
   if (f.done_at && !e.done_at) notifyFreed(e, user);
-  if (e.due && f.due !== undefined && f.due !== e.due) addLog(e.id, user.id, tr('due date {from} → {to}', { from: fmtDate(e.due), to: fmtDate(f.due) }), true);
+  if (e.due && f.due !== undefined && f.due !== e.due) addLog(e.id, user.id, tr('due date {from} → {to}', { from: fmtDate(e.due), to: f.eventually ? tr('eventually') : fmtDate(f.due) }), true);
   if (f.title !== undefined || f.notes !== undefined) syncEntryItems(e.id, user);
   else if (f.mail_subject !== undefined || f.kind !== undefined) syncEntryLinks(e.id);
 }

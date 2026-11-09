@@ -347,6 +347,17 @@ textarea { resize: none; display: block; width: 100%; overflow: hidden; }
 .parent { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block !important; }
 .parent b { font-weight: 500; color: var(--text); }
 .pending { color: var(--today); font-style: italic; }
+/* Agenda: the dated sections on the left, "Eventually" in a column on the right (a third); one column on a phone. */
+.ag-cols { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.ag-main { min-width: 0; }
+.ag-side { position: sticky; top: calc(var(--top-h, 56px) + 56px); min-width: 0; border-radius: var(--radius); }
+.ag-side.drop-ok { box-shadow: 0 0 0 2px var(--accent); background: var(--accent-soft); }
+.ag-hint { margin: 8px 4px 0; font-size: 12px; }
+@media (max-width: 899px) { .ag-cols { grid-template-columns: minmax(0, 1fr); } .ag-side { position: static; } }
+.due.ev { color: var(--muted); }
+.agenda .entry.drop-ok { box-shadow: inset 0 0 0 2px var(--accent); background: var(--accent-soft); }
+.agenda .entry.drop-no { opacity: 0.6; }
+body.edd .agenda .entry > .row { cursor: grabbing; }
 /* Dependencies: in the agenda what waits for an entry stays under it, indented, with a hook line; in the entry
    the "Waits for" and "Then" rows. */
 .chain { margin-left: 22px; border-left: 1px dashed var(--line); }
