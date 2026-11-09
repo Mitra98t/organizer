@@ -3,6 +3,9 @@
 What's new in each version, most recent first. Versions are the git tags (`v0.7`, `v0.6.2`…); the number in `package.json` is the same.
 Updating needs nothing by hand: the database migrates by itself at startup (the schema version is given when it changes).
 
+## 0.29.1 — 2026-11-09
+- **Attachments sent** in a topic's side column, under the received ones: the files of the conversation's sent mails, both those attached in Organizer (with the item's code if they come from the inventory) and those of messages sent from Thunderbird (with the preview). A mail written here that comes back as a sent message is not counted twice.
+
 ## 0.29.0 — 2026-11-09
 - **Archiving journal notes**: a note no longer needed is archived instead of deleted (open it, **Archive**; "Undo" in the message). It leaves the Journal and the Journal sections of projects and items and goes into **Archived notes**, closed, at the bottom of the same pages, where **Active again** brings it back. Search and links still find it.
 - CLI: `org ls --note` leaves archived notes out (`--all` shows them), `org show` says when it was archived.
