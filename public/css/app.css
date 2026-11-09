@@ -10,6 +10,11 @@
   --accent-soft: #dff5ee;
   --danger: #d13b3b;
   --danger-soft: #fde8e8;
+  /* quoting levels in mails: muted, told apart at a glance */
+  --q1: #4f6f9a;
+  --q2: #4b8570;
+  --q3: #9a7a3c;
+  --q4: #87608a;
   --today: #c76a00;
   --soon: #9a7b00;
   --code-bg: #e7efff;
@@ -39,6 +44,10 @@
     --accent-soft: #11392e;
     --danger: #ff6b6b;
     --danger-soft: #3a1c1f;
+    --q1: #8aa5cc;
+    --q2: #7fb8a2;
+    --q3: #c9a86a;
+    --q4: #b896ba;
     --today: #ffaa3b;
     --soon: #e0c050;
     --code-bg: #182747;
@@ -65,6 +74,10 @@
   --accent-soft: #11392e;
   --danger: #ff6b6b;
   --danger-soft: #3a1c1f;
+  --q1: #8aa5cc;
+  --q2: #7fb8a2;
+  --q3: #c9a86a;
+  --q4: #b896ba;
   --today: #ffaa3b;
   --soon: #e0c050;
   --code-bg: #182747;
@@ -653,7 +666,6 @@ body.tdnd .topic-new { display: block; }
 .mb { display: flex; flex-direction: column; gap: 8px; }
 .mb-text { white-space: pre-wrap; }
 .mb-q { margin: 0; padding: 2px 0 2px 12px; border-left: 2px solid var(--line); color: var(--muted); display: flex; flex-direction: column; gap: 6px; }
-.mb-q .mb-q { border-left-color: color-mix(in srgb, var(--line) 60%, transparent); }
 .mb-q .mb-text { color: var(--muted); }
 .mb-attr { color: var(--muted); font-size: 13px; }
 .mb-sig { white-space: pre-wrap; color: var(--muted); font-size: 13px; }
@@ -661,8 +673,14 @@ body.tdnd .topic-new { display: block; }
 /* Outlook history: the previous messages one under the other, each with a compact header. */
 .mb-hist { display: flex; flex-direction: column; gap: 12px; }
 .mb-msg { display: flex; flex-direction: column; gap: 6px; padding-left: 12px; border-left: 2px solid var(--line); color: var(--muted); }
-.mb-q, .mb-msg, .mb-fwd { border-left-color: color-mix(in srgb, var(--text) 18%, transparent); }
 .mb-msg .mb-text { color: var(--muted); }
+.mb-l1 { --q: var(--q1); }
+.mb-l2 { --q: var(--q2); }
+.mb-l3 { --q: var(--q3); }
+.mb-l4 { --q: var(--q4); }
+.mb-q, .mb-msg, .mb-fwd { border-left-color: color-mix(in srgb, var(--q) 75%, transparent); }
+.mb-q :is(.mb-text, .mb-sig, .mb-attr), .mb-msg :is(.mb-text, .mb-sig, .mb-attr, .mb-mh), .mb-fwd :is(.mb-text, .mb-attr) { color: color-mix(in srgb, var(--q) 70%, var(--muted)); }
+.mb :is(.mb-q, .mb-msg, .mb-fwd) b { color: color-mix(in srgb, var(--q) 55%, var(--text)); }
 .mb-mh { font-size: 13px; }
 .mb-mh b { color: var(--text); font-weight: 500; }
 .mb-ms { margin-top: 2px; }

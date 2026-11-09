@@ -188,18 +188,20 @@ function person(h, raw) {
 export function mailBody(raw, { h, t }) {
   const blocks = parseMail(raw);
   if (!blocks.length) return h('div.mb', h('p.muted', t('(no text)')));
-  const draw = list => list.map(b => {
+  // Each level of quoting gets its own muted color (four, then they repeat).
+  const lv = d => `.mb-l${(d - 1) % 4 + 1}`;
+  const draw = (list, d = 0) => list.map(b => {
     if (b.type === 'text') return h('div.mb-text', linked(h, b.text));
     if (b.type === 'attr') return b.who ? h('div.mb-attr', h('b', b.who), b.when && ` · ${b.when}`) : h('div.mb-attr', b.text);
     if (b.type === 'sig') return h('div.mb-sig', linked(h, b.text));
-    if (b.type === 'quote') return h('blockquote.mb-q', draw(b.blocks));
-    if (b.type === 'forward') return h('div.mb-fwd', h('div.mb-attr', b.head), h('div.mb-text', linked(h, b.text)));
+    if (b.type === 'quote') return h(`blockquote.mb-q${lv(d + 1)}`, draw(b.blocks, d + 1));
+    if (b.type === 'forward') return h(`div.mb-fwd${lv(d + 1)}`, h('div.mb-attr', b.head), h('div.mb-text', linked(h, b.text)));
     // The history of the previous messages, one under the other, each with its header.
-    return h('div.mb-hist', b.messages.map(m => h('div.mb-msg',
+    return h('div.mb-hist', b.messages.map(m => h(`div.mb-msg${lv(d + 1)}`,
       (m.headers.from || m.headers.date) && h('div.mb-mh',
         m.headers.from && person(h, m.headers.from), m.headers.date && h('span', ` · ${m.headers.date}`),
         m.headers.subject && h('div.mb-ms', m.headers.subject)),
-      draw(m.blocks))));
+      draw(m.blocks, d + 1))));
   });
   // The quote at the bottom folded, with how long it is.
   const open = blocks.filter(b => !b.tail);
