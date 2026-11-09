@@ -3,6 +3,12 @@
 What's new in each version, most recent first. Versions are the git tags (`v0.7`, `v0.6.2`…); the number in `package.json` is the same.
 Updating needs nothing by hand: the database migrates by itself at startup (the schema version is given when it changes).
 
+## 0.27.0 — 2026-11-09
+- **Eventually**: things that will happen but nobody knows when ("Mirko lands", "repaint the lab") get `!eventually` (Italian `!primaopoi`), or **Eventually** in the date menu. They are not "no due date" (still to be scheduled): the Agenda keeps them in a column on the right, a third of the width, with what waits for them underneath (on a phone the column is below). They never become overdue; a date takes them out.
+- **Drag and drop in the Agenda**: drag an entry onto another and it waits for it; drag it onto the Eventually column and it becomes "eventually". "Undo" in the message. On a phone, hold the entry for a moment and then drag.
+- The history says "due date 12/11 → eventually"; the CLI shows "eventually" instead of a date.
+- Data schema v26.
+
 ## 0.26.0 — 2026-11-09
 - **Entries that wait for others**: "try the PS5 with Mirko" can wait for "Mirko lands". Write `^` and part of the other title in the bar (`^mirko`, the menu offers the open todos and mails), or open the entry and use **Waits for**; under **Then** you write what comes after. Until what it waits for is done, the entry is not in Overdue, Today or the other dates: it sits under that entry in the Agenda, in a chain, and does not count as overdue. When the first one is done it goes back to its date, and whoever has it is told they can go on. Entries whose chain is not in the Agenda (filtered out) are under **Waiting**. No loops, and notes cannot wait.
 - CLI: `org add "… ^17"` works, `org show` lists what an entry waits for and what comes after.
