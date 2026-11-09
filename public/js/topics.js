@@ -4,6 +4,7 @@
 //  - topic page (#/t/ID?th=thread): on the left the tree (conversations and their mails, like a forum), in the
 //    middle the chosen mail (or the draft to write), on the right the conversation's links, people and attachments.
 // Topics and conversations have a star and a colour (automatic until one is chosen).
+import { mailBody, newText } from './mailtext.js';
 import {
   h, icon, S, ui, api, act, render, toast, save, fmtTime, fmtDay, plainRefs, contactNames, can, itemAttrs, docName, projectsOf, projHue,
   trashIt, popButton, popItem, popSep, huePicker, masonry, filterChip, fold, foldBar, askConfirm, askText
@@ -53,13 +54,8 @@ export function threadInfo(t) {
 const whoNames = who => who.slice(0, 3).map(a => S.data.contactByEmail.get(lc(a.email))?.name || a.name || a.email).join(', ')
   + (who.length > 3 ? ` +${who.length - 3}` : '');
 
-// A message's new text, without the quote of the previous ones ("On … wrote:", lines with >).
-function newPart(text) {
-  const lines = String(text || '').replace(/\r/g, '').split('\n');
-  const quote = /^(On|Il|Am|Le|El) .{4,300}(wrote|scritto|schrieb|écrit|escribió)\s*:\s*$|^-{2,}\s*(Original Message|Messaggio originale|Forwarded)|^>|^(From|Da):\s.+/i;
-  const cut = lines.findIndex(l => quote.test(l.trim()));
-  return (cut < 0 ? lines : lines.slice(0, cut)).join('\n').trim();
-}
+// A message's new text (outside the quotes), for previews: see mailtext.js.
+const newPart = newText;
 
 // ---------- actions ----------
 const patchThread = (t, f) => { Object.assign(t, f); render(); return act(() => api('PATCH', `/mail/threads/${t.id}`, f)); };
@@ -415,14 +411,12 @@ function mailView(topic, sel, data, x) {
       h('h2.tm-subj', plainRefs(e.mail_subject || e.title)),
       h('div.tm-head', h('div', h('span.muted', `${tr('To')} `), contactNames(e.contact || '')), e.mail_cc && h('div', h('span.muted', 'Cc '), contactNames(e.mail_cc)),
         h('div.muted', tr('sent {when}', { when: fmtTime(e.done_at) }))),
-      h('div.tm-body', plainRefs(e.notes || '')),
+      h('div.tm-body', mailBody(plainRefs(e.notes || ''), { h, t: tr })),
       (D.attachmentsOf.get(e.id) || []).length > 0 && h('div.tm-att', outAttachments(e)));
   }
   const brief = x.msgs.find(m => m.id === sel.id);
   const m = data?.threads.flatMap(t => t.messages).find(y => y.id === sel.id);
   if (!brief) return h('p.muted', tr('Mail not found.'));
-  const body = m ? newPart(m.body) : newPart(brief.snippet);
-  const more = m && m.body && body.length < m.body.trim().length;
   const replied = x.drafts.some(e => e.reply_to === brief.id);
   return h('article.tm',
     h('h2.tm-subj', brief.subject || tr('(no subject)')),
@@ -431,8 +425,8 @@ function mailView(topic, sel, data, x) {
       h('div', h('span.muted', `${tr('To')} `), contactNames(addrs(brief.to_addr))),
       brief.cc && h('div', h('span.muted', 'Cc '), contactNames(addrs(brief.cc))),
       h('div.muted', fmtTime(brief.date))),
-    h('div.tm-body', body || (m ? tr('(no text)') : tr('Loading…'))),
-    more && h('details', h('summary.muted', tr('full message')), h('div.tm-body', m.body.trim())),
+    // Quotes indented (also replies written between the quoted lines), the quote at the bottom folded.
+    h('div.tm-body', m ? mailBody(m.body, { h, t: tr }) : newPart(brief.snippet) || tr('Loading…')),
     m?.attachments?.length > 0 && h('div.tm-att', h('div.ms-h', tr('Attachments')), attList(m.attachments, m.id)),
     h('div.tm-actions',
       can('mail', 'write') && replied && h('span.muted', tr('There is already a draft reply: ')),

@@ -39,4 +39,5 @@ export default {
   'Try again': 'Riprova',
   'No preview for this kind of file.': 'Anteprima non disponibile per questo tipo di file.',
   'Download {name}': 'Scarica {name}',
+  'quoted text ({n} lines)': 'testo citato ({n} righe)',
 };

@@ -649,6 +649,20 @@ body.tdnd .topic-new { display: block; }
 .tm-subj { margin: 0; font-size: 16px; overflow-wrap: anywhere; }
 .tm-head { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
 .tm-body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; }
+/* Mail text (mailtext.js): quotes indented with a line, nested; the quote at the bottom folded. */
+.mb { display: flex; flex-direction: column; gap: 8px; }
+.mb-text { white-space: pre-wrap; }
+.mb-q { margin: 0; padding: 2px 0 2px 12px; border-left: 2px solid var(--line); color: var(--muted); display: flex; flex-direction: column; gap: 6px; }
+.mb-q .mb-q { border-left-color: color-mix(in srgb, var(--line) 60%, transparent); }
+.mb-q .mb-text { color: var(--muted); }
+.mb-attr { color: var(--muted); font-size: 13px; }
+.mb-sig { white-space: pre-wrap; color: var(--muted); font-size: 13px; }
+.mb-fwd, .mb-orig { display: flex; flex-direction: column; gap: 4px; padding-left: 12px; border-left: 2px solid var(--line); }
+.mb-orig .mb-text { color: var(--muted); }
+.mb-tail { display: flex; flex-direction: column; }
+.mb-tail > summary { width: fit-content; color: var(--muted); font-size: 13px; cursor: pointer; }
+.mb-tail[open] > summary { margin-bottom: 8px; }
+.mb a { color: var(--accent); overflow-wrap: anywhere; }
 .tm-att { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .tm-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .tm-draft { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px dashed var(--accent); border-radius: var(--radius); background: color-mix(in srgb, var(--accent) 6%, var(--panel)); }
