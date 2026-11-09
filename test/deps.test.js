@@ -124,3 +124,13 @@ test('dependencies replaced at once: moved under another entry, or waiting for n
   assert.deepEqual(await deps(), []);
 });
 
+
+test('an entry can be created with its details (from a piece of a mail)', async () => {
+  const notes = '> the board arrives on Monday\n\nFrom the mail: [[mail:7]]';
+  const id = (await json('POST', '/entries', { text: 'check the board', kind: 'note', notes })).body.id;
+  const e = (await json('GET', `/entries/${id}`)).body;
+  assert.equal(e.kind, 'note');
+  assert.equal(e.notes, notes);
+  const links = (await json('GET', '/backlinks/mail/7')).body.map(x => x.id);
+  assert.ok(links.includes(id));
+});

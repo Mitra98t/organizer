@@ -689,6 +689,11 @@ body.tdnd .topic-new { display: block; }
 .mb-tail > summary { width: fit-content; color: var(--muted); font-size: 13px; cursor: pointer; }
 .mb-tail[open] > summary { margin-bottom: 8px; }
 .mb a { color: var(--accent); overflow-wrap: anywhere; }
+/* Next to a piece of selected mail text: makes it a todo or a note (topics.js). */
+.mail-selbtn { position: fixed; z-index: 60; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid var(--accent); border-radius: 50%; background: var(--panel); color: var(--accent); box-shadow: 0 4px 14px rgb(0 0 0 / 22%); cursor: pointer; }
+.mail-selbtn:hover { background: var(--accent); color: var(--accent-ink); }
+.mail-selbtn[hidden] { display: none; }
+.mail-selbtn svg { width: 16px; height: 16px; }
 .tm-att { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .tm-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .tm-draft { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px dashed var(--accent); border-radius: var(--radius); background: color-mix(in srgb, var(--accent) 6%, var(--panel)); }
@@ -1497,6 +1502,10 @@ dialog.mdl[open] { animation: pop 0.16s cubic-bezier(0.22, 1, 0.36, 1); }
 .mdl-in { display: flex; gap: 8px; }
 .mdl-in input { flex: 1; min-width: 0; font-size: 14px; color: var(--text); }
 .mdl-in input[readonly] { font-family: var(--mono); font-size: 13px; }
+.mdl-in textarea { flex: 1; min-width: 0; font-size: 14px; line-height: 1.45; color: var(--text); overflow-y: auto; max-height: 40vh; }
+.mdl-ch { display: flex; flex-wrap: wrap; gap: 6px; }
+.mdl-ch .btn { flex: 1; justify-content: center; }
+.mdl-ch .btn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
 .mdl-b { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 .btn.danger-fill { background: var(--danger); border-color: var(--danger); color: var(--panel); }
 .btn.danger-fill:hover { filter: brightness(1.08); }

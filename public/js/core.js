@@ -47,6 +47,7 @@ export const ui = {
   sections: new Set(load('org.sections', [])),
   mine: load('org.mine', false),
   agendaKind: load('org.agendaKind', 'all'),
+  mailSelKind: load('org.mailSelKind', 'todo'), // todo or note, from a piece of a mail
   q: '',
   projStatus: 'open',
   itemFilter: '',
@@ -509,8 +510,8 @@ export async function flushOutbox() {
     while (S.outbox.length) {
       const p = S.outbox[0];
       try {
-        const { text, today: day, kind, project_id: projectId, cid, done } = p;
-        await api('POST', '/entries', { text, today: day, kind, project_id: projectId, client_id: cid, done: done || undefined });
+        const { text, notes, today: day, kind, project_id: projectId, cid, done } = p;
+        await api('POST', '/entries', { text, notes, today: day, kind, project_id: projectId, client_id: cid, done: done || undefined });
       } catch (e) {
         if (e.offline || e.status === 401) return;
         toast(tr('Queued entry discarded: {error}', { error: e.message }), { err: true });
@@ -1196,10 +1197,25 @@ export async function copy(text) {
 function modal({ title, message, fields = [], ok = tr('OK'), cancel = tr('Cancel'), danger = false, read = null }) {
   return new Promise(resolve => {
     let done = false;
-    const inputs = fields.map(f => h('input', {
-      name: f.name, type: f.type || 'text', value: f.value ?? '', placeholder: f.placeholder || null,
-      readonly: f.readonly || null, autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false',
-    }));
+    // type 'textarea': several lines; type 'choice': buttons, one of f.options ({value, label, icon}) chosen
+    // (onPick(value, inputs) when it changes). ac: autocomplete of the field (data-ac).
+    const inputs = fields.map(f => (f.type === 'choice' ? h('input', { name: f.name, type: 'hidden', value: f.value ?? '' })
+      : h(f.type === 'textarea' ? 'textarea' : 'input', {
+        name: f.name, type: f.type === 'textarea' ? null : f.type || 'text', value: f.value ?? '', placeholder: f.placeholder || null,
+        rows: f.rows || null, readonly: f.readonly || null, autocomplete: 'off', autocapitalize: 'off', spellcheck: f.ac ? null : 'false',
+        'data-ac': f.ac || null,
+      })));
+    const choice = (f, i) => {
+      const pick = v => {
+        inputs[i].value = v;
+        for (const b of row.children) b.setAttribute('aria-pressed', b.dataset.v === v);
+        f.onPick?.(v, inputs);
+      };
+      const row = h('span.mdl-ch', f.options.map(o => h('button.btn', {
+        type: 'button', 'data-v': o.value, 'aria-pressed': String(o.value === f.value), onclick: () => pick(o.value),
+      }, o.icon && icon(o.icon), o.label)));
+      return row;
+    };
     const finish = v => {
       if (done) return;
       done = true;
@@ -1211,9 +1227,10 @@ function modal({ title, message, fields = [], ok = tr('OK'), cancel = tr('Cancel
       h('form.mdl-f', { method: 'dialog', onsubmit: ev => { ev.preventDefault(); finish(read ? read(inputs) : true); } },
         title && h('h3.mdl-t', title),
         message && h('p.mdl-m', message),
-        fields.map((f, i) => h('label.mdl-l',
+        fields.map((f, i) => h(f.type === 'choice' ? 'div.mdl-l' : 'label.mdl-l',
           f.label && h('span', f.label),
-          h('span.mdl-in', inputs[i], f.copy && h('button.btn', { type: 'button', onclick: () => copy(inputs[i].value) }, icon('copy'), tr('Copy'))))),
+          f.type === 'choice' ? [inputs[i], choice(f, i)]
+            : h('span.mdl-in', inputs[i], f.copy && h('button.btn', { type: 'button', onclick: () => copy(inputs[i].value) }, icon('copy'), tr('Copy'))))),
         h('div.mdl-b',
           cancel && h('button.btn.ghost', { type: 'button', onclick: () => finish(read ? null : false) }, cancel),
           h(`button.btn.${danger ? 'danger-fill' : 'primary'}`, { type: 'submit' }, ok))));
@@ -1224,7 +1241,7 @@ function modal({ title, message, fields = [], ok = tr('OK'), cancel = tr('Cancel
     if (!fields.length) dlg.addEventListener('click', ev => { if (ev.target === dlg) finish(false); });
     document.body.append(dlg);
     dlg.showModal();
-    const first = inputs.find(i => !i.readOnly) || inputs[0];
+    const first = inputs.find(i => !i.readOnly && i.type !== 'hidden') || inputs[0];
     if (first) {
       first.focus();
       first.select();

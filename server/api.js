@@ -529,9 +529,9 @@ export function createEntry(b, user) {
   // done: a todo marked done while offline arrives already done (at its time).
   const doneAt = b.done ? (typeof b.done === 'string' && !Number.isNaN(Date.parse(b.done)) ? new Date(b.done).toISOString() : t) : null;
   const id = insertId(db.prepare(`INSERT INTO entries
-    (kind, title, contact, due, eventually, project_id, parent_id, assignee_id, created_by, created_at, updated_at, client_id, done_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(kind, title, contact, p.due ?? null, kind !== 'note' && p.eventually ? 1 : 0, projectId, parent?.id ?? null, assigneeId, user.id, t, t, clientId, kind === 'note' ? null : doneAt));
+    (kind, title, notes, contact, due, eventually, project_id, parent_id, assignee_id, created_by, created_at, updated_at, client_id, done_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(kind, title, b.notes ? str(b.notes, 20000) : '', contact, p.due ?? null, kind !== 'note' && p.eventually ? 1 : 0, projectId, parent?.id ?? null, assigneeId, user.id, t, t, clientId, kind === 'note' ? null : doneAt));
   addShares('entry', id, sh.ids.filter(x => x !== user.id), p.shareAll || bool(b.shared_all));
   notifyEntry(user, { id, kind, title }, sh.ids, assigneeId);
   for (const pid of projectIds.slice(1)) addEntryProject(id, pid);

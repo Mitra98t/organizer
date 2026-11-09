@@ -7,10 +7,10 @@
 import { mailBody, newText } from './mailtext.js';
 import {
   h, icon, S, ui, api, act, render, toast, save, fmtTime, fmtDay, plainRefs, contactNames, can, itemAttrs, docName, projectsOf, projHue,
-  trashIt, popButton, popItem, popSep, huePicker, masonry, filterChip, fold, foldBar, askConfirm, askText
+  trashIt, popButton, popItem, popSep, huePicker, masonry, filterChip, fold, foldBar, askConfirm, askText, askFields, addEntry
 } from './core.js';
 import { draggable } from './dnd.js';
-import { extractCodes } from './parse.js';
+import { extractCodes, today } from './parse.js';
 import { mailComposer, peopleBlock, outAttachments, attList, block, fromName, addrs, addrList, lc, REF_RE } from './mail.js';
 import { backlinksBox } from './views.js';
 import { tr, trn } from './i18n.js';
@@ -411,7 +411,7 @@ function mailView(topic, sel, data, x) {
       h('h2.tm-subj', plainRefs(e.mail_subject || e.title)),
       h('div.tm-head', h('div', h('span.muted', `${tr('To')} `), contactNames(e.contact || '')), e.mail_cc && h('div', h('span.muted', 'Cc '), contactNames(e.mail_cc)),
         h('div.muted', tr('sent {when}', { when: fmtTime(e.done_at) }))),
-      h('div.tm-body', mailBody(plainRefs(e.notes || ''), { h, t: tr })),
+      h('div.tm-body', { 'data-thread': x?.t.id }, mailBody(plainRefs(e.notes || ''), { h, t: tr })),
       (D.attachmentsOf.get(e.id) || []).length > 0 && h('div.tm-att', outAttachments(e)));
   }
   const brief = x.msgs.find(m => m.id === sel.id);
@@ -426,7 +426,7 @@ function mailView(topic, sel, data, x) {
       brief.cc && h('div', h('span.muted', 'Cc '), contactNames(addrs(brief.cc))),
       h('div.muted', fmtTime(brief.date))),
     // Quotes indented (also replies written between the quoted lines), the quote at the bottom folded.
-    h('div.tm-body', m ? mailBody(m.body, { h, t: tr }) : newPart(brief.snippet) || tr('Loading…')),
+    h('div.tm-body', { 'data-thread': x?.t.id }, m ? mailBody(m.body, { h, t: tr }) : newPart(brief.snippet) || tr('Loading…')),
     m?.attachments?.length > 0 && h('div.tm-att', h('div.ms-h', tr('Attachments')), attList(m.attachments, m.id)),
     h('div.tm-actions',
       can('mail', 'write') && replied && h('span.muted', tr('There is already a draft reply: ')),
@@ -440,6 +440,102 @@ function mailView(topic, sel, data, x) {
         title: tr('Opens this message in Thunderbird, in a tab'),
         onclick: () => act(() => api('POST', `/mail/messages/${brief.id}/open`), tr('Opened in Thunderbird')),
       }, icon('mail'), tr('Open in Thunderbird'))));
+}
+
+// ---------- from a piece of a mail to the Agenda or the Journal ----------
+// Text selected in a mail: a small button appears next to it and opens a window to make it a todo or a note. The
+// selected text goes into the details as a quote, with the link to the conversation.
+const selBtn = h('button.mail-selbtn', {
+  type: 'button', hidden: true, title: tr('Todo or note from the selected text'), 'aria-label': tr('Todo or note from the selected text'),
+  onpointerdown: ev => ev.preventDefault(), // the selection stays
+  onclick: () => fromSelection(),
+}, icon('plus'));
+document.body.append(selBtn);
+
+function mailSelection() {
+  const sel = getSelection();
+  if (!sel?.rangeCount || sel.isCollapsed) return null;
+  const range = sel.getRangeAt(0);
+  let node = range.commonAncestorContainer;
+  if (node.nodeType !== Node.ELEMENT_NODE) node = node.parentElement;
+  const body = node?.closest('.tm-body[data-thread]');
+  const text = sel.toString().trim();
+  if (!body || !text) return null;
+  const rects = [...range.getClientRects()].filter(r => r.width > 0 && r.height > 0);
+  return { text, thread: +body.dataset.thread, rect: rects.at(-1) || range.getBoundingClientRect() };
+}
+
+// Right after the end of the selection (with a finger below it: above there is the phone's own menu), inside the
+// window.
+function placeSelBtn() {
+  const sel = can('voci', 'write') && S.online ? mailSelection() : null;
+  selBtn.hidden = !sel;
+  if (!sel) return;
+  const size = 28;
+  const { rect: r } = sel;
+  const touch = lastPointer === 'touch';
+  const left = Math.max(8, Math.min(touch ? r.right - size / 2 : r.right + 4, window.innerWidth - size - 8));
+  const top = Math.max(8, Math.min(touch ? r.bottom + 8 : r.top + r.height / 2 - size / 2, window.innerHeight - size - 8));
+  selBtn.style.left = `${left}px`;
+  selBtn.style.top = `${top}px`;
+}
+
+// While the mouse drags the selection the button waits; it appears on release (on a phone after the long press).
+let selecting = false;
+let selTimer = null;
+let lastPointer = 'mouse';
+document.addEventListener('pointerdown', ev => {
+  if (ev.target === selBtn || selBtn.contains(ev.target)) return;
+  lastPointer = ev.pointerType;
+  selecting = ev.pointerType === 'mouse' && ev.button === 0;
+  selBtn.hidden = true;
+});
+document.addEventListener('pointerup', () => {
+  if (!selecting) return;
+  selecting = false;
+  setTimeout(placeSelBtn, 0);
+});
+document.addEventListener('selectionchange', () => {
+  clearTimeout(selTimer);
+  if (selecting) return;
+  selTimer = setTimeout(placeSelBtn, 150);
+});
+window.addEventListener('scroll', () => { if (!selBtn.hidden) placeSelBtn(); }, true);
+window.addEventListener('resize', () => { if (!selBtn.hidden) placeSelBtn(); });
+
+// The first words, for the title (the user changes them as they like).
+function titleFrom(text) {
+  const line = text.replace(/\s+/g, ' ').trim();
+  if (line.length <= 120) return line;
+  const cut = line.slice(0, 120);
+  return `${cut.slice(0, cut.lastIndexOf(' ') > 60 ? cut.lastIndexOf(' ') : 120)}…`;
+}
+
+async function fromSelection() {
+  const sel = mailSelection();
+  if (!sel) return;
+  selBtn.hidden = true;
+  const kind = ui.mailSelKind === 'note' ? 'note' : 'todo';
+  const r = await askFields([
+    {
+      name: 'kind', type: 'choice', value: kind,
+      options: [{ value: 'todo', label: tr('Todo in the Agenda'), icon: 'check' }, { value: 'note', label: tr('Note in the Journal'), icon: 'diary' }],
+      onPick: (v, [, title]) => { title.dataset.ac = v; title.focus(); },
+    },
+    { name: 'title', label: tr('Title'), value: titleFrom(sel.text), ac: kind, placeholder: tr('e.g. send the schema !fri @rover') },
+    { name: 'quote', label: tr('Quoted text'), type: 'textarea', rows: 4, value: sel.text },
+  ], { title: tr('From the mail'), ok: tr('Add') });
+  if (!r) return;
+  if (!r.title.trim()) return toast(tr('Write at least a few words'), { err: true });
+  ui.mailSelKind = r.kind;
+  save('org.mailSelKind', r.kind);
+  const quote = r.quote.trim().split('\n').map(l => `> ${l}`.trimEnd()).join('\n');
+  const notes = `${r.quote.trim() ? `${quote}\n\n` : ''}${tr('From the mail')}: [[mail:${sel.thread}]]`;
+  if (await addEntry({ text: r.title.trim(), notes, kind: r.kind, today: today() })) {
+    getSelection()?.removeAllRanges();
+    toast(r.kind === 'note' ? tr('Note added to the Journal') : tr('Todo added to the Agenda'),
+      { action: { label: r.kind === 'note' ? tr('Journal') : tr('Agenda'), fn: () => { location.hash = r.kind === 'note' ? '#/diario' : '#/agenda'; } } });
+  }
 }
 
 // The conversation's links: picked here, found in the messages (codes and projects) or mentioned in mails written

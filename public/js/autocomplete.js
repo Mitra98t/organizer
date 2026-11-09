@@ -485,6 +485,9 @@ function draw() {
 
 function place() {
   if (!st.el.isConnected) return close();
+  // In a window of the app (<dialog>) the menu goes inside it, otherwise it would stay under it.
+  const host = st.el.closest('dialog[open]') || document.body;
+  if (box.parentNode !== host) host.append(box);
   const r = st.el.getBoundingClientRect();
   const vh = window.visualViewport?.height ?? window.innerHeight;
   // With the context (second line) the menu takes all the space needed to read it, wherever the field is (also in
