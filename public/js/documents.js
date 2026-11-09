@@ -120,7 +120,6 @@ export function viewDocuments() {
       h('p', tr('No documents.')),
       h('p', tr('Documents are uploaded from an inventory item\'s page (firmware, datasheets, schematics…).'))),
     all.length > 0 && !docs.length && h('div.empty', h('p', tr('No document matches the filters.'))),
-    all.length > 0 && h('p.muted.dnd-hint', tr('Pick up to {n} documents with the button on the left to review them side by side, with their notes.', { n: MAX_REVIEW })),
     docs.length > 0 && foldBar('documenti'),
     masonry('doc-groups', byCat ? byCategory(docs) : byKind(docs, filtered)),
     sel.length > 0 && h('div.rv-bar',

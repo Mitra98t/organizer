@@ -531,12 +531,10 @@ export function viewAgenda() {
   const rows = (arr, extra) => arr.map(e => withChain(e, 0, extra));
 
   // Built first: the chains under these entries must not end up in "Waiting".
-  // Always there (also empty): it is where entries are dropped to make them "eventually".
-  const side = section('ag-ev', tr('Eventually'), [
-    rows(g.ev.sort(byRecent), { inEventually: true }),
-    h('p.muted.ag-hint', g.ev.length ? tr('Drop an entry here to make it "eventually".')
-      : tr('Things that will happen, nobody knows when: !eventually in the bar, "Eventually" in the date menu, or drop an entry here.')),
-  ], { cls: 'ev', count: g.ev.length });
+  // Always there (also empty): it is where entries are dropped to make them "eventually" (the zone shows only while
+  // dragging).
+  const side = [section('ag-ev', tr('Eventually'), rows(g.ev.sort(byRecent), { inEventually: true }), { cls: 'ev', count: g.ev.length }),
+    h('div.ag-drop', tr('Drop here: eventually'))];
   return h('div.view.agenda',
     h('div.toolbar',
       [['all', tr('Everything')], ['todo', tr('Todo')], ['mail', tr('Mail')]].filter(([k]) => k === 'all' || can(k === 'mail' ? 'mail' : 'voci')).map(([k, label]) => filterChip({
@@ -644,11 +642,8 @@ export function viewProjects() {
       : tr('No project here.'))),
     // The row at the top is also the "main project" drop zone: it always has the same height, so when dragging
     // starts the list does not move under the pointer.
-    roots.length > 0 && h('div.proot',
-      h('span.idle', matchMedia('(pointer: coarse)').matches
-        ? tr('Hold a project and drag it onto another to move it inside.')
-        : tr('Drag a project onto another to move it inside.')),
-      h('span.active', tr('Drop here to make it a main project'))),
+    // Drop zone for "main project": it shows only while dragging, floating at the bottom (the list does not move).
+    roots.length > 0 && h('div.proot', tr('Drop here to make it a main project')),
     h('div.pforest', roots.map(p => tree(p, 0))));
 }
 
@@ -1054,7 +1049,6 @@ export function viewItems() {
         onclick: () => { ui.hideDiscarded = !ui.hideDiscarded; save('org.hideDiscarded', ui.hideDiscarded); render(); },
       })),
     // The explanations always sit under the filters.
-    ui.itemView === 'groups' && D.items.length > 1 && h('p.muted.dnd-hint', tr('Drag an item to another column to change its category; click the coloured dot to change its colour.')),
     !D.items.length && empty(
       h('p', tr('The inventory is empty.')),
       h('p', tr('Add items from the bar at the top: '), kbd(tr('SCH-042 motor board /board')), '.'),
@@ -1167,7 +1161,7 @@ function docSection(it) {
       // A link and not a button: it stays active also for those who can only read.
       files > 1 && h('a.btn.ghost.dl-all', { href: `api/items/${it.id}/docs.zip`, download: '', title: tr('The item\'s {n} files in a .zip (not the links)', { n: files }) },
         icon('download'), tr('Download all'))),
-    !docs.length && h('p.muted.drop-hint', tr('Drop files here, or use the buttons. A firmware with a version updates the "Firmware" field.')),
+    h('p.muted.drop-hint', tr('Drop the files here. A firmware with a version updates the "Firmware" field.')), // only while dragging files
     docs.map(d => h('div.doc',
       docMeta(d),
       h('div.doc-main',

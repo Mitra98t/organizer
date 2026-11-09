@@ -253,7 +253,6 @@ export function viewMail() {
     h('div.topic-new', tr('Drop here to make it a topic of its own')),
     topics.length > 0 && foldBar('mail'),
     topics.length > 0 && masonry('topic-cols', topics.map(o => topicCard(o.topic, o.list, (D.threadsOfTopic.get(o.topic.id) || []).length))),
-    topics.length > 1 && view === 'active' && h('p.muted.fhint', tr('Drag a conversation onto another topic to merge them.')),
     shared.length > 0 && h('section.sec', h('div.sec-h', h('span.sec-t', tr('Shared with you')), h('span.count', shared.length)),
       h('div.sec-b', shared.map(e => h('a.trow.shared', { href: `#/v/${e.id}` }, h('span.trow-subj', plainRefs(e.title)), h('span.muted', contactNames(e.contact || '')))))),
     !topics.length && !shared.length && h('div.empty', filtered
