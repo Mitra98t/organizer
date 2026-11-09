@@ -3,6 +3,9 @@
 What's new in each version, most recent first. Versions are the git tags (`v0.7`, `v0.6.2`…); the number in `package.json` is the same.
 Updating needs nothing by hand: the database migrates by itself at startup (the schema version is given when it changes).
 
+## 0.28.0 — 2026-11-09
+- **From a piece of a mail to a todo or a note**: select some text in the mail you are reading and a small **+** appears next to it (on a phone below the selection). It opens a window: **Todo in the Agenda** or **Note in the Journal**, a title (with the bar's syntax and its suggestions: `!fri`, `@project`, `#code`) and the quoted text, which can be changed. The entry keeps the text as a quote in its details with the link to the conversation, which lists it under "Mentioned in".
+
 ## 0.27.4 — 2026-11-09
 - **Quoting levels in colour**: in received mails each level of quoting has its own muted colour (blue, green, ochre, plum, then again), on the line and on the text, so it's easier to see who wrote what. The messages of an Outlook history share the first level.
 
