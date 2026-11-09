@@ -3,6 +3,9 @@
 What's new in each version, most recent first. Versions are the git tags (`v0.7`, `v0.6.2`…); the number in `package.json` is the same.
 Updating needs nothing by hand: the database migrates by itself at startup (the schema version is given when it changes).
 
+## 0.27.3 — 2026-11-09
+- **Quoted text easier to read**: the history Outlook appends to a reply (From / Sent / To / Subject, also in Italian, German, French and Spanish) is split into its messages, one under the other, each with a compact header (sender, date, subject) and its own quotes. "On … wrote:" and "Il … ha scritto:" become "Name · date". The noise of mails converted from HTML (`[cid:…]` images, `<mailto:…>`, links written twice, runs of blank lines) is gone.
+
 ## 0.27.2 — 2026-11-09
 - **Received mails read like in a mail program**: quoted lines are indented (also nested), so replies written between the quoted lines ("inline") are visible instead of being cut off; "On … wrote:" in grey; the quote at the bottom (and Outlook's "Original Message") folded into "quoted text (n lines)"; forwarded messages visible; the signature in grey; links clickable. The previews in the lists show the text outside the quotes.
 
