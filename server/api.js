@@ -688,6 +688,18 @@ route('POST', '/api/entries/:id/after', async ({ params, user, body }) => {
   tx(() => addAfter(e, b.after_id, user));
 });
 
+// All of them at once (dragging in the agenda: moved under another entry, or back to the top): the list given
+// replaces the current one; [] = it waits for nothing.
+route('PUT', '/api/entries/:id/after', async ({ params, user, body }) => {
+  const b = await body();
+  const e = entryFor(params.id, user);
+  const ids = [...new Set((Array.isArray(b.after_ids) ? b.after_ids : []).map(Number).filter(Number.isInteger))].slice(0, 50);
+  tx(() => {
+    db.prepare('DELETE FROM entry_deps WHERE entry_id = ?').run(e.id);
+    for (const id of ids) addAfter(e, id, user);
+  });
+});
+
 route('DELETE', '/api/entries/:id/after/:after', ({ params, user }) => {
   const e = entryFor(params.id, user);
   db.prepare('DELETE FROM entry_deps WHERE entry_id = ? AND after_id = ?').run(e.id, +params.after);

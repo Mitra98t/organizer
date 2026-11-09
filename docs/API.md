@@ -144,6 +144,7 @@ More:
 | `DELETE /api/entries/:id` | to the trash, with the subtasks |
 | `POST /api/entries/:id/after` `{after_id}` | the entry waits for `after_id` (400 if they would wait for each other, also through others, or if one is a note) |
 | `DELETE /api/entries/:id/after/:after` | it no longer waits for it |
+| `PUT /api/entries/:id/after` `{after_ids}` | replaces everything it waits for (`[]` = nothing) |
 
 In `/api/sync`, `entryDeps` lists the pairs `{entry_id, after_id}` (entry_id waits for after_id); `GET /api/entries/:id` has `after` (what it waits for) and `then` (what waits for it). When an entry is done, whoever has an entry that waited only for it (assignee, otherwise creator) gets a notification.
 

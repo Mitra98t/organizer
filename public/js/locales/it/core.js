@@ -91,6 +91,8 @@ export default {
   'no date, it will happen': 'senza data, ma succederà',
   'From the bar too: !fri, !3d, !25/11, !eventually, !no.': 'Anche dalla barra: !ven, !3g, !25/11, !primaopoi, !no.',
   'Drop here: eventually': 'Rilascia qui: prima o poi',
+  'Drop here: it no longer waits': 'Rilascia qui: non aspetta più',
+  '"{title}" no longer waits': '"{title}" non aspetta più',
   'Drop the files here. A firmware with a version updates the "Firmware" field.': 'Rilascia qui i file. Un firmware con versione aggiorna il campo "Firmware".',
   '"{title}": eventually': '"{title}": prima o poi',
   '"{title}" waits for "{other}"': '"{title}" aspetta "{other}"',

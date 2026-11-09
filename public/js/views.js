@@ -562,7 +562,8 @@ export function viewAgenda() {
       return rest.length > 0 && section('ag-wait', tr('Waiting'), rows(rest));
     })(),
     done.length > 0 && section('ag-done', tr('Done in the last 24 hours'), rows(done.sort(byDoneDesc)), { collapsed: true })),
-    h('aside.ag-side', side)));
+    h('aside.ag-side', side)),
+    h('div.ag-root-drop', tr('Drop here: it no longer waits')));
 }
 
 // ---------- projects ----------
@@ -664,33 +665,58 @@ const waitsFor = (id, other) => {
 draggable({
   handle: '.agenda .entry[data-eid]:not(.open) > .row',
   bodyClass: 'edd',
-  data: el => +el.closest('.entry').dataset.eid,
-  ghost: id => [h('span', plainRefs(S.data.entryById.get(id)?.title || ''))],
-  target: (el, id) => {
+  // The dragged entry and the one it is shown under in a chain (host), if any.
+  data: el => {
+    const row = el.closest('.entry');
+    const host = row.parentElement.classList.contains('chain') ? +row.parentElement.previousElementSibling?.dataset.eid || null : null;
+    return { id: +row.dataset.eid, host };
+  },
+  // The "it waits for nothing" zone shows only for entries that wait for something.
+  onStart: ({ id }) => document.body.classList.toggle('edd-w', (S.data.afterOf.get(id) || []).length > 0),
+  ghost: ({ id }) => [h('span', plainRefs(S.data.entryById.get(id)?.title || ''))],
+  target: (el, { id, host }) => {
     const D = S.data;
+    if (el.closest('.ag-root-drop')) return { el: el.closest('.ag-root-drop'), value: 'root', ok: (D.afterOf.get(id) || []).length > 0 };
     const row = el.closest('.agenda .entry[data-eid]');
     if (row) {
       const tid = +row.dataset.eid;
       const t = D.entryById.get(tid);
       const already = (D.afterOf.get(id) || []).some(d => d.after_id === tid);
-      return { el: row, value: tid, ok: !!t && tid !== id && t.kind !== 'note' && !t.done_at && !already && !waitsFor(tid, id) && !isReadOnly(row) };
+      return { el: row, value: tid, ok: !!t && tid !== id && tid !== host && t.kind !== 'note' && !t.done_at && !already && !waitsFor(tid, id) && !isReadOnly(row) };
     }
     const col = el.closest('.ag-side');
-    if (col) return { el: col, value: 'eventually', ok: !D.entryById.get(id)?.eventually };
+    if (col) {
+      const e = D.entryById.get(id);
+      return { el: col, value: 'eventually', ok: !!e && (!e.eventually || (D.afterOf.get(id) || []).length > 0) };
+    }
     return null;
   },
-  drop: (id, t) => {
+  drop: ({ id, host }, t) => {
     const D = S.data;
     const e = D.entryById.get(id);
+    const before = (D.afterOf.get(id) || []).map(d => d.after_id);
+    const setAfter = ids => api('PUT', `/entries/${id}/after`, { after_ids: ids });
+    const name = plainRefs(e.title).slice(0, 50);
     if (t.value === 'eventually') {
-      const before = { due: e.due };
-      return act(() => api('PATCH', `/entries/${id}`, { eventually: true })).then(() =>
-        toast(tr('"{title}": eventually', { title: plainRefs(e.title).slice(0, 60) }), { action: { label: tr('Undo'), fn: () => act(() => api('PATCH', `/entries/${id}`, before)) } }));
+      // In the column as an entry of its own: it waits for nothing any more.
+      const was = { due: e.due, eventually: !!e.eventually };
+      return act(async () => {
+        if (!e.eventually) await api('PATCH', `/entries/${id}`, { eventually: true });
+        if (before.length) await setAfter([]);
+      }).then(() => toast(tr('"{title}": eventually', { title: name }), { action: { label: tr('Undo'), fn: () => act(async () => {
+        await api('PATCH', `/entries/${id}`, was.eventually ? { eventually: true } : { due: was.due });
+        if (before.length) await setAfter(before);
+      }) } }));
     }
+    if (t.value === 'root') {
+      return act(() => setAfter([])).then(() => toast(tr('"{title}" no longer waits', { title: name }), { action: { label: tr('Undo'), fn: () => act(() => setAfter(before)) } }));
+    }
+    // Under another entry: it leaves the one it was under (if it was in a chain) and waits for this one.
     const other = D.entryById.get(t.value);
-    act(() => api('POST', `/entries/${id}/after`, { after_id: t.value })).then(() =>
-      toast(tr('"{title}" waits for "{other}"', { title: plainRefs(e.title).slice(0, 40), other: plainRefs(other.title).slice(0, 40) }),
-        { action: { label: tr('Undo'), fn: () => act(() => api('DELETE', `/entries/${id}/after/${t.value}`)) } }));
+    const next = [...before.filter(x => x !== host), t.value];
+    act(() => setAfter(next)).then(() =>
+      toast(tr('"{title}" waits for "{other}"', { title: name, other: plainRefs(other.title).slice(0, 40) }),
+        { action: { label: tr('Undo'), fn: () => act(() => setAfter(before)) } }));
   },
 });
 

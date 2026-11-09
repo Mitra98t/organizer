@@ -110,3 +110,17 @@ test('!eventually: set from the text, from the date menu, removed by a date', as
   assert.equal((await get()).eventually, 1);
 });
 
+test('dependencies replaced at once: moved under another entry, or waiting for nothing', async () => {
+  const add = async text => (await json('POST', '/entries', { text })).body.id;
+  const a = await add('first');
+  const b = await add('second');
+  const c = await add(`third ^${a}`);
+  const deps = async () => (await json('GET', '/sync')).body.entryDeps.filter(d => d.entry_id === c).map(d => d.after_id);
+  assert.equal((await json('PUT', `/entries/${c}/after`, { after_ids: [b] })).status, 204);
+  assert.deepEqual(await deps(), [b]);
+  assert.equal((await json('PUT', `/entries/${b}/after`, { after_ids: [c] })).status, 400); // loop: nothing changes
+  assert.deepEqual((await json('GET', '/sync')).body.entryDeps.filter(d => d.entry_id === b), []);
+  await json('PUT', `/entries/${c}/after`, { after_ids: [] });
+  assert.deepEqual(await deps(), []);
+});
+

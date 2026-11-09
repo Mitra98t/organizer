@@ -3,6 +3,10 @@
 What's new in each version, most recent first. Versions are the git tags (`v0.7`, `v0.6.2`…); the number in `package.json` is the same.
 Updating needs nothing by hand: the database migrates by itself at startup (the schema version is given when it changes).
 
+## 0.27.1 — 2026-11-09
+- **Moving entries between chains by dragging**: an entry under another one, dragged onto a third, moves there (it no longer waits for the first one). Dropped on **Drop here: it no longer waits**, at the bottom while dragging, it leaves every chain and goes back to its date; dropped on the Eventually column it becomes "eventually" on its own. "Undo" in the message.
+- No more permanent hints about dragging (Agenda, Projects, Inventory, Mail, Documents): the drop zones show up only while something is being dragged.
+
 ## 0.27.0 — 2026-11-09
 - **Eventually**: things that will happen but nobody knows when ("Mirko lands", "repaint the lab") get `!eventually` (Italian `!primaopoi`), or **Eventually** in the date menu. They are not "no due date" (still to be scheduled): the Agenda keeps them in a column on the right, a third of the width, with what waits for them underneath (on a phone the column is below). They never become overdue; a date takes them out.
 - **Drag and drop in the Agenda**: drag an entry onto another and it waits for it; drag it onto the Eventually column and it becomes "eventually". "Undo" in the message. On a phone, hold the entry for a moment and then drag.

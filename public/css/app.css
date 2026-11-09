@@ -354,6 +354,9 @@ textarea { resize: none; display: block; width: 100%; overflow: hidden; }
 .ag-side.drop-ok { box-shadow: 0 0 0 2px var(--accent); background: var(--accent-soft); }
 .ag-drop { display: none; margin-top: 8px; padding: 16px 12px; border: 2px dashed var(--line); border-radius: var(--radius); color: var(--muted); font-size: 13px; text-align: center; }
 body.edd .ag-drop { display: block; }
+.ag-root-drop { display: none; position: fixed; z-index: 60; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); padding: 12px 28px; border: 2px dashed var(--accent); border-radius: var(--radius); background: var(--panel); color: var(--text); box-shadow: 0 10px 30px rgb(0 0 0 / 35%); font-size: 13px; text-align: center; }
+body.edd.edd-w .ag-root-drop { display: block; }
+.ag-root-drop.drop-ok { background: var(--accent-soft); }
 .ag-side.drop-ok .ag-drop { border-color: var(--accent); color: var(--text); }
 @media (max-width: 899px) { .ag-cols { grid-template-columns: minmax(0, 1fr); } .ag-side { position: static; } }
 .due.ev { color: var(--muted); }
