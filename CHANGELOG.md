@@ -3,6 +3,12 @@
 What's new in each version, most recent first. Versions are the git tags (`v0.7`, `v0.6.2`…); the number in `package.json` is the same.
 Updating needs nothing by hand: the database migrates by itself at startup (the schema version is given when it changes).
 
+## 0.26.0 — 2026-11-09
+- **Entries that wait for others**: "try the PS5 with Mirko" can wait for "Mirko lands". Write `^` and part of the other title in the bar (`^mirko`, the menu offers the open todos and mails), or open the entry and use **Waits for**; under **Then** you write what comes after. Until what it waits for is done, the entry is not in Overdue, Today or the other dates: it sits under that entry in the Agenda, in a chain, and does not count as overdue. When the first one is done it goes back to its date, and whoever has it is told they can go on. Entries whose chain is not in the Agenda (filtered out) are under **Waiting**. No loops, and notes cannot wait.
+- CLI: `org add "… ^17"` works, `org show` lists what an entry waits for and what comes after.
+- A few labels were still in Italian in the English interface (the "new" badge on the phone, the bar's help, two suggestions, "pinned").
+- Data schema v25.
+
 ## 0.25.3 — 2026-11-08
 - **Downloaded documents always keep their extension**: a renamed document takes the original file's extension also when the new name ends with a dot ("datasheet." → `datasheet.pdf`, not `datasheet..pdf`), when the original has a double extension (`.tar.gz`) and when it was uploaded without one (then it comes from the file's type, e.g. a PDF gets `.pdf`). Same in "Download all".
 
