@@ -98,4 +98,5 @@ export default {
   'Write at least a few words': 'Scrivi almeno qualche parola',
   'Note added to the Journal': 'Nota aggiunta al Diario',
   'Todo added to the Agenda': 'Todo aggiunto in Agenda',
+  'Attachments sent': 'Allegati inviati',
 };

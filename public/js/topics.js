@@ -608,7 +608,12 @@ function topicLinks(topic) {
 function sideColumn(topic, x, data) {
   if (!x) return h('aside.mail-side', topicLinks(topic));
   const { t } = x;
-  const received = (data?.threads.find(y => y.id === t.id)?.messages || []).filter(m => m.direction === 'in' && m.attachments.length);
+  const msgs = data?.threads.find(y => y.id === t.id)?.messages || [];
+  const received = msgs.filter(m => m.direction === 'in' && m.attachments.length);
+  // Sent: those of the mails written here (the files attached in Organizer) and those of the messages sent from
+  // Thunderbird (a mail written here that comes back as a sent message is not counted twice).
+  const sentHere = x.ents.filter(e => e.done_at && (S.data.attachmentsOf.get(e.id) || []).length);
+  const sentTb = msgs.filter(m => m.direction === 'out' && m.attachments.length && !(m.entry_id && sentHere.some(e => e.id === m.entry_id)));
   return h('aside.mail-side',
     topicLinks(topic),
     h('div.ms-b.tside-h', { style: `--h:${threadHue(t)}` },
@@ -628,6 +633,7 @@ function sideColumn(topic, x, data) {
     }),
     peopleBlock([...x.msgs.flatMap(m => [m.from_addr, m.to_addr, m.cc]), ...x.ents.flatMap(e => [e.contact, e.mail_cc])].filter(Boolean)),
     block(tr('Attachments received'), received.map(m => attList(m.attachments, m.id))),
+    block(tr('Attachments sent'), sentHere.map(e => outAttachments(e)), sentTb.map(m => attList(m.attachments, m.id))),
     backlinksBox('mail', t.id, { title: tr('Mentioned in'), compact: true }));
 }
 
