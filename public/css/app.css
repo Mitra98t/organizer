@@ -657,8 +657,16 @@ body.tdnd .topic-new { display: block; }
 .mb-q .mb-text { color: var(--muted); }
 .mb-attr { color: var(--muted); font-size: 13px; }
 .mb-sig { white-space: pre-wrap; color: var(--muted); font-size: 13px; }
-.mb-fwd, .mb-orig { display: flex; flex-direction: column; gap: 4px; padding-left: 12px; border-left: 2px solid var(--line); }
-.mb-orig .mb-text { color: var(--muted); }
+.mb-fwd { display: flex; flex-direction: column; gap: 4px; padding-left: 12px; border-left: 2px solid var(--line); }
+/* Outlook history: the previous messages one under the other, each with a compact header. */
+.mb-hist { display: flex; flex-direction: column; gap: 12px; }
+.mb-msg { display: flex; flex-direction: column; gap: 6px; padding-left: 12px; border-left: 2px solid var(--line); color: var(--muted); }
+.mb-q, .mb-msg, .mb-fwd { border-left-color: color-mix(in srgb, var(--text) 18%, transparent); }
+.mb-msg .mb-text { color: var(--muted); }
+.mb-mh { font-size: 13px; }
+.mb-mh b { color: var(--text); font-weight: 500; }
+.mb-ms { margin-top: 2px; }
+.mb-attr b { color: var(--text); font-weight: 500; }
 .mb-tail { display: flex; flex-direction: column; }
 .mb-tail > summary { width: fit-content; color: var(--muted); font-size: 13px; cursor: pointer; }
 .mb-tail[open] > summary { margin-bottom: 8px; }
