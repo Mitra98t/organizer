@@ -598,6 +598,12 @@ export function updateEntry(e, b, user) {
     f.eventually = bool(b.eventually) && (f.kind ?? e.kind) !== 'note' ? 1 : 0;
     if (f.eventually) f.due = null;
   }
+  // Archived (only notes): out of the Journal, not deleted.
+  if (b.archived !== undefined) {
+    if ((f.kind ?? e.kind) !== 'note' && bool(b.archived)) fail(400, 'Only notes can be archived');
+    f.archived_at = bool(b.archived) ? e.archived_at || now() : null;
+  }
+  if (f.kind && f.kind !== 'note' && e.archived_at) f.archived_at = null;
   if (b.contact !== undefined) f.contact = str(b.contact, 1000) || null;
   if (b.mail_cc !== undefined) f.mail_cc = str(b.mail_cc, 1000) || null;
   if (b.mail_subject !== undefined) f.mail_subject = str(b.mail_subject, 300) || null;

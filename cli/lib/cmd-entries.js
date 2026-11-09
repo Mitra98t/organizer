@@ -111,6 +111,7 @@ export default {
       const t = today();
       const list = D.entries.filter(e => kinds.includes(e.kind)
         && (o.all || (o.done ? e.done_at : !e.done_at))
+        && (o.all || !e.archived_at) // archived notes only with --all
         && (!inProject || entryProjects(D, e).some(p => inProject.has(p.id)))
         && (!item || (D.itemsOfEntry.get(e.id) || []).includes(item.id))
         && (!user || e.assignee_id === user.id)
@@ -132,7 +133,8 @@ export default {
       if (ctx.json) return ctx.out(e);
       const D = await ctx.data();
       const kind = { todo: 'todo', mail: 'mail', note: tr('note') }[e.kind];
-      const state = e.done_at ? c.green(tr('done on {when}', { when: fmtTime(e.done_at) })) : e.kind === 'note' ? '' : tr('open');
+      const state = e.done_at ? c.green(tr('done on {when}', { when: fmtTime(e.done_at) }))
+        : e.archived_at ? c.dim(tr('archived on {when}', { when: fmtTime(e.archived_at) })) : e.kind === 'note' ? '' : tr('open');
       const sep = ` ${c.dim('·')} `;
       console.log(`${c.bold(`${e.id}`)}${sep}${kind}${state ? `${sep}${state}` : ''}${e.due ? `${sep}${e.kind === 'note' ? '' : `${tr('due')} `}${fmtDue(e.due, { done: !!e.done_at })}` : ''}${e.private ? c.dim(` · ${tr('private')}`) : ''}`);
       console.log(c.bold(linkRefs(D, rich(e.title), c.blue)));

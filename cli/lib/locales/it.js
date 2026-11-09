@@ -13,6 +13,7 @@ export default {
   'an entry in full: notes, history, subtasks, items, attachments': 'una voce per intero: note, storico, sotto-attività, articoli, allegati',
   'note': 'nota',
   'done on {when}': 'fatta il {when}',
+  'archived on {when}': 'archiviata il {when}',
   'open': 'aperta',
   'due': 'scade',
   'private': 'privata',

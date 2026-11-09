@@ -460,4 +460,6 @@ export default {
   'Delete "{ws}" for all the members? Type the workspace name to confirm:': 'Eliminare "{ws}" per tutti i membri? Scrivi il nome del workspace per confermare:',
   'Delete workspace': 'Elimina workspace',
   'Organizer invite': 'Invito Organizer',
+  'Archived notes': 'Note archiviate',
+  'Note archived': 'Nota archiviata',
 };

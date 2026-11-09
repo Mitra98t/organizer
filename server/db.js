@@ -515,6 +515,11 @@ const MIGRATIONS = [
   `
   ALTER TABLE entries ADD COLUMN eventually INTEGER NOT NULL DEFAULT 0;
   `,
+  // v27: journal notes archived when no longer needed: out of the Journal (and of project and item pages), not
+  // deleted. Only notes; becoming another kind removes it.
+  `
+  ALTER TABLE entries ADD COLUMN archived_at TEXT;
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

@@ -53,6 +53,7 @@ export default {
   'The title cannot be empty': 'Il titolo non può essere vuoto',
   'Only the entry\'s creator decides who to share it with': 'Solo chi ha creato la voce decide con chi condividerla',
   'Invalid kind': 'Tipo non valido',
+  'Only notes can be archived': 'Si possono archiviare solo le note',
   'Invalid date': 'Data non valida',
   'reply received': 'risposta arrivata',
   'due date {from} → {to}': 'scadenza {from} → {to}',

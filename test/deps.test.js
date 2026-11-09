@@ -134,3 +134,21 @@ test('an entry can be created with its details (from a piece of a mail)', async 
   const links = (await json('GET', '/backlinks/mail/7')).body.map(x => x.id);
   assert.ok(links.includes(id));
 });
+
+test('journal notes can be archived and brought back; only notes', async () => {
+  const note = (await json('POST', '/entries', { text: 'the bench needs the new fuse', kind: 'note' })).body.id;
+  const todo = (await json('POST', '/entries', { text: 'order fuses' })).body.id;
+  assert.equal((await call('PATCH', `/entries/${note}`, { archived: true })).status, 204);
+  let e = (await json('GET', `/entries/${note}`)).body;
+  assert.ok(e.archived_at);
+  // Still in the data (the Journal hides it), not in the trash.
+  assert.ok((await json('GET', '/sync')).body.entries.some(x => x.id === note && x.archived_at));
+  assert.equal((await call('PATCH', `/entries/${todo}`, { archived: true })).status, 400);
+  assert.equal((await call('PATCH', `/entries/${note}`, { archived: false })).status, 204);
+  e = (await json('GET', `/entries/${note}`)).body;
+  assert.equal(e.archived_at, null);
+  // Becoming a todo removes the archiving.
+  await call('PATCH', `/entries/${note}`, { archived: true });
+  await call('PATCH', `/entries/${note}`, { kind: 'todo' });
+  assert.equal((await json('GET', `/entries/${note}`)).body.archived_at, null);
+});

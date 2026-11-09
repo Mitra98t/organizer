@@ -129,6 +129,7 @@ Other optional fields: `kind`, `parent_id`, `project_id`, `assignee_id`, `privat
 - `notes`, `kind`, `done` (true/false), `pinned`, `private` (only the creator);
 - `due`: `"2026-11-25"`, a quick bar date (`"fri"`, `"3d"`, `"25/11"`), `"none"` or `null` to remove it, `"eventually"`. A postponement leaves a trace in the history; any date (also `null`) sets `eventually = 0`;
 - `eventually` (true/false): it will happen, nobody knows when (removes the date);
+- `archived` (true/false): only for notes, archives the note (`archived_at`) or brings it back; it is not deleted and stays in `/api/sync`. Becoming another kind removes it;
 - `assignee_id` (or `null`), `project_id` (or `null`);
 - for mails: `contact` (To), `mail_cc`, `mail_subject` (`null` = follows the title);
 - `awaiting` (true/false): the sent mail awaits a reply. Marking a mail as done (`done: true`) automatically sets `awaiting_reply = 1`; `awaiting: false` closes the thread (the history keeps "reply received"). Mails awaiting reply stay in `/api/sync` even after 30 days.

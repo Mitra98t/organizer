@@ -327,6 +327,9 @@ textarea { resize: none; display: block; width: 100%; overflow: hidden; }
 .entry .title { overflow-wrap: anywhere; }
 .entry .title .pin { width: 14px; height: 14px; color: var(--today); vertical-align: -2px; margin-right: 4px; }
 .entry.done .title { color: var(--muted); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--muted) 60%, transparent); }
+/* Archived notes: kept, but out of the way. */
+.entry.archived .title { color: var(--muted); }
+.entry.archived .bullet { opacity: 0.5; }
 .entry.open { background: color-mix(in srgb, var(--panel-2) 55%, var(--panel)); }
 .entry.nested { border-bottom: 0; }
 .entry.nested .row { padding: 4px 0; }

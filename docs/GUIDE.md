@@ -83,6 +83,8 @@ The bar at the top changes with the page: in **Inventory** it adds items (`SCH-0
 
 On the other pages the quick bar takes into account where you are: in a project the entries end up there, on an item's page they are linked to its code, in Mail and Journal the default kind changes.
 
+**Archiving journal notes**: a note no longer needed is not deleted, it is archived: open it and press **Archive** ("Undo" in the message). It leaves the Journal and the Journal sections of projects and items and ends up in **Archived notes**, closed, at the bottom of the same pages; there it is opened and **Active again** brings it back. Archived notes are still found by the search and by the links that mention them. From the CLI `org ls --note` leaves them out, `--all` shows them too.
+
 Keyboard shortcuts: `n` or `/` to write, `Ctrl/⌘ K` to search.
 
 ## Themes

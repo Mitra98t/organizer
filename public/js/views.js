@@ -135,6 +135,7 @@ export function entryRow(e, opt = {}) {
     // Waiting for something: the date is not "overdue" (it cannot start yet).
     meta.push(h('span.due', { class: e.kind === 'note' || isWaiting(e) ? null : d.cls }, icon('cal'), e.kind === 'note' ? fmtDay(e.due) : d.label));
   }
+  if (e.archived_at && !opt.inArchive) meta.push(h('span.muted.arch', icon('archive'), tr('archived')));
   if (e.eventually && !e.done_at && !opt.inEventually) meta.push(h('span.due.ev', icon('wait'), tr('eventually')));
   if (e.done_at && e.kind !== 'note') meta.push(h('span.muted', e.kind === 'mail' ? tr('sent {when}', { when: fmtTime(e.done_at) }) : tr('done {when}', { when: fmtTime(e.done_at) })));
   if (e.kind === 'mail' && e.done_at && e.awaiting_reply) meta.push(h('span.awaiting', icon('wait'), tr('awaiting reply {since}', { since: waitingFor(e) })));
@@ -177,7 +178,7 @@ export function entryRow(e, opt = {}) {
 
   return h('div.entry', {
     'data-eid': e.id,
-    class: [`k-${e.kind}`, e.done_at && 'done', e.done_at && e.awaiting_reply && 'waiting', open && 'open', e.pinned && 'pinned', opt.nested && 'nested', opt.chain && 'chained',
+    class: [`k-${e.kind}`, e.done_at && 'done', e.archived_at && 'archived', e.done_at && e.awaiting_reply && 'waiting', open && 'open', e.pinned && 'pinned', opt.nested && 'nested', opt.chain && 'chained',
       e.pending ? 'rw' : roClass(canEntry(e))].filter(Boolean).join(' '),
   },
   h('div.row', check,
@@ -339,6 +340,8 @@ function entryEditor(e) {
   const foot = h('div.ed-foot',
       h('span.muted', `${userName(e.created_by)} · ${fmtTime(e.created_at)}`),
       h('span.grow'),
+      e.kind === 'note' && h('button.btn.sm', { onclick: () => archiveNote(e, !e.archived_at) },
+        icon(e.archived_at ? 'restore' : 'archive'), e.archived_at ? tr('Active again') : tr('Archive')),
       h('button.btn.sm.danger', {
         onclick: () => {
           ui.open.delete(e.id);
@@ -791,7 +794,8 @@ export function viewProject(id) {
   const top = es.filter(e => !e.parent_id);
   const todos = top.filter(e => e.kind === 'todo' && !e.done_at).sort(byDue);
   const mails = top.filter(e => e.kind === 'mail' && !e.done_at).sort(byDue);
-  const notes = top.filter(e => e.kind === 'note').sort(byNoteDesc);
+  const allNotes = top.filter(e => e.kind === 'note');
+  const notes = allNotes.filter(e => !e.archived_at).sort(byNoteDesc);
   const waiting = top.filter(e => e.kind === 'mail' && e.done_at && e.awaiting_reply).sort((a, b) => a.done_at.localeCompare(b.done_at));
   const done = top.filter(e => e.kind !== 'note' && e.done_at && !(e.kind === 'mail' && e.awaiting_reply)).sort(byDoneDesc);
   const patch = f => act(() => api('PATCH', `/projects/${p.id}`, f));
@@ -852,6 +856,7 @@ export function viewProject(id) {
     mails.length > 0 && section(`p${p.id}-mail`, tr('Mails to send'), rows(mails)),
     waiting.length > 0 && section(`p${p.id}-wait`, tr('Awaiting reply'), rows(waiting), { cls: 'waiting' }),
     notes.length > 0 && section(`p${p.id}-notes`, tr('Journal'), rows(notes)),
+    archivedNotes(`p${p.id}`, allNotes, { hideProject: p.id }),
     section(`p${p.id}-items`, tr('Project inventory'), [
       h('div.comp',
         h('div.item-chips', manual.map(i => h('span.chip-wrap', itemChip(i),
@@ -870,7 +875,8 @@ export function viewProject(id) {
 // ---------- journal ----------
 export function viewDiary() {
   const D = S.data;
-  const notes = D.entries.filter(e => e.kind === 'note' && !e.parent_id).sort(byNoteDesc);
+  const all = D.entries.filter(e => e.kind === 'note' && !e.parent_id).sort(byNoteDesc);
+  const notes = all.filter(e => !e.archived_at);
   const shown = notes.slice(0, ui.diaryLimit);
   const days = [];
   for (const e of shown) {
@@ -880,14 +886,31 @@ export function viewDiary() {
   }
   return h('div.view',
     pendingRows(p => p.kind === 'note'),
-    !notes.length && empty(
+    !all.length && empty(
       h('p', tr('The journal collects things that happened once and should be remembered.')),
       h('p', tr('Example: '), kbd(tr('found out that SCH-042 rev B needs fw ≥ 2.3 #SCH-042 @rover'))),
       h('p', tr('With '), kbd(tr('!yesterday')), tr(' or '), kbd('!12/10'), tr(' you record when it happened.'))),
     days.map(g => h('div.day',
       h('div.day-h', fmtLongDay(g.day)),
       g.items.map(e => entryRow(e, { showKind: false })))),
-    notes.length > shown.length && h('button.btn.ghost.more', { onclick: () => { ui.diaryLimit += 200; render(); } }, tr('Show {n} more', { n: notes.length - shown.length })));
+    notes.length > shown.length && h('button.btn.ghost.more', { onclick: () => { ui.diaryLimit += 200; render(); } }, tr('Show {n} more', { n: notes.length - shown.length })),
+    archivedNotes('diary', all));
+}
+
+// Notes no longer needed: out of the lists, kept in a section of their own at the bottom (closed).
+function archivedNotes(key, notes, opt = {}) {
+  const arch = notes.filter(e => e.archived_at).sort((a, b) => b.archived_at.localeCompare(a.archived_at));
+  return arch.length > 0 && section(`${key}-archived`, tr('Archived notes'), arch.map(e => entryRow(e, { showKind: false, inArchive: true, ...opt })), { collapsed: true });
+}
+
+export function archiveNote(e, archived) {
+  act(async () => {
+    await api('PATCH', `/entries/${e.id}`, { archived });
+    if (archived) {
+      ui.open.delete(e.id);
+      toast(tr('Note archived'), { action: { label: tr('Undo'), fn: () => archiveNote(e, false) } });
+    }
+  });
 }
 
 // ---------- inventory ----------
@@ -1234,7 +1257,8 @@ export function viewItem(id) {
   const linked = (D.entriesOfItem.get(it.id) || []).map(x => D.entryById.get(x.entry_id)).filter(Boolean);
   // Mails are in the "In the mails" box (to send / sent), together with those mentioning the code without #.
   const open = linked.filter(e => e.kind === 'todo' && !e.done_at).sort(byDue);
-  const notes = linked.filter(e => e.kind === 'note').sort(byNoteDesc);
+  const allNotes = linked.filter(e => e.kind === 'note');
+  const notes = allNotes.filter(e => !e.archived_at).sort(byNoteDesc);
   const done = linked.filter(e => e.kind === 'todo' && e.done_at).sort(byDoneDesc);
   const manualProjects = (D.projectsOfItem.get(it.id) || []).map(x => D.projectById.get(x.project_id)).filter(Boolean);
   const viaEntries = [...new Set(linked.map(e => e.project_id).filter(Boolean))]
@@ -1314,6 +1338,7 @@ export function viewItem(id) {
     section('i-todo', tr('To do'), open.length ? open.map(e => entryRow(e)) : [empty(h('p', tr('Write in the bar at the top: the entries will be linked to '), kbd(`#${it.code}`), '.'))], { count: open.length }),
     backlinksBox('articolo', it.id, { title: tr('In the mails'), mailsOnly: true }),
     notes.length > 0 && section('i-notes', tr('Journal'), notes.map(e => entryRow(e, { showKind: false }))),
+    archivedNotes(`i${it.id}`, allNotes),
     done.length > 0 && section('i-done', tr('Completed'), done.map(e => entryRow(e)), { collapsed: true }),
     h('div.danger-zone',
       h('span.muted', tr('Created {when} by {name}', { when: fmtTime(it.created_at), name: userName(it.created_by) })),
