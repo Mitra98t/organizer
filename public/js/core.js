@@ -276,6 +276,9 @@ function indexData(d) {
   d.aliasesOf = group(d.itemAliases, 'item_id');
   for (const a of d.itemAliases) if (d.itemById.has(a.item_id)) d.itemByCode.set(a.code.toUpperCase(), d.itemById.get(a.item_id));
   d.childrenOf = group(d.entries.filter(e => e.parent_id), 'parent_id');
+  // Dependencies: afterOf = what an entry waits for, thenOf = what waits for it.
+  d.afterOf = group(d.entryDeps || [], 'entry_id');
+  d.thenOf = group(d.entryDeps || [], 'after_id');
   d.logsOf = group(d.logs, 'entry_id');
   d.itemsOfEntry = group(d.entryItems, 'entry_id');
   d.entriesOfItem = group(d.entryItems, 'item_id');
@@ -595,6 +598,12 @@ export function hue(s) {
 }
 // A document's name: the one given in the app, otherwise the file name (or the link).
 export const docName = d => d.label || d.filename || d.url;
+
+// What an entry waits for that is not done yet (only entries in the data: deleted or not shared ones do not count).
+// While there is something, the entry is "waiting": not in the agenda by its date, not overdue.
+export const openBlockers = e => (S.data.afterOf.get(e.id) || []).map(x => S.data.entryById.get(x.after_id)).filter(a => a && !a.done_at);
+export const isWaiting = e => !e.done_at && openBlockers(e).length > 0;
+export const waitersOf = e => (S.data.thenOf.get(e.id) || []).map(x => S.data.entryById.get(x.entry_id)).filter(Boolean);
 
 export async function renameDoc(d) {
   const name = await askText(tr('New name for the document (empty = back to the file name):'), { value: d.label || d.filename || '', title: tr('Rename'), ok: tr('Rename') });
@@ -1243,7 +1252,7 @@ export const showText = (message, text, { title } = {}) =>
 
 export function updateBadge() {
   if (!S.data || !navigator.setAppBadge) return;
-  const n = S.data.entries.filter(e => e.kind !== 'note' && !e.done_at && e.due && dayDiff(e.due) <= 0 && isMine(e)).length;
+  const n = S.data.entries.filter(e => e.kind !== 'note' && !e.done_at && e.due && dayDiff(e.due) <= 0 && isMine(e) && !isWaiting(e)).length;
   (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
 }
 

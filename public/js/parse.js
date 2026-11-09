@@ -89,7 +89,8 @@ export function parseQuick(text, { today: base = today(), kind = 'todo' } = {}) 
   let s = String(text || '').trim();
   // shares: +person (they see it too); shareAll: +all (everyone sees it); assignee: ++person (they see it and
   // it is assigned to them). Without any of the three the entry is private to whoever writes it.
-  const out = { kind, kindExplicit: false, title: '', due: undefined, project: null, projects: [], assignee: null, shares: [], shareAll: false, contact: null, codes: [] };
+  // after: ^12 = the entry waits for entry 12 (it comes after it).
+  const out = { kind, kindExplicit: false, title: '', due: undefined, project: null, projects: [], assignee: null, shares: [], shareAll: false, contact: null, codes: [], after: [] };
 
   const pm = s.match(/^([a-z]+)\s*:\s*/i);
   if (pm && KIND_PREFIX[pm[1].toLowerCase()]) {
@@ -119,6 +120,9 @@ export function parseQuick(text, { today: base = today(), kind = 'todo' } = {}) 
       continue;
     } else if ((m = w.match(/^>([\p{L}\d]\S*)$/u))) {
       out.contact = m[1]; continue;
+    } else if ((m = w.match(/^\^(\d+)[.,;:]?$/))) {
+      if (!out.after.includes(+m[1])) out.after.push(+m[1]);
+      continue;
     }
     if (w) keep.push(w);
   }

@@ -158,6 +158,15 @@ export default {
         heading(tr('Subtasks'));
         table(e.subtasks.map(s => entryRow(D, { ...s, projects: [] })));
       }
+      // Dependencies: written with ^ID in the text (org add "try the PS5 ^12").
+      if (e.after?.length) {
+        heading(tr('Waits for'));
+        table(e.after.map(s => entryRow(D, { ...s, projects: [] })));
+      }
+      if (e.then?.length) {
+        heading(tr('Then'));
+        table(e.then.map(s => entryRow(D, { ...s, projects: [] })));
+      }
       if (e.logs.length) {
         heading(tr('History'));
         table(e.logs.map(l => [c.dim(fmtTime(l.created_at)), c.dim(userName(D, l.user_id)), l.system ? c.dim(l.text) : linkRefs(D, rich(l.text), c.blue)]), { right: [] });

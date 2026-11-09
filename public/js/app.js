@@ -1,7 +1,7 @@
 import {
   h, icon, S, ui, RS, api, sync, setRenderer, render, renderStatus, connectLive, disconnectLive, liveClosed,
   flushOutbox, addEntry, loadCache, clearLocal, dueInfo, autosize, toast, isMine, dayDiff, save, hue, act, catStyle, tagStyle,
-  switchWorkspace, newWorkspace, kindMenuCheck, popCheck, can, applyReadOnly, askConfirm
+  switchWorkspace, newWorkspace, kindMenuCheck, popCheck, can, applyReadOnly, askConfirm, isWaiting,
 } from './core.js';
 import { initAutocomplete, acCheck } from './autocomplete.js';
 import { viewContacts } from './contacts.js';
@@ -143,7 +143,8 @@ const HELP = {
     h('span', h('code.k', tr('+person')), ' ', tr('they see it too')),
     h('span', h('code.k', tr('++person')), ' ', tr('and it is assigned to them')),
     h('span', h('code.k', '+all'), ' ', tr('everyone sees it (without: only you)')),
-    h('span', h('code.k', '>destinatario')),
+    h('span', h('code.k', tr('>recipient'))),
+    h('span', h('code.k', '^'), ' ', tr('after another entry')),
     acHint()],
   item: () => [
     h('span', h('code.k', tr('CODE description')), ' ', tr('the first word is the code')),
@@ -220,6 +221,7 @@ function renderPreview() {
     for (const c of p.codes) chips.push(h('span.pv.code', c, !D?.itemByCode.has(c.toUpperCase()) && h('i', ` ${tr('new')}`)));
     chips.push(...shareChips(p.shares, p.shareAll, p.assignee));
     if (p.contact) chips.push(h('span.pv', `→ ${p.contact}`));
+    for (const id of p.after) chips.push(h('span.pv', icon('wait'), tr('after'), ' ', D?.entryById.get(id)?.title || `^${id}`));
   }
   quickInput.placeholder = {
     item: tr('New item… e.g. SCH-060 relay board /board @rover'),
@@ -379,7 +381,7 @@ function updateBadges() {
   if (!D) return;
   updateBell();
   const open = D.entries.filter(e => !e.done_at && e.kind !== 'note');
-  const urgent = open.filter(e => e.due && dayDiff(e.due) <= 0 && isMine(e)).length;
+  const urgent = open.filter(e => e.due && dayDiff(e.due) <= 0 && isMine(e) && !isWaiting(e)).length;
   // Mail: to send plus the threads with unread messages.
   const mails = open.filter(e => e.kind === 'mail').length
     + D.mailThreads.filter(t => (D.msgsOfThread.get(t.id) || []).some(m => m.direction === 'in' && !m.read_at)).length;
@@ -392,7 +394,7 @@ function updateBadges() {
   const unread = D.chatUnread > 99 ? '99+' : D.chatUnread || '';
   navLinks.get('chat').badge.textContent = unread;
   navLinks.get('cestino').badge.classList.add('muted-badge');
-  tabBadges = { agenda: urgent || '', mail: mails || '', chat: unread, novita: hasNews() ? 'nuovo' : '' };
+  tabBadges = { agenda: urgent || '', mail: mails || '', chat: unread, novita: hasNews() ? tr('new') : '' };
 }
 
 // ---------- workspace ----------

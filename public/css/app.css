@@ -347,6 +347,23 @@ textarea { resize: none; display: block; width: 100%; overflow: hidden; }
 .parent { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block !important; }
 .parent b { font-weight: 500; color: var(--text); }
 .pending { color: var(--today); font-style: italic; }
+/* Dependencies: in the agenda what waits for an entry stays under it, indented, with a hook line; in the entry
+   the "Waits for" and "Then" rows. */
+.chain { margin-left: 22px; border-left: 1px dashed var(--line); }
+.entry.chained { border-left-color: transparent; }
+.entry.chained > .row { position: relative; }
+.entry.chained > .row::before { content: ""; position: absolute; left: -1px; top: 18px; width: 10px; border-top: 1px dashed var(--line); }
+.entry.chained .check { opacity: 0.7; }
+.after b, .then { font-weight: 500; }
+.after { max-width: 320px; }
+.after b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.deps { display: flex; flex-direction: column; gap: 4px; padding: 8px 0 0; }
+.deps-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13px; }
+.deps-l { display: inline-flex; align-items: center; gap: 4px; min-width: 84px; color: var(--muted); }
+.deps-l .ic { width: 13px; height: 13px; }
+.dep a { display: inline-flex; align-items: center; gap: 4px; max-width: 280px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dep.done a { color: var(--muted); text-decoration: line-through; }
+.dep a .ic { width: 12px; height: 12px; }
 .has-notes { font-weight: 600; }
 
 a.code {

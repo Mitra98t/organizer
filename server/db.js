@@ -498,6 +498,18 @@ const MIGRATIONS = [
     saved_at TEXT NOT NULL
   );
   `,
+  // v25: dependencies between entries. entry_id waits for after_id (e.g. "try the PS5" waits for "Mirko lands"):
+  // until after_id is done, entry_id is shown under it in the agenda instead of by its date.
+  `
+  CREATE TABLE entry_deps (
+    entry_id INTEGER NOT NULL REFERENCES entries ON DELETE CASCADE,
+    after_id INTEGER NOT NULL REFERENCES entries ON DELETE CASCADE,
+    created_by INTEGER REFERENCES users ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (entry_id, after_id)
+  );
+  CREATE INDEX entry_deps_after ON entry_deps(after_id);
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

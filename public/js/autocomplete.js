@@ -1,4 +1,5 @@
-// Autocomplete for tokens (@project, #CODE, !date, +user, >recipient) in fields with data-ac.
+// Autocomplete for tokens (@project, #CODE, !date, +user, >recipient, ^entry it waits for) in fields with data-ac.
+// data-ac="after": the whole field is an open entry to wait for (inserts ^ID and confirms).
 // data-ac = the entry's kind ('todo' | 'mail' | 'note'), or 'auto' for the quick bar (the kind comes from the
 // t:/m:/n: prefix and from the context). data-ac-only limits the accepted tokens.
 // data-ac="email": a field of comma-separated addresses (To, Cc), suggests the address book without symbols.
@@ -67,22 +68,22 @@ function update(el) {
   const pos = el.selectionStart;
   if (pos == null || pos !== el.selectionEnd) return close();
   if (el.dataset.ac === 'email') return updateEmail(el, pos);
-  if (['code', 'project', 'cfield'].includes(el.dataset.ac)) return updateWhole(el);
+  if (['code', 'project', 'cfield', 'after'].includes(el.dataset.ac)) return updateWhole(el);
   const kind = kindOf(el);
   // The bars creating items and projects have no links.
   if (kind !== 'item' && kind !== 'project') {
     const r = el.value.slice(0, pos).match(/\[\[([^\]\n]{0,60})$/);
     if (r) return updateRef(el, pos, r[1]);
   }
-  const allowed = el.dataset.acOnly || { item: '/@', project: '@+' }[kind] || '@#!+>';
-  const m = el.value.slice(0, pos).match(/(?:^|\s)(\+\+|[@#!+>/])([^\s@#!+>/]*)$/);
+  const allowed = el.dataset.acOnly || { item: '/@', project: '@+' }[kind] || '@#!+>^';
+  const m = el.value.slice(0, pos).match(/(?:^|\s)(\+\+|[@#!+>/^])([^\s@#!+>/^]*)$/);
   if (!m || !allowed.includes(m[1])) return close();
   // In the items bar the first word is the code: no suggestions until there is one.
   if (kind === 'item' && m.index === 0 && !/^\s/.test(m[0])) return close();
   const [, sig, q] = m;
   const start = pos - q.length - 1;
   const end = pos + el.value.slice(pos).match(/^\S*/)[0].length;
-  let items = suggest(sig, q, kind);
+  let items = suggest(sig, q, kind, +el.dataset.acEntry || 0);
   if (el.dataset.acBare != null) items = items.map(i => ({ ...i, insert: i.insert.slice(1) }));
   if (!items.length) return close();
   st = { el, start, end, items, index: 0, token: sig + q, suffix: ' ' };
@@ -90,7 +91,7 @@ function update(el) {
 }
 
 function updateWhole(el) {
-  const q = lc(el.value.trim().replace(/^[#@]/, ''));
+  const q = lc(el.value.trim().replace(/^[#@^]/, ''));
   if (!q) return close();
   const D = S.data;
   let items;
@@ -98,6 +99,8 @@ function updateWhole(el) {
   if (el.dataset.ac === 'code') {
     const self = lc(el.dataset.acSelf);
     items = itemSuggestions(q, i => lc(i.code) !== self).map(i => ({ ...i, insert: i.label }));
+  } else if (el.dataset.ac === 'after') {
+    items = waitSuggestions(q, +el.dataset.acSelf);
   } else if (el.dataset.ac === 'cfield') {
     items = contactFieldSuggestions(el.dataset.acField, q);
     commit = 'change';
@@ -194,7 +197,7 @@ export function findAll(ql, { bare = false, self = null, limit = 12 } = {}) {
       const msgs = D.msgsOfThread.get(t.id) || [];
       const topic = D.topicById.get(t.topic_id)?.title;
       return { insert: `[[mail:${t.id}]]`, href: `#/t/${t.topic_id}?th=${t.id}`, label: plain(t.subject), hint: people(msgs.map(m => m.direction === 'in' ? m.from_addr : m.to_addr).join(',')),
-        extra: t.archived_at ? 'archiviata' : '', pill: 'conv', sort: t.last_at,
+        extra: t.archived_at ? tr('archived') : '', pill: 'conv', sort: t.last_at,
         sub: line(topic && lc(topic) !== lc(t.subject) && `topic: ${topic}`, trn(msgs.length, '1 message', '{n} messages'), t.last_at && tr('last {date}', { date: fmtDay(t.last_at.slice(0, 10)) }), snippet(msgs.at(-1)?.snippet)) };
     }),
     scored(D.docs.filter(d => D.itemById.has(d.item_id)), d => {
@@ -218,7 +221,7 @@ export function findAll(ql, { bare = false, self = null, limit = 12 } = {}) {
       const it = D.itemById.get(d.item_id);
       const page = n.page != null && n.z == null && /pdf/i.test(d.mime || d.filename || d.url || '') ? tr('p. {n}', { n: n.page }) : '';
       return { insert: `[[nota:${n.id}]]`, href: `#/d/${n.doc_id}?n=${n.id}`, label: first.length > 120 ? `${first.slice(0, 120)}…` : first,
-        hint: '', extra: n.resolved_at ? 'risolta' : page, pill: 'docnote', sort: n.updated_at,
+        hint: '', extra: n.resolved_at ? tr('resolved') : page, pill: 'docnote', sort: n.updated_at,
         // Where it is: item › document (kind), who wrote it and the highlighted text.
         sub: line(it && `${it.code}${it.name ? ` ${it.name}` : ''}`, `${docName(d)} (${kindLabel(d.kind)})`, n.created_by !== S.data.me.id && userName(n.created_by), n.quote && `«${snippet(n.quote, 90)}»`) };
     }),
@@ -350,6 +353,17 @@ function contactItems(ql) {
   return out.sort((a, b) => a.r - b.r).slice(0, 8);
 }
 
+// ^: the open todos and mails an entry can wait for (inserted as ^ID; the bar shows the title next to it).
+function waitSuggestions(ql, self) {
+  const D = S.data;
+  return D.entries.filter(e => (e.kind === 'todo' || e.kind === 'mail') && !e.done_at && e.id !== self)
+    .map(e => ({ e, r: fuzzy(e.title, ql) }))
+    .filter(x => x.r != null)
+    .sort((a, b) => a.r - b.r || b.e.updated_at.localeCompare(a.e.updated_at))
+    .slice(0, 8)
+    .map(({ e }) => ({ insert: `^${e.id}`, label: plainRefs(e.title), hint: e.due ? fmtDay(e.due) : '', extra: e.assignee_id ? `+${userName(e.assignee_id)}` : '', pill: e.kind }));
+}
+
 // "Fuzzy" search: the letters typed in order, also not adjacent ("almar" finds ALDO-MARCO-LUIGI, "sch51" finds
 // SCH-051). Score, lower = better: equal, starts like this, contains, then scattered letters (better at the start of
 // a word and close together). null = unrelated.
@@ -386,12 +400,14 @@ function best(q, ...fields) {
 
 const rank = (s, q) => fuzzy(s, q) ?? 9;
 
-function suggest(sig, q, kind) {
+function suggest(sig, q, kind, self = 0) {
   const D = S.data;
   if (!D) return [];
   const ql = lc(q);
 
   if (sig === '@') return projectSuggestions(ql).map(p => ({ ...p, insert: p.label }));
+
+  if (sig === '^') return waitSuggestions(ql, self);
 
   if (sig === '#') return itemSuggestions(ql).map(i => ({ ...i, insert: `#${i.label}` }));
 

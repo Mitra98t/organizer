@@ -119,8 +119,9 @@ An entry has `kind` (`todo`, `mail`, `note`), `title`, `notes`, `due`, `done_at`
 | `#CODE` | inventory item, created if it does not exist; it stays in the text |
 | `+user` | assignee |
 | `>who` | the mail's recipient (an email, or a name from the address book) |
+| `^ID` | waits for entry ID (a todo or mail one can see): until it is done the app shows it under ID instead of by its date |
 
-Other optional fields: `kind`, `parent_id`, `project_id`, `assignee_id`, `private`. Response `{"id"}`.
+Other optional fields: `kind`, `parent_id`, `project_id`, `assignee_id`, `private`, `after_id` (waits for that entry). Response `{"id"}`.
 
 **`PATCH /api/entries/:id`**, all optional:
 - `title`: accepts the same tokens (`!mon` moves the due date, `@tag` adds a project);
@@ -139,6 +140,10 @@ More:
 | `POST /api/entries/:id/projects` `{project_id}` | adds a project (if there is no main one, it becomes the main one) |
 | `DELETE /api/entries/:id/projects/:pid` | removes a project (removing the main one, the next one becomes main) |
 | `DELETE /api/entries/:id` | to the trash, with the subtasks |
+| `POST /api/entries/:id/after` `{after_id}` | the entry waits for `after_id` (400 if they would wait for each other, also through others, or if one is a note) |
+| `DELETE /api/entries/:id/after/:after` | it no longer waits for it |
+
+In `/api/sync`, `entryDeps` lists the pairs `{entry_id, after_id}` (entry_id waits for after_id); `GET /api/entries/:id` has `after` (what it waits for) and `then` (what waits for it). When an entry is done, whoever has an entry that waited only for it (assignee, otherwise creator) gets a notification.
 
 ## Projects
 

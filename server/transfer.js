@@ -61,6 +61,7 @@ route('GET', '/api/export', ({ res, user }) => {
   const mine = 'SELECT id FROM entries WHERE created_by = $uid AND deleted_at IS NULL AND kind IN (SELECT value FROM json_each($kinds))';
   T.entry_log = json(`SELECT * FROM entry_log WHERE entry_id IN (${mine})`, { uid, kinds });
   T.entry_projects = json(`SELECT * FROM entry_projects WHERE entry_id IN (${mine})`, { uid, kinds });
+  T.entry_deps = json(`SELECT entry_id, after_id FROM entry_deps WHERE entry_id IN (${mine}) AND after_id IN (${mine})`, { uid, kinds });
   T.entry_items = json(`SELECT * FROM entry_items WHERE entry_id IN (${mine})`, { uid, kinds });
   T.entry_links = json(`SELECT * FROM entry_links WHERE entry_id IN (${mine})`, { uid, kinds });
   if (can('mail')) {
@@ -264,6 +265,9 @@ function importAll(meta, files, user) {
       .run(M.entries.get(e.parent_id) ?? null, M.mail_messages.get(e.reply_to) ?? null, fixRefs(e.title), fixRefs(e.notes), fixRefs(e.mail_subject ?? null), id);
   }
   for (const l of T.entry_log || []) if (M.entries.get(l.entry_id)) insert('entry_log', { ...l, entry_id: M.entries.get(l.entry_id), user_id: uid, text: fixRefs(l.text) });
+  for (const x of T.entry_deps || []) {
+    if (M.entries.get(x.entry_id) && M.entries.get(x.after_id)) insert('entry_deps', { entry_id: M.entries.get(x.entry_id), after_id: M.entries.get(x.after_id), created_by: uid, created_at: now() });
+  }
   for (const x of T.entry_projects || []) {
     if (M.entries.get(x.entry_id) && M.projects.get(x.project_id)) insert('entry_projects', { entry_id: M.entries.get(x.entry_id), project_id: M.projects.get(x.project_id) });
   }

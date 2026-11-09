@@ -28,6 +28,8 @@ export default {
   'Attachments': 'Allegati',
   'document {id}': 'documento {id}',
   'Subtasks': 'Sotto-attività',
+  'Waits for': 'Aspetta',
+  'Then': 'Poi',
   'History': 'Storico',
   'Mentioned in': 'Citata in',
   'marks as done': 'segna come fatte',

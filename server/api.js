@@ -416,6 +416,8 @@ route('GET', '/api/sync', ({ req, res, user }) => {
     projects: all('progetti', `SELECT p.* FROM projects p WHERE ${PVIS} ORDER BY p.name COLLATE NOCASE`, { uid }),
     entries: db.prepare(`SELECT e.* FROM entries e WHERE ${where} ORDER BY e.id`).all(p),
     logs: db.prepare(`SELECT l.* FROM entry_log l JOIN entries e ON e.id = l.entry_id WHERE ${where} ORDER BY l.id`).all(p),
+    // Dependencies of the entries sent (the app ignores those towards entries it does not have).
+    entryDeps: db.prepare(`SELECT d.entry_id, d.after_id FROM entry_deps d JOIN entries e ON e.id = d.entry_id WHERE ${where}`).all(p),
     entryItems: all('magazzino', `SELECT ei.entry_id, ei.item_id FROM entry_items ei JOIN entries e ON e.id = ei.entry_id WHERE ${where}`, p),
     items: all('magazzino', 'SELECT * FROM items WHERE deleted_at IS NULL ORDER BY code COLLATE NOCASE'),
     itemAliases: all('magazzino', `SELECT a.item_id, a.code FROM item_aliases a JOIN items i ON i.id = a.item_id
@@ -533,6 +535,7 @@ export function createEntry(b, user) {
   addShares('entry', id, sh.ids.filter(x => x !== user.id), p.shareAll || bool(b.shared_all));
   notifyEntry(user, { id, kind, title }, sh.ids, assigneeId);
   for (const pid of projectIds.slice(1)) addEntryProject(id, pid);
+  for (const aid of [...p.after, ...(b.after_id ? [+b.after_id] : [])]) addAfter({ id, kind }, aid, user);
   if (kind === 'mail') autoLink(ensureEntryThread({ id, kind, title, created_by: user.id }), user.id, title); // every mail is in a thread
   syncEntryItems(id, user);
   return id;
@@ -559,6 +562,7 @@ export function updateEntry(e, b, user) {
       else if (pid !== (f.project_id ?? e.project_id)) addEntryProject(e.id, pid);
     }
     if (p.contact) f.contact = resolveContact(p.contact, user);
+    for (const aid of p.after) addAfter({ ...e, kind: f.kind ?? e.kind }, aid, user);
     // +person / ++person / +all in the title add shares (they never remove any): only the entry's creator.
     const sh = shareTargets(p.shares);
     if (p.assignee) {
@@ -622,6 +626,7 @@ export function updateEntry(e, b, user) {
   }
   // Assigned to someone else (with ++person or from the Assigned menu): tell them.
   if (f.assignee_id && f.assignee_id !== e.assignee_id) notifyEntry(user, { ...e, ...f }, [], f.assignee_id);
+  if (f.done_at && !e.done_at) notifyFreed(e, user);
   if (e.due && f.due !== undefined && f.due !== e.due) addLog(e.id, user.id, tr('due date {from} → {to}', { from: fmtDate(e.due), to: fmtDate(f.due) }), true);
   if (f.title !== undefined || f.notes !== undefined) syncEntryItems(e.id, user);
   else if (f.mail_subject !== undefined || f.kind !== undefined) syncEntryLinks(e.id);
@@ -630,6 +635,52 @@ export function updateEntry(e, b, user) {
 route('POST', '/api/entries', async ({ user, body }) => {
   const b = await body();
   return { id: tx(() => createEntry(b, user)) };
+});
+
+// ---------- dependencies: an entry that waits for another ----------
+// "try the PS5 ^12": it waits for 12 ("Mirko lands"). Until 12 is done it is not in the agenda by its date but
+// under 12. Only todos and mails (notes are never done), only entries one can see, no loops.
+const WAITS = new Set(['todo', 'mail']);
+function addAfter(e, afterId, user) {
+  const a = getEntry(afterId, user.id);
+  if (a.deleted_at) fail(404, 'Entry not found');
+  if (a.id === e.id) fail(400, 'An entry cannot wait for itself');
+  if (!WAITS.has(e.kind) || !WAITS.has(a.kind)) fail(400, 'Only todos and mails can wait for each other');
+  // A loop: a already waits (also through others) for e.
+  const next = db.prepare('SELECT after_id FROM entry_deps WHERE entry_id = ?');
+  const seen = new Set();
+  for (const stack = [a.id]; stack.length;) {
+    const x = stack.pop();
+    if (x === e.id) fail(400, '"{title}" already waits for this entry: they would wait for each other', { title: a.title.slice(0, 80) });
+    if (seen.has(x)) continue;
+    seen.add(x);
+    stack.push(...next.all(x).map(r => r.after_id));
+  }
+  db.prepare('INSERT OR IGNORE INTO entry_deps (entry_id, after_id, created_by, created_at) VALUES (?, ?, ?, ?)').run(e.id, a.id, user.id, now());
+}
+
+// Done: who was waiting only for this one (assignee, otherwise creator) is told they can go on.
+function notifyFreed(e, user) {
+  const waiting = db.prepare(`SELECT x.* FROM entry_deps d JOIN entries x ON x.id = d.entry_id
+    WHERE d.after_id = ? AND x.done_at IS NULL AND x.deleted_at IS NULL`).all(e.id);
+  for (const x of waiting) {
+    const still = db.prepare(`SELECT 1 FROM entry_deps d JOIN entries a ON a.id = d.after_id
+      WHERE d.entry_id = ? AND a.id != ? AND a.done_at IS NULL AND a.deleted_at IS NULL`).get(x.id, e.id);
+    if (still) continue;
+    notify([x.assignee_id || x.created_by], { ws: currentWorkspace(), kind: 'mention', actor: user.id, url: `#/v/${x.id}`,
+      title: ['{actor} completed "{after}": you can go on', { actor: actorName(user), after: plain(e.title).slice(0, 80) }], body: plain(x.title) });
+  }
+}
+
+route('POST', '/api/entries/:id/after', async ({ params, user, body }) => {
+  const b = await body();
+  const e = entryFor(params.id, user);
+  tx(() => addAfter(e, b.after_id, user));
+});
+
+route('DELETE', '/api/entries/:id/after/:after', ({ params, user }) => {
+  const e = entryFor(params.id, user);
+  db.prepare('DELETE FROM entry_deps WHERE entry_id = ? AND after_id = ?').run(e.id, +params.after);
 });
 
 // An entry with everything around it (for the CLI and external programs: the app uses /api/sync).
@@ -645,6 +696,11 @@ route('GET', '/api/entries/:id', ({ params, user }) => {
       WHERE ei.entry_id = ? AND i.deleted_at IS NULL ORDER BY i.code`).all(e.id),
     logs: db.prepare('SELECT * FROM entry_log WHERE entry_id = ? ORDER BY id').all(e.id),
     subtasks: db.prepare(`SELECT e.* FROM entries e WHERE e.parent_id = $id AND ${VIS} ORDER BY e.id`).all({ id: e.id, uid: user.id }),
+    // What it waits for, and what waits for it.
+    after: db.prepare(`SELECT e.id, e.kind, e.title, e.due, e.done_at FROM entry_deps d JOIN entries e ON e.id = d.after_id
+      WHERE d.entry_id = $id AND ${VIS} AND e.deleted_at IS NULL ORDER BY e.id`).all({ id: e.id, uid: user.id }),
+    then: db.prepare(`SELECT e.id, e.kind, e.title, e.due, e.done_at FROM entry_deps d JOIN entries e ON e.id = d.entry_id
+      WHERE d.after_id = $id AND ${VIS} AND e.deleted_at IS NULL ORDER BY e.id`).all({ id: e.id, uid: user.id }),
     attachments: db.prepare('SELECT id, doc_id, filename, mime, size FROM mail_attachments WHERE entry_id = ? ORDER BY id').all(e.id),
   };
 });

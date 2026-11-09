@@ -99,3 +99,10 @@ test('several projects', () => {
   assert.deepEqual(p.projects, ['rover', 'greenhouse-iot']);
   assert.equal(p.title, 'align fw');
 });
+
+test('^ID: the entry waits for another', () => {
+  const p = parseQuick('try the PS5 with Mirko ^12 ^7 ^12 !fri', { today: T });
+  assert.deepEqual([p.title, p.after, p.due], ['try the PS5 with Mirko', [12, 7], '2026-10-30']);
+  assert.deepEqual(parseQuick('2^10 is 1024').after, []); // not at the start of a word
+  assert.equal(parseQuick('2^10 is 1024').title, '2^10 is 1024');
+});

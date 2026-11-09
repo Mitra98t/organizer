@@ -5,7 +5,7 @@ import {
   updatePending, removePending,
   descendants, ancestors, catStyle, itemAttrs, docFileUrl, projectsOf, DOC_KINDS, kindLabel, projHue, catHue, huePicker,
   switchWorkspace, newWorkspace, docName, renameDoc, richField, backlinks, plainRefs, CONTACT_COLOR, masonry, filterChip, aliasCodes, kindPicker, can, canEntry, roClass,
-  fold, foldBar, capFirst, askConfirm, askText, askFields, notice, showText
+  fold, foldBar, capFirst, askConfirm, askText, askFields, notice, showText, openBlockers, isWaiting, waitersOf,
 } from './core.js';
 import { docMeta, docPeek } from './docview.js';
 import { openFeedback } from './feedback.js';
@@ -132,7 +132,8 @@ export function entryRow(e, opt = {}) {
   const meta = [];
   if (e.due && !(e.kind !== 'note' && e.done_at)) {
     const d = dueInfo(e.due);
-    meta.push(h('span.due', { class: e.kind === 'note' ? null : d.cls }, icon('cal'), e.kind === 'note' ? fmtDay(e.due) : d.label));
+    // Waiting for something: the date is not "overdue" (it cannot start yet).
+    meta.push(h('span.due', { class: e.kind === 'note' || isWaiting(e) ? null : d.cls }, icon('cal'), e.kind === 'note' ? fmtDay(e.due) : d.label));
   }
   if (e.done_at && e.kind !== 'note') meta.push(h('span.muted', e.kind === 'mail' ? tr('sent {when}', { when: fmtTime(e.done_at) }) : tr('done {when}', { when: fmtTime(e.done_at) })));
   if (e.kind === 'mail' && e.done_at && e.awaiting_reply) meta.push(h('span.awaiting', icon('wait'), tr('awaiting reply {since}', { since: waitingFor(e) })));
@@ -154,6 +155,14 @@ export function entryRow(e, opt = {}) {
   else if (e.shared_all) meta.push(h('span.shared', { title: tr('Visible to everyone') }, icon('users'), tr('everyone')));
   else if (sharedIds.length) meta.push(h('span.shared', { title: tr('Shared with {names}', { names: sharedIds.map(userName).join(', ') }) }, icon('user'), sharedIds.length === 1 ? userName(sharedIds[0]) : sharedIds.length));
   if (parent) meta.push(h('span.parent', { title: parent.title }, `↳ ${tr('subtask of')} `, h('b', parent.title)));
+  // Waiting for something (outside its chain in the agenda: there it is already under what it waits for).
+  const blockers = opt.chain ? [] : openBlockers(e);
+  if (blockers.length && !e.done_at) {
+    meta.push(h('span.after', { title: blockers.map(a => a.title).join('\n') }, icon('wait'), tr('after'), ' ', h('b', plainRefs(blockers[0].title)),
+      blockers.length > 1 ? ` +${blockers.length - 1}` : ''));
+  }
+  const then = waitersOf(e).filter(x => !x.done_at);
+  if (then.length && !opt.chain && !opt.hideThen) meta.push(h('span.then', { title: then.map(x => x.title).join('\n') }, '→ ', trn(then.length, '1 waits for it', '{n} wait for it')));
   if (e.pending) meta.push(h('span.pending', tr('queued offline')));
 
   const step = e.kind === 'mail' && MAIL_STEP[mailStep(e)];
@@ -166,7 +175,7 @@ export function entryRow(e, opt = {}) {
     }, step ? icon(step.icon) : e.done_at ? icon('check') : null);
 
   return h('div.entry', {
-    class: [`k-${e.kind}`, e.done_at && 'done', e.done_at && e.awaiting_reply && 'waiting', open && 'open', e.pinned && 'pinned', opt.nested && 'nested',
+    class: [`k-${e.kind}`, e.done_at && 'done', e.done_at && e.awaiting_reply && 'waiting', open && 'open', e.pinned && 'pinned', opt.nested && 'nested', opt.chain && 'chained',
       e.pending ? 'rw' : roClass(canEntry(e))].filter(Boolean).join(' '),
   },
   h('div.row', check,
@@ -276,7 +285,7 @@ function entryEditor(e) {
           }))),
       D.members.length > 1 && h('div.f', h('span', tr('Assigned')), assignPop(e)),
       !e.parent_id && h('div.f', h('span', tr('Sharing')), shareBox('entry', e)),
-      h('button.chip', { class: e.pinned && 'on', onclick: () => patchEntry(e, { pinned: !e.pinned }) }, icon('star'), 'evidenza'),
+      h('button.chip', { class: e.pinned && 'on', onclick: () => patchEntry(e, { pinned: !e.pinned }) }, icon('star'), tr('pinned')),
       e.kind === 'mail' && e.done_at && h('button.chip', {
         class: e.awaiting_reply && 'on', title: tr('The mail shows in "Awaiting reply" until the reply arrives'),
         onclick: () => patchEntry(e, { awaiting: !e.awaiting_reply }),
@@ -288,6 +297,31 @@ function entryEditor(e) {
         placeholder: tr('+ subtask'), 'data-fk': `sub-${e.id}`, 'data-ac': 'todo', autocomplete: 'off',
         onkeydown: enterAdd(text => addEntry({ text, today: today(), parent_id: e.id })),
       }));
+  // Dependencies: what it waits for (it stays under it in the agenda until it is done) and what comes after it.
+  const blockers = (D.afterOf.get(e.id) || []).map(x => D.entryById.get(x.after_id)).filter(Boolean);
+  const after = !isNote && h('div.deps',
+      h('div.deps-row',
+        h('span.deps-l', icon('wait'), tr('Waits for')),
+        blockers.map(a => h('span.chip-wrap.dep', { class: a.done_at ? 'done' : null },
+          h('a', { href: `#/v/${a.id}`, title: a.done_at ? tr('done') : tr('still to do') }, a.done_at && icon('check'), plainRefs(a.title)),
+          h('button.icon-btn.sm', { title: tr('Stop waiting for it'), onclick: () => act(() => api('DELETE', `/entries/${e.id}/after/${a.id}`)) }, icon('x')))),
+        h('input.sub-in', {
+          placeholder: blockers.length ? tr('+ another') : tr('+ an entry it waits for'), size: 18, 'data-fk': `after-${e.id}`, 'data-ac': 'after', 'data-ac-self': e.id, autocomplete: 'off',
+          onkeydown: enterAdd(text => {
+            const id = +text.replace(/^\^/, '');
+            if (!id) return toast(tr('Pick an entry from the list'), { err: true });
+            act(() => api('POST', `/entries/${e.id}/after`, { after_id: id }));
+          }),
+        })),
+      h('div.deps-row',
+        h('span.deps-l', h('span', '→'), tr('Then')),
+        waitersOf(e).map(x => h('span.chip-wrap.dep', { class: x.done_at ? 'done' : null },
+          h('a', { href: `#/v/${x.id}` }, x.done_at && icon('check'), plainRefs(x.title)),
+          h('button.icon-btn.sm', { title: tr('It does not wait for this any more'), onclick: () => act(() => api('DELETE', `/entries/${x.id}/after/${e.id}`)) }, icon('x')))),
+        h('input.sub-in', {
+          placeholder: tr('+ what comes after (a new entry)'), size: 32, 'data-fk': `then-${e.id}`, 'data-ac': 'todo', autocomplete: 'off',
+          onkeydown: enterAdd(text => addEntry({ text, today: today(), after_id: e.id })),
+        })));
   const log = h('div.log',
       logs.map(l => h('div.log-l', { class: l.system ? 'sys' : null },
         h('span.log-t', fmtTime(l.created_at)),
@@ -327,6 +361,7 @@ function entryEditor(e) {
       attrs: { 'data-ac': e.kind, 'data-ac-only': '#', 'data-ac-entry': e.id }, onSave: notes => patchEntry(e, { notes }), md: true,
     }),
     subs,
+    after,
     log,
     backlinksBox('voce', e.id, { title: tr('Mentioned in'), compact: true }),
     foot);
@@ -461,8 +496,19 @@ export function viewAgenda() {
   if (ui.mine) list = list.filter(isMine);
   const kindCount = { all: list.length, todo: list.filter(e => e.kind === 'todo').length, mail: list.filter(e => e.kind === 'mail').length };
   if (ui.agendaKind !== 'all') list = list.filter(e => e.kind === ui.agendaKind);
+  // Waiting entries are not placed by date: they go under what they wait for (the first one still open that is in
+  // the list), in a chain; those whose chain is not in the list (filtered out, or waiting for an entry without a
+  // date that is a subtask…) go in "Waiting".
+  const inList = new Set(list.map(e => e.id));
+  const chainOf = new Map(); // host id → entries waiting for it
+  const waiting = list.filter(isWaiting);
+  for (const w of waiting) {
+    const host = openBlockers(w).find(a => inList.has(a.id));
+    if (host) chainOf.set(host.id, [...(chainOf.get(host.id) || []), w]);
+  }
   const g = { over: [], today: [], tomorrow: [], week: [], later: [], none: [] };
   for (const e of list) {
+    if (isWaiting(e)) continue;
     if (!e.due) { g.none.push(e); continue; }
     const d = dayDiff(e.due);
     (d < 0 ? g.over : d === 0 ? g.today : d === 1 ? g.tomorrow : d <= 7 ? g.week : g.later).push(e);
@@ -470,7 +516,15 @@ export function viewAgenda() {
   const done = D.entries.filter(e => e.kind !== 'note' && e.done_at && Date.now() - Date.parse(e.done_at) < 864e5
     && (!ui.mine || isMine(e)) && (ui.agendaKind === 'all' || e.kind === ui.agendaKind));
   const setKind = k => { ui.agendaKind = k; save('org.agendaKind', k); render(); };
-  const rows = arr => arr.map(e => entryRow(e, { showParent: true }));
+  const placed = new Set();
+  // An entry and, under it, what waits for it (and so on, a few levels).
+  const withChain = (e, depth = 0) => {
+    placed.add(e.id);
+    const next = depth < 6 ? (chainOf.get(e.id) || []).filter(x => !placed.has(x.id)).sort((a, b) => byDue(a, b) || a.id - b.id) : [];
+    return [entryRow(e, { showParent: true, chain: depth > 0, hideThen: next.length > 0 }),
+      next.length > 0 && h('div.chain', next.map(x => withChain(x, depth + 1)))];
+  };
+  const rows = arr => arr.map(e => withChain(e));
 
   return h('div.view',
     h('div.toolbar',
@@ -493,6 +547,10 @@ export function viewAgenda() {
     g.week.length > 0 && section('ag-week', tr('Next 7 days'), rows(g.week.sort(byDue))),
     g.later.length > 0 && section('ag-later', tr('Later'), rows(g.later.sort(byDue))),
     g.none.length > 0 && section('ag-none', tr('No due date'), rows(g.none.sort(byRecent))),
+    (() => {
+      const rest = waiting.filter(w => !placed.has(w.id)).sort(byRecent);
+      return rest.length > 0 && section('ag-wait', tr('Waiting'), rows(rest));
+    })(),
     done.length > 0 && section('ag-done', tr('Done in the last 24 hours'), rows(done.sort(byDoneDesc)), { collapsed: true }));
 }
 
@@ -504,8 +562,8 @@ function projectStats() {
       const s = stats.get(p.id) || { open: 0, over: 0, next: null, last: '' };
       if (e.kind !== 'note' && !e.done_at && !e.parent_id) {
         s.open++;
-        if (e.due && dayDiff(e.due) < 0) s.over++;
-        if (e.due && (!s.next || e.due < s.next)) s.next = e.due;
+        if (e.due && !isWaiting(e) && dayDiff(e.due) < 0) s.over++;
+        if (e.due && !isWaiting(e) && (!s.next || e.due < s.next)) s.next = e.due;
       }
       if (e.updated_at > s.last) s.last = e.updated_at;
       stats.set(p.id, s);
@@ -523,8 +581,8 @@ function deepStats(id) {
     if (!projectsOf(e).some(p => ids.has(p.id))) continue;
     if (e.kind !== 'note' && !e.done_at && !e.parent_id) {
       out.open++;
-      if (e.due && dayDiff(e.due) < 0) out.over++;
-      if (e.due && (!out.next || e.due < out.next)) out.next = e.due;
+      if (e.due && !isWaiting(e) && dayDiff(e.due) < 0) out.over++;
+      if (e.due && !isWaiting(e) && (!out.next || e.due < out.next)) out.next = e.due;
     }
     if (e.updated_at > out.last) out.last = e.updated_at;
   }
