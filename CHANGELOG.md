@@ -3,6 +3,9 @@
 What's new in each version, most recent first. Versions are the git tags (`v0.7`, `v0.6.2`…); the number in `package.json` is the same.
 Updating needs nothing by hand: the database migrates by itself at startup (the schema version is given when it changes).
 
+## 0.27.4 — 2026-11-09
+- **Quoting levels in colour**: in received mails each level of quoting has its own muted colour (blue, green, ochre, plum, then again), on the line and on the text, so it's easier to see who wrote what. The messages of an Outlook history share the first level.
+
 ## 0.27.3 — 2026-11-09
 - **Quoted text easier to read**: the history Outlook appends to a reply (From / Sent / To / Subject, also in Italian, German, French and Spanish) is split into its messages, one under the other, each with a compact header (sender, date, subject) and its own quotes. "On … wrote:" and "Il … ha scritto:" become "Name · date". The noise of mails converted from HTML (`[cid:…]` images, `<mailto:…>`, links written twice, runs of blank lines) is gone.
 
