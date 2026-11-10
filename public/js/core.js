@@ -378,8 +378,10 @@ export function sync() {
     try {
       do {
         again = false;
+        const asked = Date.now();
         const d = await api('GET', '/sync');
         if (S.data && d.rev === S.data.rev && d.me.id === S.data.me.id) continue;
+        layPendingEdits(d, asked);
         save('org.cache', d);
         const prev = S.data;
         S.data = indexData(d);
@@ -541,15 +543,45 @@ export async function act(fn, okMsg) {
 }
 
 // Optimistic update: the UI changes at once, the server confirms with the next sync.
-export function patchEntry(e, fields) {
+// Until the server has it, the change is laid over the data of every sync (see sync): with a slow network a sync
+// asked for before the change would otherwise bring back the old text. If it does not get through (network, server
+// restarting) it stays on screen with "Try again"; refused by the server (4xx), the server's version comes back.
+const pendingEdits = new Map(); // entry id → { local, confirmed: time the server took it, 0 = not yet }
+
+export async function patchEntry(e, fields) {
   const local = { ...fields };
   if ('done' in local) {
     local.done_at = local.done ? new Date().toISOString() : null;
     delete local.done;
   }
   Object.assign(e, local);
+  const p = { local: { ...pendingEdits.get(e.id)?.local, ...local }, confirmed: 0 };
+  pendingEdits.set(e.id, p);
   render();
-  return act(() => api('PATCH', `/entries/${e.id}`, { ...fields, today: today() }));
+  try {
+    await api('PATCH', `/entries/${e.id}`, { ...fields, today: today() });
+    p.confirmed = Date.now();
+  } catch (err) {
+    if (err.offline || err.status >= 500) {
+      toast(tr('{error}: change not saved', { error: err.message }), {
+        err: true, action: { label: tr('Try again'), fn: () => patchEntry(S.data?.entryById.get(e.id) || e, fields) },
+      });
+      return;
+    }
+    if (pendingEdits.get(e.id) === p) pendingEdits.delete(e.id);
+    toast(err.message, { err: true });
+  }
+  sync();
+}
+
+// The edits still on their way, over the entries just arrived; those the server already had when this sync was asked
+// for are dropped (its data has them).
+function layPendingEdits(d, asked) {
+  for (const [id, p] of pendingEdits) {
+    const e = d.entries.find(x => x.id === id);
+    if (!e || (p.confirmed && p.confirmed < asked)) pendingEdits.delete(id);
+    else Object.assign(e, p.local);
+  }
 }
 
 // ---------- formatting ----------
