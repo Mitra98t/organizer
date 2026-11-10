@@ -7,7 +7,7 @@ NODE        := node --disable-warning=ExperimentalWarning
 APP_PORT    ?= 8080
 
 .DEFAULT_GOAL := help
-.PHONY: help up down restart logs ps https wait reset demo seed backup restore \
+.PHONY: help up down restart logs ps https wait reset demo seed backup backup-auto backup-schedule backup-unschedule backup-log restore \
         users invite workspaces reset-password make-admin mail-helper mail-helper-uninstall feedback cli cli-uninstall tunnel tunnel-off tunnel-status shell info test dev dev-reset dev-demo confirm
 
 help: ## Shows this list
@@ -70,6 +70,18 @@ backup: ## Saves database and uploaded files in backups/ (stops the app for a fe
 	  && echo "Backup saved in $$f ($$(du -h $$f | cut -f1))"; \
 	$(COMPOSE) start app
 	@$(MAKE) --no-print-directory wait
+
+backup-auto: ## Backup without stopping the app; keeps the 2 most recent automatic ones (what the schedule runs)
+	@./scripts/backup.sh
+
+backup-schedule: ## Automatic backups at 01:00 and 13:00 (macOS launchd; elsewhere it prints the crontab line)
+	@./scripts/backup-schedule.sh on
+
+backup-unschedule: ## Turns the automatic backups off (the files already made stay)
+	@./scripts/backup-schedule.sh off
+
+backup-log: ## The last lines of the automatic backups' log
+	@./scripts/backup-schedule.sh log
 
 restore: confirm ## Restores a backup: make restore FILE=backups/organizer-....tgz
 	@test -f "$(FILE)" || { echo "Usage: make restore FILE=backups/organizer-YYYYMMDD-HHMMSS.tgz"; exit 1; }

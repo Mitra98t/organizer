@@ -285,6 +285,7 @@ Anyone, not only admins: Settings → *Your data* (*Backup and data* for admins)
 - Everything (database + uploaded files): `make backup` creates `backups/organizer-YYYYMMDD-HHMMSS.tgz`
   (it stops the app for a few seconds so the SQLite copy is consistent).
 - Restore: `make restore FILE=backups/organizer-....tgz`.
+- **Automatic backups**: `make backup-schedule` makes one at 01:00 and one at 13:00 (on macOS with launchd: a time missed while the Mac sleeps is made up when it wakes; elsewhere it prints the line for `crontab`). They go in `backups/organizer-auto-….tgz`, on the computer and not in Docker, so they survive a Docker reset; only the 2 most recent are kept, the manual ones are never touched. The app is not stopped: the databases are copied with SQLite's `VACUUM INTO`, consistent even while someone writes. A backup less than half the size of the largest automatic one (an empty database after a reset, say) removes nothing, so the good copies stay. `make backup-auto` makes one now, `make backup-log` shows how the last ones went, `make backup-unschedule` turns them off. They restore like the others: `make restore FILE=backups/organizer-auto-….tgz`.
 
 ## Maintenance
 
