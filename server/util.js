@@ -1,3 +1,4 @@
+import zlib from 'node:zlib';
 // An error for the client: status, an English message (translated when sent, see i18n.js) and its placeholders.
 export class HttpError extends Error {
   constructor(status, message, vars = null) {
@@ -12,13 +13,19 @@ export const now = () => new Date().toISOString();
 export const bool = v => (v ? 1 : 0);
 export const str = (v, max = 2000) => (v == null ? '' : String(v).trim().slice(0, max));
 
+// Compressed (gzip) when the client accepts it and it is worth it: behind the tunnel every answer crosses the home
+// line, and JSON shrinks 5-8 times (the full sync from hundreds of KB to tens).
+export const wantsGzip = req => /\bgzip\b/.test(req?.headers?.['accept-encoding'] || '');
+
 export function sendJson(res, status, data, headers = {}) {
-  const body = JSON.stringify(data);
-  res.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': 'private, no-cache',
-    ...headers,
-  });
+  let body = JSON.stringify(data);
+  const head = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'private, no-cache', ...headers };
+  if (body.length > 1024 && wantsGzip(res.req)) {
+    body = zlib.gzipSync(body);
+    head['Content-Encoding'] = 'gzip';
+    head.Vary = 'Accept-Encoding';
+  }
+  res.writeHead(status, head);
   res.end(body);
 }
 

@@ -1053,3 +1053,16 @@ test('thunderbird: a reply loaded afterwards (first load) closes the wait of the
   await tb('POST', '/mail/incoming', reply);
   assert.equal((await tb('GET', `/entries/${id}`).then(json)).awaiting_reply, 1);
 });
+
+test('answers compressed with gzip when the client accepts it (sync, scripts), plain otherwise', async () => {
+  const { token } = config();
+  const zipped = await call('GET', '/sync', { token, headers: { 'Accept-Encoding': 'gzip' } });
+  assert.equal(zipped.headers.get('content-encoding'), 'gzip');
+  assert.ok((await zipped.json()).entries); // fetch unzips it
+  const plain = await fetch(`${url}/api/sync`, { headers: { Authorization: `Bearer ${token}`, 'Accept-Encoding': 'identity' } });
+  assert.equal(plain.headers.get('content-encoding'), null);
+  assert.ok((await plain.json()).entries);
+  const js = await fetch(`${url}/js/core.js`, { headers: { 'Accept-Encoding': 'gzip' } });
+  assert.equal(js.headers.get('content-encoding'), 'gzip');
+  assert.match(await js.text(), /export function/);
+});

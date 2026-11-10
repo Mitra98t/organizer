@@ -1,5 +1,6 @@
 import http from 'node:http';
 import fs from 'node:fs';
+import zlib from 'node:zlib';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { routes, backfillLinks } from './api.js';
@@ -21,7 +22,7 @@ import './transfer.js';
 import { purgeExpired } from './trash.js';
 import { resolveAuth, resolveApiToken, workspaceById, acc } from './accounts.js';
 import { bump } from './events.js';
-import { HttpError, sendJson, parseCookies, readJson, isHttps } from './util.js';
+import { HttpError, sendJson, parseCookies, readJson, isHttps, wantsGzip } from './util.js';
 import { langOf, trIn, withLang } from './i18n.js';
 import { DATA_DIR, withWorkspace, closeAll } from './db.js';
 
@@ -128,6 +129,13 @@ function serveStatic(req, res, pathname) {
   if (req.headers['if-none-match'] === etag) {
     res.writeHead(304, headers);
     return res.end();
+  }
+  // Texts (scripts, styles, pages) compressed on the way: the first load goes through the home line too.
+  if (st.size > 1024 && /^(text\/|application\/(javascript|json|manifest\+json)|image\/svg)/.test(headers['Content-Type']) && wantsGzip(req)) {
+    res.writeHead(200, { ...headers, 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding' });
+    if (req.method === 'HEAD') return res.end();
+    fs.createReadStream(file).pipe(zlib.createGzip()).pipe(res);
+    return;
   }
   res.writeHead(200, { ...headers, 'Content-Length': st.size });
   if (req.method === 'HEAD') return res.end();
