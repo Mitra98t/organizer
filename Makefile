@@ -2,19 +2,21 @@
 # Destructive commands ask for confirmation; to skip it: CONFIRM=1 (e.g. `make demo CONFIRM=1`).
 
 COMPOSE     ?= docker compose
-DATA_VOLUME := organizer_organizer-data
-NODE        := node --disable-warning=ExperimentalWarning
+# Where the data is: a folder of this computer (ORGANIZER_DATA=/path in .env, outside Docker) or the Docker volume.
+DATA_PATH   := $(shell sed -n 's/^ORGANIZER_DATA=//p' .env 2>/dev/null | tail -n 1)
+DATA_VOLUME := $(or $(DATA_PATH),organizer_organizer-data)
+NODE       := node --disable-warning=ExperimentalWarning
 APP_PORT    ?= 8080
 
 .DEFAULT_GOAL := help
-.PHONY: help up down restart logs ps https wait reset demo seed backup backup-auto backup-schedule backup-unschedule backup-log restore \
+.PHONY: help up down restart logs ps https wait check-data reset protect unprotect demo seed backup backup-auto backup-schedule backup-unschedule backup-log restore \
         users invite workspaces reset-password make-admin mail-helper mail-helper-uninstall feedback cli cli-uninstall tunnel tunnel-off tunnel-status shell info test dev dev-reset dev-demo confirm
 
 help: ## Shows this list
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 # ---------- Docker ----------
-up: ## Builds and starts the app (http://localhost:8080)
+up: check-data ## Builds and starts the app (http://localhost:8080)
 	$(COMPOSE) up -d --build app
 	@$(MAKE) --no-print-directory wait
 	@echo "Organizer ready at http://localhost:$(APP_PORT)"
@@ -44,11 +46,23 @@ wait:
 	  printf '.'; sleep 1; \
 	done; echo ' timeout'; $(COMPOSE) logs --tail=30 app; exit 1
 
+# With the data in a folder: it must be there (disk connected), otherwise Docker would start with empty data.
+check-data:
+	@if [ -n "$(DATA_PATH)" ] && [ ! -d "$(DATA_PATH)" ]; then \
+	  echo "The data folder $(DATA_PATH) is not there (is the disk connected?): the app does not start."; exit 1; fi
+
 # ---------- data ----------
 reset: confirm ## DELETES all the data (database and files) and starts from scratch
 	$(COMPOSE) rm -sf app
-	-docker volume rm $(DATA_VOLUME)
+	@if [ -n "$(DATA_PATH)" ]; then docker run --rm -v "$(DATA_PATH)":/data alpine find /data -mindepth 1 -delete; \
+	else docker volume rm $(DATA_VOLUME) || true; fi
 	@$(MAKE) --no-print-directory up
+
+protect: ## Locks the data folder, the backups and .env (Finder asks first, rm refuses): see docs/GUIDE.md
+	@./scripts/protect.sh on
+
+unprotect: ## Removes the locks put by make protect
+	@./scripts/protect.sh off
 
 demo: reset ## Starts from scratch and loads the demo data (login demo / demo1234)
 	@$(MAKE) --no-print-directory seed
@@ -66,7 +80,8 @@ backup: ## Saves database and uploaded files in backups/ (stops the app for a fe
 	@mkdir -p backups
 	$(COMPOSE) stop app
 	@f=backups/organizer-$$(date +%Y%m%d-%H%M%S).tgz; \
-	docker run --rm -v $(DATA_VOLUME):/data:ro alpine tar czf - -C /data . > $$f \
+	docker run --rm -v "$(DATA_VOLUME)":/data:ro alpine tar czf - -C /data . > $$f \
+	  && { chflags uchg $$f 2>/dev/null || true; } \
 	  && echo "Backup saved in $$f ($$(du -h $$f | cut -f1))"; \
 	$(COMPOSE) start app
 	@$(MAKE) --no-print-directory wait
@@ -86,7 +101,7 @@ backup-log: ## The last lines of the automatic backups' log
 restore: confirm ## Restores a backup: make restore FILE=backups/organizer-....tgz
 	@test -f "$(FILE)" || { echo "Usage: make restore FILE=backups/organizer-YYYYMMDD-HHMMSS.tgz"; exit 1; }
 	$(COMPOSE) stop app
-	docker run --rm -i -v $(DATA_VOLUME):/data alpine \
+	docker run --rm -i -v "$(DATA_VOLUME)":/data alpine \
 	  sh -c 'find /data -mindepth 1 -delete && tar xzf - -C /data && chown -R 1000:1000 /data' < "$(FILE)"
 	$(COMPOSE) start app
 	@$(MAKE) --no-print-directory wait

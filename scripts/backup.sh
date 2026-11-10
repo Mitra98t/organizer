@@ -34,6 +34,7 @@ for old in backups/organizer-auto-*.tgz; do
   [ "$n" -gt "$largest" ] && largest=$n
 done
 mv "$tmp" "$f"
+chflags uchg "$f" 2>/dev/null || true # locked (macOS): rm and the Finder do not delete it by mistake
 size=$(wc -c < "$f" | tr -d ' ')
 echo "$(stamp) saved $f ($(du -h "$f" | cut -f1))"
 
@@ -42,6 +43,7 @@ if [ "$size" -lt $((largest / 2)) ]; then
   exit 0
 fi
 ls -1 backups/organizer-auto-*.tgz | sort -r | tail -n +$((KEEP + 1)) | while read -r old; do
+  chflags nouchg "$old" 2>/dev/null || true
   rm -f -- "$old"
   echo "$(stamp) removed $old"
 done

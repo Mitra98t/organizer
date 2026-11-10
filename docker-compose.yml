@@ -17,8 +17,10 @@ services:
       # Behind Cloudflare the real address of whoever connects arrives in this header (used by the login
       # attempts limit). It is used only if present; the app cannot be reached from outside except through the tunnel.
       CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-cf-connecting-ip}
+    # The data: the Docker volume, or a folder of this computer with ORGANIZER_DATA=/path in the .env file (outside
+    # Docker: it survives a Docker reset or cleanup; it must be among Docker Desktop's shared folders).
     volumes:
-      - organizer-data:/data
+      - ${ORGANIZER_DATA:-organizer-data}:/data
 
   # Access from the internet with your domain, without opening ports: Cloudflare Tunnel. cloudflared opens an
   # outgoing connection to Cloudflare, which passes the requests for the domain through it (HTTPS included).
