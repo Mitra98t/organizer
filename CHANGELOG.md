@@ -3,6 +3,11 @@
 What's new in each version, most recent first. Versions are the git tags (`v0.7`, `v0.6.2`…); the number in `package.json` is the same.
 Updating needs nothing by hand: the database migrates by itself at startup (the schema version is given when it changes).
 
+## 0.30.1 — 2026-11-10
+- A reply loaded afterwards (first load of the mails, history, "Bring the thread into Organizer") now closes the wait for a reply of the mails sent before it; before, the sent mail stayed "awaiting reply". A mail passed again closes nothing, so a wait reopened by hand stays open.
+- **Data outside Docker**: with `ORGANIZER_DATA=/path` in `.env` the data is in a folder of the computer instead of the Docker volume, so resetting or cleaning Docker Desktop does not touch it; `make up` refuses to start if the folder is missing (disk not connected).
+- **Locks against deleting by mistake** (macOS): `make protect` locks the folder that holds the data, the backups and `.env` (the Finder refuses to trash them, `rm` refuses to delete them); new backups are locked by themselves. `make unprotect` removes the locks.
+
 ## 0.30.0 — 2026-11-10
 - **Read here, read in Thunderbird**: a received mail opened in Organizer, or a conversation marked read or archived, becomes read in Thunderbird too, in every folder where it is; marked unread here, it is unread there too. If Thunderbird is closed it happens when it connects. Needs the **Thunderbird extension 1.9** (Settings → Mail and Thunderbird): updating it, Thunderbird asks for the permission to change the messages' state. Settings warns when the connected extension is older.
 
