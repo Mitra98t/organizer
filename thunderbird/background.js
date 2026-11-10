@@ -68,6 +68,7 @@ async function connect() {
       refreshWatch().then(catchUp).then(backfill);
       openPending();
       saveAttachments();
+      syncReads();
       const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
       let buf = '';
       for (;;) {
@@ -81,6 +82,7 @@ async function connect() {
           if (/^event: watch$/m.test(ev)) refreshWatch();
           if (/^event: fetch$/m.test(ev)) saveAttachments();
           if (/^event: open$/m.test(ev)) openMessages();
+          if (/^event: read$/m.test(ev)) syncReads();
         }
       }
       status('error', t('stClosed'));
@@ -261,6 +263,33 @@ async function openMessages() {
     } catch (e) {
       notify(t('ntNotOpened', e.message));
     }
+  }
+}
+
+// Mails read (or unread again) in Organizer: the same in Thunderbird, in every folder where the message is.
+let syncingReads = false;
+let readsAgain = false; // a signal arrived while marking: one more round at the end
+async function syncReads() {
+  if (syncingReads) {
+    readsAgain = true;
+    return;
+  }
+  syncingReads = true;
+  try {
+    do {
+      readsAgain = false;
+      const list = await call('GET', '/mail/reads');
+      for (const [mid, read] of list) {
+        const found = await browser.messages.query({ headerMessageId: mid }).catch(() => null);
+        for (const msg of found?.messages || []) {
+          if (msg.read !== read) await browser.messages.update(msg.id, { read }).catch(e => console.warn('Organizer: read not marked', e));
+        }
+      }
+    } while (readsAgain);
+  } catch (e) {
+    console.warn('Organizer: mails read in Organizer not received', e);
+  } finally {
+    syncingReads = false;
   }
 }
 

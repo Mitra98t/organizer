@@ -1007,3 +1007,28 @@ test('documents moved and copied, topic into another workspace, workspace per ac
   assert.deepEqual(await call('GET', '/mail/opens', { token }).then(json), []);
   ctrl.abort();
 });
+
+test('thunderbird: mails read in Organizer are marked read in Thunderbird (and unread again)', async () => {
+  const { token } = config();
+  const tb = (method, p, body, headers) => call(method, p, { token, body, headers });
+  const json = r => (r.status === 204 ? null : r.json());
+  const r = await tb('POST', '/mail/incoming', { message_id: '<read1@supplier.example>', from: 'Anna <anna@supplier.example>', subject: 'Board B', body: 'hi', inbox: true }).then(json);
+  const th = await tb('GET', `/mail/threads/${r.thread}`).then(json);
+  const msg = th.messages.find(m => m.message_id === 'read1@supplier.example');
+  await tb('GET', '/mail/reads'); // what the previous tests read
+
+  const ctrl = new AbortController();
+  const stream = await fetch(`${url}/api/mail/stream`, { headers: { Authorization: `Bearer ${token}`, 'X-Organizer-Ext': '1.9' }, signal: ctrl.signal });
+  const reader = stream.body.pipeThrough(new TextDecoderStream()).getReader();
+  assert.match((await reader.read()).value, /event: hello/);
+
+  await tb('PATCH', `/mail/messages/${msg.id}`, { read: true });
+  assert.match((await reader.read()).value, /event: read/);
+  assert.deepEqual(await tb('GET', '/mail/reads').then(json), [['read1@supplier.example', true]]);
+  assert.deepEqual(await tb('GET', '/mail/reads').then(json), []); // taken once
+
+  await tb('PATCH', `/mail/threads/${r.thread}`, { read: false });
+  assert.match((await reader.read()).value, /event: read/);
+  assert.deepEqual(await tb('GET', '/mail/reads').then(json), [['read1@supplier.example', false]]);
+  ctrl.abort();
+});

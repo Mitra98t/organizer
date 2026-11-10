@@ -102,6 +102,12 @@ route('PATCH', '/api/mail/threads/:id', async ({ params, user, body }) => {
   const b = await body();
   const t = getThread(params.id, user);
   const at = now();
+  // What changes in Organizer changes in Thunderbird too (read, or unread again).
+  if (b.read !== undefined || b.archived) {
+    const read = b.read !== false;
+    queueReads(user.id, db.prepare(`SELECT message_id FROM mail_messages WHERE thread_id = ? AND direction = 'in' AND read_at IS ${read ? 'NULL' : 'NOT NULL'}`)
+      .all(t.id).map(r => r.message_id), read);
+  }
   tx(() => {
     if (b.read !== undefined || b.archived) {
       db.prepare(`UPDATE mail_messages SET read_at = ${b.read === false ? 'NULL' : 'COALESCE(read_at, ?)'} WHERE thread_id = ? AND direction = 'in'`)
@@ -240,7 +246,10 @@ route('PATCH', '/api/mail/messages/:id', async ({ params, user, body }) => {
   const b = await body();
   const m = db.prepare('SELECT * FROM mail_messages WHERE id = ?').get(+params.id) || fail(404, 'Message not found');
   const t = getThread(m.thread_id, user);
-  if (b.read !== undefined) db.prepare('UPDATE mail_messages SET read_at = ? WHERE id = ?').run(b.read ? m.read_at || now() : null, m.id);
+  if (b.read !== undefined) {
+    db.prepare('UPDATE mail_messages SET read_at = ? WHERE id = ?').run(b.read ? m.read_at || now() : null, m.id);
+    if (m.direction === 'in' && !!b.read !== !!m.read_at) queueReads(user.id, [m.message_id], !!b.read);
+  }
   if (b.read && !db.prepare("SELECT 1 FROM mail_messages WHERE thread_id = ? AND direction = 'in' AND read_at IS NULL").get(t.id)) readNotifications(user, t, now());
 }, { area: 'mail' });
 
@@ -429,6 +438,28 @@ route('POST', '/api/mail/messages/:id/open', ({ params, user }) => {
   opens.set(user.id, [...(opens.get(user.id) || []), m.message_id].slice(-10));
   notifyMailExt(user.id, 'open');
 }, { area: 'mail', level: 'read', quiet: true });
+
+// Read in Organizer = read in Thunderbird (and unread again the same way): the Message-IDs wait here until the
+// extension takes them (at once if it is connected, otherwise when it connects; lost if the server restarts).
+const READ_EXT = '1.9';
+const reads = new Map(); // user id → Map(Message-ID → read)
+function queueReads(userId, mids, read) {
+  if (!mids.length) return;
+  const q = reads.get(userId) || new Map();
+  for (const mid of mids) {
+    q.delete(mid);
+    q.set(mid, read);
+  }
+  while (q.size > 500) q.delete(q.keys().next().value);
+  reads.set(userId, q);
+  if ((mailExtVersion(userId) || '0').localeCompare(READ_EXT, undefined, { numeric: true }) >= 0) notifyMailExt(userId, 'read');
+}
+
+route('GET', '/api/mail/reads', ({ user }) => {
+  const list = [...(reads.get(user.id) || [])];
+  reads.delete(user.id);
+  return list;
+}, { ws: false });
 
 route('GET', '/api/mail/opens', ({ user }) => {
   const list = opens.get(user.id) || [];

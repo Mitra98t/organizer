@@ -70,7 +70,8 @@ export function openMailExtStream(req, res, user) {
   });
 }
 
-// event: 'outbox' (a mail to open), 'watch' (the conversations to follow changed), 'fetch' (an attachment to send), 'open' (a mail to show).
+// event: 'outbox' (a mail to open), 'watch' (the conversations to follow changed), 'fetch' (an attachment to send), 'open' (a mail to show),
+// 'read' (mails read or unread in Organizer).
 export function notifyMailExt(userId, event) {
   for (const res of mailExt.get(userId) || []) if (!res.writableEnded) res.write(`event: ${event}\ndata: {}\n\n`);
 }
