@@ -1032,3 +1032,24 @@ test('thunderbird: mails read in Organizer are marked read in Thunderbird (and u
   assert.deepEqual(await tb('GET', '/mail/reads').then(json), [['read1@supplier.example', false]]);
   ctrl.abort();
 });
+
+test('thunderbird: a reply loaded afterwards (first load) closes the wait of the mails sent before it', async () => {
+  const { token } = config();
+  const tb = (method, p, body) => call(method, p, { token, body });
+  const json = r => (r.status === 204 ? null : r.json());
+  const { id } = await tb('POST', '/entries', { text: 'fuse order', kind: 'mail' }).then(json);
+  await tb('PATCH', `/entries/${id}`, { done: true });
+  let e = await tb('GET', `/entries/${id}`).then(json);
+  assert.equal(e.awaiting_reply, 1);
+  const base = { from: 'Luca <luca@supplier.example>', subject: 'Re: fuse order', thread: e.thread_id, backfill: true };
+  // Older than the mail sent: it is not its reply.
+  await tb('POST', '/mail/incoming', { ...base, message_id: '<old-fuse@supplier.example>', date: '2026-01-01T10:00:00.000Z' });
+  assert.equal((await tb('GET', `/entries/${id}`).then(json)).awaiting_reply, 1);
+  const reply = { ...base, message_id: '<fuse-reply@supplier.example>', date: new Date(Date.parse(e.done_at) + 60e3).toISOString() };
+  await tb('POST', '/mail/incoming', reply);
+  assert.equal((await tb('GET', `/entries/${id}`).then(json)).awaiting_reply, 0);
+  // Reopened by hand: the same reply passed again (reconnecting) does not close it.
+  await tb('PATCH', `/entries/${id}`, { awaiting: true });
+  await tb('POST', '/mail/incoming', reply);
+  assert.equal((await tb('GET', `/entries/${id}`).then(json)).awaiting_reply, 1);
+});

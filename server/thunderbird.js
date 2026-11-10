@@ -565,6 +565,16 @@ route('GET', '/api/mail/watch', ({ user }) => {
 // history. Old ones, brought in by hand and loaded ones arrive already read and without notifications; import
 // brings the conversation back among the active ones. It answers with the quoted Message-IDs Organizer does not
 // have: the extension looks for them in Thunderbird and sends them with history: true.
+// A received mail closes the conversation's waits for a reply. Given its date (a mail loaded afterwards: first load,
+// history, brought in by hand) only those of the mails sent before it: it is their reply, even late. A mail already
+// here and passed again closes nothing: a wait reopened by hand stays open.
+function closeWaits(threadId, date) {
+  const waits = db.prepare('SELECT id, done_at FROM entries WHERE thread_id = ? AND awaiting_reply = 1').all(threadId)
+    .filter(e => !date || (e.done_at && Date.parse(e.done_at) < Date.parse(date)));
+  for (const e of waits) db.prepare('UPDATE entries SET awaiting_reply = 0, updated_at = ? WHERE id = ?').run(now(), e.id);
+  return waits.length;
+}
+
 route('POST', '/api/mail/incoming', async ({ user, body }) => {
   const b = await body();
   const mid = cleanId(b.message_id) || fail(400, 'Missing Message-ID');
@@ -615,9 +625,7 @@ route('POST', '/api/mail/incoming', async ({ user, body }) => {
         direction === 'out' || quiet ? now() : null, now());
       // A new reply (or a conversation brought in by hand) goes back among the active ones and closes the waits.
       touchThread(hit.thread, date, { reactivate: imported || !quiet });
-      if (direction === 'in' && !quiet) {
-        db.prepare('UPDATE entries SET awaiting_reply = 0, updated_at = ? WHERE thread_id = ? AND awaiting_reply = 1').run(now(), hit.thread);
-      }
+      if (direction === 'in') closeWaits(hit.thread, quiet ? date : null);
       autoLink(hit.thread, user.id, `${b.subject || ''} ${b.body || ''}`);
     });
     const have = new Set(db.prepare('SELECT message_id FROM mail_messages WHERE thread_id = ?').all(hit.thread).map(r => r.message_id));
