@@ -3,6 +3,9 @@
 What's new in each version, most recent first. Versions are the git tags (`v0.7`, `v0.6.2`…); the number in `package.json` is the same.
 Updating needs nothing by hand: the database migrates by itself at startup (the schema version is given when it changes).
 
+## 0.29.2 — 2026-11-10
+- **Automatic backups**: `make backup-schedule` makes one at 01:00 and one at 13:00 in `backups/organizer-auto-….tgz`, on the computer (outside Docker: they survive a Docker reset), keeping the 2 most recent. The app is not stopped: the databases are copied with `VACUUM INTO`. A backup less than half the size of the largest automatic one removes nothing, so an emptied database never pushes out the good copies. Also `make backup-auto` (one now), `make backup-log`, `make backup-unschedule`.
+
 ## 0.29.1 — 2026-11-09
 - **Attachments sent** in a topic's side column, under the received ones: the files of the conversation's sent mails, both those attached in Organizer (with the item's code if they come from the inventory) and those of messages sent from Thunderbird (with the preview). A mail written here that comes back as a sent message is not counted twice.
 
