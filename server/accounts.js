@@ -180,6 +180,23 @@ const MIGRATIONS = [
   );
   CREATE INDEX access_log_at ON access_log(at);
   `,
+  // Usage (server/usage.js): per person and day, the sections opened (views) and the changes saved (writes) in each
+  // area, never the contents; the sessions keep the address and the browser of their last use.
+  `
+  CREATE TABLE usage_daily (
+    user_id INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    area TEXT NOT NULL,
+    views INTEGER NOT NULL DEFAULT 0,
+    writes INTEGER NOT NULL DEFAULT 0,
+    first_at TEXT NOT NULL,
+    last_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, day, area)
+  );
+  CREATE INDEX usage_daily_day ON usage_daily(day);
+  ALTER TABLE sessions ADD COLUMN ip TEXT NOT NULL DEFAULT '';
+  ALTER TABLE sessions ADD COLUMN agent TEXT NOT NULL DEFAULT '';
+  `,
 ];
 
 {
@@ -337,6 +354,11 @@ export function createSession(userId, wsId) {
   acc.prepare('INSERT INTO sessions (token_hash, user_id, workspace_id, created_at, last_seen) VALUES (?, ?, ?, ?, ?)')
     .run(sha(token), userId, wsId ?? null, now(), now());
   return token;
+}
+
+// The session in use: last use, address and browser (see usage.js, at most once a minute).
+export function touchSession(token, ip, agent) {
+  if (token) acc.prepare('UPDATE sessions SET last_seen = ?, ip = ?, agent = ? WHERE token_hash = ?').run(now(), ip, agent, sha(token));
 }
 
 export function destroySession(token) {

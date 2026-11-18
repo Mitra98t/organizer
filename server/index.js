@@ -12,6 +12,7 @@ import { serveAppIcon } from './appicons.js';
 import './backup.js';
 import './access-api.js';
 import { logAccessOnce } from './access.js';
+import { noteRequest } from './usage.js';
 import './workspaces.js';
 import './remote.js';
 import './webpage.js';
@@ -97,6 +98,7 @@ async function handleApi(req, res, url, lang) {
     body: () => (bodyPromise ??= readJson(req)),
   };
   const out = ws ? await withWorkspace(ws, () => r.handler(ctx)) : await r.handler(ctx);
+  noteRequest(req, { user, token, route: r, path: url.pathname, bearer: !!bearer }); // usage: only what went through
   if (req.method !== 'GET' && !r.quiet) bump(user?.id, r.ws ? ws?.id : null);
   if (res.headersSent) return;
   if (out === undefined) {

@@ -1415,6 +1415,66 @@ function deviceOf(agent) {
   return [app, os].filter(Boolean).join(' · ');
 }
 
+// Usage per person (Settings → Access and usage): numbers only, never contents.
+const AREA_LABEL = {
+  agenda: () => tr('Agenda'), diario: () => tr('Journal'), progetti: () => tr('Projects'), magazzino: () => tr('Inventory'),
+  documenti: () => tr('Documents'), mail: () => tr('Mail'), contatti: () => tr('Contacts'), chat: () => tr('Chat'), cestino: () => tr('Trash'),
+  impostazioni: () => tr('Settings'), novita: () => tr('What\'s new'), cerca: () => tr('Search'), voci: () => tr('Todos and journal'),
+  canali: () => tr('Chat'), api: () => tr('CLI and tokens'), n: () => tr('Notifications'), v: () => tr('Entries'),
+};
+const areaLabel = a => (AREA_LABEL[a] ? AREA_LABEL[a]() : a);
+
+function loadUsage() {
+  const days = ui.usageDays || 30;
+  ui.usage = { ...ui.usage, loading: true };
+  api('GET', `/admin/usage?days=${days}`)
+    .then(r => { ui.usage = { ...r, at: Date.now() }; render(); })
+    .catch(e => { ui.usage = { error: e.message, at: Date.now() }; render(); });
+}
+
+// One bar per day of the period (height = sections opened + changes saved), the empty days too.
+function usageBars(u, days) {
+  const by = new Map(u.perDay.map(d => [d.day, d.views + d.writes]));
+  const max = Math.max(1, ...by.values());
+  const list = Array.from({ length: days }, (_, i) => new Date(Date.now() - (days - 1 - i) * 864e5).toISOString().slice(0, 10));
+  return h('div.use-bars', { 'aria-hidden': 'true' }, list.map(d => h('span', {
+    style: `--v:${(by.get(d) || 0) / max}`, title: `${fmtDay(d)}: ${by.get(d) || 0}`, class: by.get(d) ? null : 'zero',
+  })));
+}
+
+function usageCard(D) {
+  if (!ui.usage || (!ui.usage.loading && Date.now() - (ui.usage.at || 0) > 60e3)) loadUsage();
+  const x = ui.usage || {};
+  const days = ui.usageDays || 30;
+  const nameOf = id => { const u = x.users?.find(y => y.id === id); return u ? u.name || u.username : `#${id}`; };
+  return card('set-usage', tr('Who uses what'), [
+    h('div.toolbar', [7, 30, 90].map(n => h('button.chip', { class: days === n ? 'on' : null, onclick: () => { ui.usageDays = n; loadUsage(); } }, trn(n, '1 day', '{n} days'))),
+      h('span.grow'), h('button.btn.sm.ghost', { onclick: loadUsage }, icon('restore'), tr('Refresh'))),
+    x.error && h('p.warn', x.error),
+    (x.users || []).map(u => h('div.use-person',
+      h('div.use-h',
+        h('b', u.name || u.username), h('span.muted', ` @${u.username}`),
+        u.workspaces.length > 0 && h('span.muted', ` · ${u.workspaces.map(w => (w.role === 'admin' ? `${w.name} (admin)` : w.name)).join(', ')}`),
+        h('span.grow'),
+        h('span.muted', u.lastUse ? tr('last used {when}', { when: fmtTime(u.lastUse) }) : tr('never used'))),
+      h('div.use-nums',
+        h('span', trn(u.activeDays, '1 active day', '{n} active days')),
+        h('span', trn(u.views, '1 section opened', '{n} sections opened')),
+        h('span', trn(u.writes, '1 change saved', '{n} changes saved')),
+        u.lastLogin && h('span.muted', tr('last login {when}', { when: fmtTime(u.lastLogin) }))),
+      usageBars(u, days),
+      u.areas.length > 0 && h('div.use-areas', u.areas.map(a => h('span.chip', { title: tr('{v} opened, {w} changes', { v: a.views, w: a.writes }) },
+        areaLabel(a.area), h('span.muted', ` ${a.views}${a.writes ? ` / ${a.writes}` : ''}`)))),
+      u.involved.length > 0 && h('div.use-line.muted', tr('Involved: '), u.involved.map((i, k) => [k ? ', ' : '', h('b', nameOf(i.user_id)), ` ${i.n}`])),
+      u.sessions.length > 0 && h('div.use-line.muted', tr('Devices: '), u.sessions.map((ss, k) => [k ? ' · ' : '',
+        h('span', { title: `${ss.agent || ''}\n${tr('signed in {when}', { when: fmtTime(ss.created_at) })}` }, deviceOf(ss.agent) || tr('device'),
+          ss.ip ? ` ${ss.ip}` : '', ` (${fmtTime(ss.last_seen)})`)])),
+      u.tokens.length > 0 && h('div.use-line.muted', tr('Tokens: '), u.tokens.map((t, k) => [k ? ' · ' : '',
+        `${t.name} …${t.hint}`, t.last_used_at ? ` (${fmtTime(t.last_used_at)})` : ` (${tr('never used')})`])))),
+    h('p.muted', tr('Sections opened in the app and changes saved, per area (opened / changes); "Involved" counts the mentions, assignments, shares and chat messages that reached each person. Only numbers: what is read or written is never recorded. Everyone is told in Settings → Privacy.')),
+  ]);
+}
+
 function accessPane() {
   // Loaded when the section opens, and again if it is more than a minute old.
   if (!ui.access || (!ui.access.loading && Date.now() - (ui.access.at || 0) > 60e3)) loadAccess();
@@ -1422,6 +1482,7 @@ function accessPane() {
   const failed = new Set(x.failed || []);
   const rows = x.rows || [];
   return [
+    usageCard(S.data),
     card('set-access-sum', tr('Last 24 hours'), [
       h('p', x.failed24h ? trn(x.failed24h, '1 failed attempt', '{n} failed attempts') : tr('No failed attempts.'),
         x.failed24h ? h('span.muted', ` · ${trn(x.ips24h, 'from 1 address', 'from {n} addresses')}`) : null),
@@ -1636,7 +1697,7 @@ function settingsCategories(D) {
     ['app', tr('App and help'), 'phone', `${tr('Installation, language, what\'s new, feedback')}${S.version ? ` · v${S.version}` : ''}`],
     ['backup', me.is_admin ? tr('Backup and data') : tr('Your data'), 'download', me.is_admin ? tr('Workspace backup, export and import') : tr('Export and import your data')],
     D.feedbackOpen != null && ['feedback', tr('Feedback received'), 'bug', D.feedbackOpen ? tr('{n} to look at', { n: D.feedbackOpen }) : tr('none to look at')],
-    D.accessFailed != null && ['accessi', tr('Access'), 'shield', D.accessFailed ? trn(D.accessFailed, '1 failed attempt in 24 hours', '{n} failed attempts in 24 hours') : tr('Logins and attempts')],
+    D.accessFailed != null && ['accessi', tr('Access and usage'), 'shield', D.accessFailed ? trn(D.accessFailed, '1 failed attempt in 24 hours', '{n} failed attempts in 24 hours') : tr('Logins, attempts, who uses what')],
   ].filter(Boolean);
 }
 
@@ -1677,6 +1738,10 @@ function settingsPane(sec, D) {
     ];
     case 'privacy': return [
       card('set-privacy', tr('Who sees what'), [h('p.pm-note', icon('lock'), tr(PRIVACY_NOTE))]),
+      card('set-tracked', tr('Access and usage'), [
+        h('p', tr('Whoever runs this Organizer (the admin of the first workspace) sees when each person signs in and from where (address, country, browser), the failed attempts, and how much each person uses the app: per day, which sections they open, how many changes they save per area, and how many mentions, assignments and messages reach the others.')),
+        h('p.muted', tr('Only numbers and times: what you read or write, your mails and your private things are never recorded. Kept for about a year.')),
+      ]),
       card('set-share', tr('Sharing'), [
         h('table.syntax', h('tbody', [
           ['+marco', tr('Marco sees it too')],

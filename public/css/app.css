@@ -1495,6 +1495,18 @@ dialog.fb { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 32p
 dialog.fb::backdrop { background: rgb(0 0 0 / 50%); }
 /* The app's windows instead of prompt/confirm/alert (core.js: askText, askConfirm, notice, showText). */
 /* Access log (Settings → Access): one line per event, the failed ones in red. */
+/* Usage per person: header, numbers, one bar per day, areas, devices. */
+.use-person { display: flex; flex-direction: column; gap: 6px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.use-person:last-of-type { border-bottom: 0; }
+.use-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 4px; }
+.use-nums { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
+.use-bars { display: flex; align-items: flex-end; gap: 2px; height: 28px; }
+.use-bars span { flex: 1; min-width: 2px; height: calc(4% + var(--v) * 96%); border-radius: 2px; background: color-mix(in srgb, var(--accent) 70%, transparent); }
+.use-bars span.zero { height: 2px; background: var(--line); }
+.use-areas { display: flex; flex-wrap: wrap; gap: 4px; }
+.use-areas .chip { cursor: default; }
+.use-line { font-size: 12px; overflow-wrap: anywhere; }
+.use-line b { color: var(--text); font-weight: 500; }
 .acc-list { display: flex; flex-direction: column; font-size: 13px; }
 .acc-row { display: grid; grid-template-columns: 8.5em minmax(0, 1fr); gap: 2px 12px; padding: 7px 0; border-bottom: 1px solid var(--line); }
 .acc-row:last-child { border-bottom: 0; }

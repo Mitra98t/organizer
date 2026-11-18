@@ -41,6 +41,8 @@ Each member of a workspace has a level per area: `none` (does not see it), `read
 - `/api/sync` returns `perms` (yours; `null` = everything) and sends only the data of the areas you can read; to admins also `memberPerms` (`{ userId: perms | null }`).
 - A request outside the permissions answers `403` with the reason ("You are not allowed to change the Mail area in this workspace"). Entries belong to the area of their kind (mails to `mail`, todos and notes to `voci`).
 - Without write access to projects and inventory, `@new` in an entry does not create the project (403) and `#NEW` does not create the item (it stays text).
+- `POST /api/usage` `{ page: "agenda" }`: the app says which section was opened (for the usage below; the CLI does not need it).
+- `GET /api/admin/usage?days=30` (whoever runs the instance only): per account `{ activeDays, views, writes, perDay, areas: [{ area, views, writes }], lastUse, lastLogin, sessions, tokens, workspaces, involved: [{ user_id, n }] }`.
 - `GET /api/admin/access?limit=200&failed=1` (whoever runs the instance only): the access log, newest first `{ rows: [{ at, event, user_id, username, name, ip, country, agent }], failed24h, ips24h, failed }` (`failed` = the events that count as failed attempts).
 - `PATCH /api/admin/users/:id` `{ perms: { mail: "read", chat: "none", canali: "write", … } }` (admins only; `perms: null` = full access, without managing channels): areas not given stay at write and the dependencies are completed by raising what is needed. `canali` (managing chat channels) is `none` if not given.
 

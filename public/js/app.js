@@ -462,6 +462,7 @@ function renderApp() {
   wsLabel.textContent = S.data?.workspace?.name || (S.noWorkspace ? tr('No workspace') : '…');
   if (!wsMenu.hidden) renderWsMenu();
   document.title = `${v.title} · Organizer`;
+  notePage(v.nav || r.name);
   if (r.name !== 'cerca' && document.activeElement !== searchInput && searchInput.value) { searchInput.value = ''; ui.q = ''; }
   renderPreview();
   updateStatus();
@@ -507,6 +508,21 @@ function renderApp() {
     }
   }
 }
+
+// ---------- usage ----------
+// The section opened (its group in the sidebar), for the usage that whoever runs the instance sees: once per change of
+// section, and again when the app comes back in front. Only the name of the section.
+function notePage(page) {
+  if (!S.data || !S.online || page === notePage.last || document.visibilityState !== 'visible' || !/^[a-z]{1,20}$/.test(page)) return;
+  notePage.last = page;
+  api('POST', '/usage', { page }).catch(() => {});
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  const page = notePage.last;
+  notePage.last = null;
+  if (page) notePage(page);
+});
 
 // ---------- access ----------
 function renderAuth() {

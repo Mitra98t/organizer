@@ -103,3 +103,31 @@ test('access log: logins, failures, blocks and tokens, for the owner only', asyn
   assert.equal(theirs.accessFailed, null);
   assert.ok((await json('GET', '/admin/access')).body.rows.some(r => r.event === 'register' && r.username === 'marco'));
 });
+
+test('usage per person: sections opened, changes per area, devices, who involved whom; owner only', async () => {
+  const owner = (await json('GET', '/me')).body.user;
+  assert.equal((await json('POST', '/usage', { page: 'agenda' })).status, 204);
+  await json('POST', '/usage', { page: 'agenda' });
+  await json('POST', '/usage', { page: 'mail' });
+  assert.equal((await json('POST', '/usage', { page: '../etc' })).status, 400);
+  // A change (entries are the "voci" area) that also mentions marco: it reaches him.
+  assert.equal((await json('POST', '/entries', { text: 'check the bench ++marco' })).status, 200);
+
+  const r = await json('GET', '/admin/usage?days=7');
+  assert.equal(r.status, 200);
+  const me = r.body.users.find(u => u.id === owner.id);
+  const area = a => me.areas.find(x => x.area === a) || { views: 0, writes: 0 };
+  assert.equal(area('agenda').views, 2);
+  assert.equal(area('mail').views, 1);
+  assert.ok(area('voci').writes >= 1);
+  assert.equal(me.activeDays, 1);
+  assert.ok(me.lastUse && me.lastLogin);
+  assert.ok(me.sessions.some(s => s.ip)); // the session in use, with its address
+  const marco = r.body.users.find(u => u.username === 'marco');
+  assert.ok(me.involved.some(i => i.user_id === marco.id && i.n >= 1));
+  assert.ok(me.workspaces.length >= 1);
+
+  const login2 = await login('marco', 'marco-password');
+  const marcoCookie = login2.headers.get('set-cookie').split(';')[0];
+  assert.equal((await as(marcoCookie, 'GET', '/admin/usage')).status, 403);
+});
