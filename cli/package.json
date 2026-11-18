@@ -1,6 +1,6 @@
 {
   "name": "organizer-cli",
-  "version": "0.31.0",
+  "version": "0.32.0",
   "description": "Organizer from the terminal: entries, projects, inventory, documents and mail",
   "type": "module",
   "bin": {

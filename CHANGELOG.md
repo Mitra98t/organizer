@@ -3,6 +3,10 @@
 What's new in each version, most recent first. Versions are the git tags (`v0.7`, `v0.6.2`…); the number in `package.json` is the same.
 Updating needs nothing by hand: the database migrates by itself at startup (the schema version is given when it changes).
 
+## 0.32.0 — 2026-11-18
+- **Right-click menu**: on an inventory code or row (also the codes inside entries, mails and documents), an entry, a project or its `@tag`, a document, a contact or a mail conversation, a right click opens a small menu: **copy the code** (or code and description, firmware version, position), the title or name, the link, or **open** it. Elsewhere, in fields, on selected text or with Shift held down the browser's usual menu stays. On Android: hold.
+- Copying works also where the browser refuses the clipboard (some embedded browsers, pages without https) instead of opening the "Copy:" window.
+
 ## 0.31.0 — 2026-11-18
 - **API requests**: every request made with a token (CLI, bots, Thunderbird) and every request without login (refused, to endpoints that do not exist, invalid tokens) is written with time, method and path, outcome, who, address, program and duration (never the query or the bodies; 90 days). Summary of the last 24 hours without login (addresses, paths asked most) and of the tokens; filters; `make requests`. The app's own requests are counted per person.
 - **Access log** (whoever runs the instance: Settings → **Access and usage**): every login (app and CLI), wrong password, unknown account, block after too many attempts, invite, password change or reset, token created, revoked or refused, with address, country and browser. At the top the failed attempts of the last 24 hours; **Failed only** filters them. When an account gets blocked a notification arrives. From the terminal `make access` (`FAILED=1`). Kept a year.
