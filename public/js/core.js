@@ -1220,7 +1220,17 @@ export async function copy(text) {
     await navigator.clipboard.writeText(text);
     toast(tr('Copied'));
   } catch {
-    showText(tr('Copy:'), text);
+    // Where the clipboard API is refused (pages without https, some embedded browsers) the old way still works;
+    // otherwise the text in a window, selected.
+    const ta = h('textarea', { readonly: true, style: 'position:fixed;top:0;left:0;opacity:0' });
+    ta.value = text;
+    document.body.append(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch { /* not supported */ }
+    ta.remove();
+    if (ok) toast(tr('Copied'));
+    else showText(tr('Copy:'), text);
   }
 }
 
@@ -1357,11 +1367,11 @@ export function closePop(focus = false) {
   const btn = popState.btn;
   popState = null;
   pop.hidden = true;
-  if (focus && btn.isConnected) btn.focus();
+  if (focus && btn?.isConnected) btn.focus();
 }
 
-function placePop(btn) {
-  const r = btn.getBoundingClientRect();
+// r: the rectangle the menu opens next to (the button, or the point of a right click).
+function placePop(r) {
   const mh = pop.offsetHeight;
   pop.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8))}px`;
   pop.style.top = `${r.bottom + 4 + mh < window.innerHeight - 8 ? r.bottom + 4 : Math.max(8, r.top - mh - 4)}px`;
@@ -1369,7 +1379,16 @@ function placePop(btn) {
 
 function drawPop() {
   pop.replaceChildren(...[popState.content(closePop)].flat(Infinity).filter(Boolean));
-  placePop(popState.btn);
+  placePop(popState.btn ? popState.btn.getBoundingClientRect() : popState.at);
+}
+
+// Menu opened at a point of the page (right click): same look and keys as the others, no button.
+export function popAt(x, y, content) {
+  if (!pop.isConnected) document.body.append(pop);
+  popState = { key: null, btn: null, at: { left: x, right: x, top: y, bottom: y }, content };
+  pop.hidden = false;
+  drawPop();
+  pop.querySelector('.pop-i')?.focus({ preventScroll: true });
 }
 
 // Button that opens a menu: content(close) draws the content (called again on every update).
@@ -1390,7 +1409,7 @@ export function popButton(key, label, content, attrs = {}) {
 }
 
 export const popCheck = () => {
-  if (!popState || popState.btn.isConnected) return;
+  if (!popState?.btn || popState.btn.isConnected) return;
   const btn = document.querySelector(`[data-pop="${CSS.escape(popState.key)}"]`);
   if (!btn) return closePop();
   popState.btn = btn;
@@ -1405,7 +1424,7 @@ export const popItem = (label, onclick, { on = false, check = false, hint = null
 export const popSep = title => h('div.pop-sep', title || '');
 
 document.addEventListener('pointerdown', ev => {
-  if (popState && !pop.contains(ev.target) && !popState.btn.contains(ev.target)) closePop();
+  if (popState && !pop.contains(ev.target) && !popState.btn?.contains(ev.target)) closePop();
 }, true);
 window.addEventListener('scroll', ev => { if (popState && !pop.contains(ev.target)) closePop(); }, true);
 window.addEventListener('resize', () => closePop());

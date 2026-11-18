@@ -12,6 +12,7 @@ import { viewChat } from './chat.js';
 import { viewMail, viewTopic } from './topics.js';
 import { viewAttachment, attachmentBack } from './mail.js';
 import { tabbar, updateTabbar } from './tabbar.js';
+import './ctxmenu.js';
 import { openPalette, initPalette } from './palette.js';
 import { tourTick } from './tour.js';
 import { bell, updateBell, notifyNew, viewNotification } from './notifiche.js';

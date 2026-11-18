@@ -98,6 +98,7 @@ On the same page you choose the **app icon**: a theme's (even one different from
 - **Sidebar** (computer): Projects, Agenda (with Journal), Inventory (with Documents), Mail (with Contacts), Chat; at the bottom Trash, Settings, What's new and Feedback.
 - **Bottom bar** (phone): Projects, Agenda, Inventory, Mail, Settings. A tap opens the page; **holding it** opens a menu around the finger with the group's other pages (Agenda and Journal; Inventory and Documents; Mail, Contacts and Chat; Settings, Trash, What's new, Feedback): slide onto the button you want and let go. The chosen page takes the button's place in the bar. Buttons with more pages behind them have a dash under the icon.
 - **Command bar**: ⌘K or ⌘P (Ctrl+K on Windows/Linux; on a phone tapping "Search"). Type a few words and open on the fly a page, an entry, a mail conversation, an item, a document, a project or a contact, with the same search as `[[` (see below). ↑↓ and Enter; at the bottom "Search everywhere" leads to the Search page.
+- **Right click** (computer): on an item's code or row, an entry, a project or its `@tag`, a document, a contact or a mail conversation it opens a menu to copy the code (also with the description, the firmware version, the position), the title or name, the link, or to open it. Elsewhere, in the fields, on selected text or with Shift held down the browser's usual menu.
 - **Collapsible cards** (phone): in Inventory, Documents and Mail "Collapse all" leaves only the cards' headers, with their count; tapping one opens just that one.
 
 ## Links and backlinks

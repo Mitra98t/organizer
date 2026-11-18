@@ -949,7 +949,7 @@ new ResizeObserver(() => { if (peekAnchor && !peekBox.hidden) placePeek(); }).ob
 let peekTimer = null;
 let peekAnchor = null;
 
-function hidePeek() {
+export function hidePeek() {
   clearTimeout(peekTimer);
   peekAnchor = null;
   peekBox.hidden = true;
