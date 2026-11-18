@@ -1461,6 +1461,8 @@ function usageCard(D) {
         h('span', trn(u.activeDays, '1 active day', '{n} active days')),
         h('span', trn(u.views, '1 section opened', '{n} sections opened')),
         h('span', trn(u.writes, '1 change saved', '{n} changes saved')),
+        u.requests && h('span.muted', { title: tr('Requests to the server: from the app, through a token, ended with an error') },
+          `${tr('requests: {app} app, {api} API', { app: u.requests.app, api: u.requests.api })}${u.requests.errors ? ` · ${trn(u.requests.errors, '1 error', '{n} errors')}` : ''}`),
         u.lastLogin && h('span.muted', tr('last login {when}', { when: fmtTime(u.lastLogin) }))),
       usageBars(u, days),
       u.areas.length > 0 && h('div.use-areas', u.areas.map(a => h('span.chip', { title: tr('{v} opened, {w} changes', { v: a.views, w: a.writes }) },
@@ -1475,6 +1477,45 @@ function usageCard(D) {
   ]);
 }
 
+// API requests (Settings → Access and usage): with a token and without login, one line each.
+function loadRequests() {
+  const f = ui.reqFilter || '';
+  ui.requests = { ...ui.requests, loading: true };
+  const q = [f === 'token' || f === 'anon' ? `who=${f}` : '', ui.reqErrors ? 'errors=1' : ''].filter(Boolean).join('&');
+  api('GET', `/admin/requests?limit=300${q ? `&${q}` : ''}`)
+    .then(r => { ui.requests = { ...r, at: Date.now() }; render(); })
+    .catch(e => { ui.requests = { error: e.message, at: Date.now() }; render(); });
+}
+
+function requestsCard() {
+  if (!ui.requests || (!ui.requests.loading && Date.now() - (ui.requests.at || 0) > 60e3)) loadRequests();
+  const x = ui.requests || {};
+  const f = ui.reqFilter || '';
+  const set = (k, v) => { ui[k] = v; loadRequests(); };
+  const who = e => (e.token_id ? `${e.token_name || tr('token')} · @${e.username || '?'}` : e.user_id ? `@${e.username}` : e.token_name || tr('without login'));
+  return card('set-requests', tr('API requests'), [
+    x.anon && h('p', trn(x.anon.n, '1 request without login in 24 hours', '{n} requests without login in 24 hours'),
+      x.anon.refused ? h('span.muted', ` · ${trn(x.anon.refused, '1 refused', '{n} refused')}`) : null,
+      x.dropped ? h('span.muted', ` · ${tr('{n} more not written (too many from one address)', { n: x.dropped })}`) : null),
+    x.anon?.ips.length > 0 && h('div.use-line.muted', tr('Addresses: '), x.anon.ips.map((i, k) => [k ? ' · ' : '', h('span.mono', i.ip), ` ${i.n}`, i.refused ? h('span.bad', ` (${i.refused} ${tr('refused')})`) : ''])),
+    x.anon?.routes.length > 0 && h('div.use-line.muted', tr('Most asked: '), x.anon.routes.map((r, k) => [k ? ' · ' : '', h('span.mono', `${r.method} ${r.route}`), ` ${r.n}`])),
+    x.tokens?.length > 0 && h('div.use-line.muted', tr('Tokens in 7 days: '), x.tokens.map((t, k) => [k ? ' · ' : '',
+      h('b', t.token_name || tr('token')), ` @${t.username || '?'} ${t.n}`, t.errors ? h('span.bad', ` (${trn(t.errors, '1 error', '{n} errors')})`) : '', ` · ${fmtTime(t.last)}`])),
+    h('div.toolbar',
+      [['', tr('All')], ['token', tr('With a token')], ['anon', tr('Without login')]].map(([k, label]) => h('button.chip', { class: f === k ? 'on' : null, onclick: () => set('reqFilter', k) }, label)),
+      h('button.chip', { class: ui.reqErrors ? 'on' : null, onclick: () => set('reqErrors', !ui.reqErrors) }, tr('Errors only')),
+      h('span.grow'),
+      h('button.btn.sm.ghost', { onclick: loadRequests }, icon('restore'), tr('Refresh'))),
+    x.error && h('p.warn', x.error),
+    !(x.rows || []).length && !x.loading && !x.error && h('p.muted', tr('Nothing yet.')),
+    (x.rows || []).length > 0 && h('div.acc-list', x.rows.map(e => h('div.acc-row', { class: e.status >= 400 ? 'bad' : null },
+      h('span.acc-t', fmtTime(e.at)),
+      h('span.acc-e', h('span.mono', `${e.method} ${e.path}`), ` → ${e.status}`),
+      h('span.acc-m', h('b', who(e)), ' · ', h('span.mono', e.ip), deviceOf(e.agent) && ` · ${deviceOf(e.agent)}`, ` · ${e.ms} ms`)))),
+    h('p.muted', tr('Every request made with a token (CLI, bots, Thunderbird) and every request without login (refused, to endpoints that do not exist, logins), kept 90 days; the app\'s own requests are only counted, per person. Never the contents.')),
+  ]);
+}
+
 function accessPane() {
   // Loaded when the section opens, and again if it is more than a minute old.
   if (!ui.access || (!ui.access.loading && Date.now() - (ui.access.at || 0) > 60e3)) loadAccess();
@@ -1483,6 +1524,7 @@ function accessPane() {
   const rows = x.rows || [];
   return [
     usageCard(S.data),
+    requestsCard(),
     card('set-access-sum', tr('Last 24 hours'), [
       h('p', x.failed24h ? trn(x.failed24h, '1 failed attempt', '{n} failed attempts') : tr('No failed attempts.'),
         x.failed24h ? h('span.muted', ` · ${trn(x.ips24h, 'from 1 address', 'from {n} addresses')}`) : null),

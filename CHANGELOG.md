@@ -3,6 +3,11 @@
 What's new in each version, most recent first. Versions are the git tags (`v0.7`, `v0.6.2`…); the number in `package.json` is the same.
 Updating needs nothing by hand: the database migrates by itself at startup (the schema version is given when it changes).
 
+## 0.31.0-rc.1 — 2026-11-18
+- **Access log** (whoever runs the instance: Settings → **Access and usage**): every login (app and CLI), wrong password, unknown account, block after too many attempts, invite, password change or reset, token created, revoked or refused, with address, country and browser. At the top the failed attempts of the last 24 hours; **Failed only** filters them. When an account gets blocked a notification arrives. From the terminal `make access` (`FAILED=1`). Kept a year.
+- **Who uses what**: for each account over 7, 30 or 90 days the active days, the sections opened and the changes saved per area, a bar per day, last use and last login, the devices (address, browser, last use), the tokens, and how many mentions, assignments and messages reached each other person. Only numbers and times, never contents; Settings → Privacy tells everyone.
+- Accounts database: access log, usage per day, address and browser of the sessions.
+
 ## 0.30.2 — 2026-11-18
 - **Faster on a slow connection**: the server compresses its answers (gzip): the full update goes from about 330 KB to a fraction of it, scripts and styles too. Behind the Cloudflare tunnel everything crosses the home line, so with a slow line the app is noticeably quicker.
 - **Edits survive a slow network**: a change to an entry (a mail's text, subject, recipients, the details of a todo) stays on screen until the server has it, even if an update asked for earlier arrives in the meantime; before, with a slow connection, the text could go back to the old one. If the change does not get through (network, server restarting) it stays visible with **Try again** instead of vanishing.

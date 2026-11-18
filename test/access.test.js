@@ -131,3 +131,34 @@ test('usage per person: sections opened, changes per area, devices, who involved
   const marcoCookie = login2.headers.get('set-cookie').split(';')[0];
   assert.equal((await as(marcoCookie, 'GET', '/admin/usage')).status, 403);
 });
+
+test('API requests: with a token and without login (refused, unknown endpoints) are written; the app is only counted', async () => {
+  const { token } = (await json('POST', '/tokens', { name: 'test bot' })).body;
+  const bot = p => fetch(`${url}/api${p}`, { headers: { Authorization: `Bearer ${token}`, 'User-Agent': 'test-bot/1.0' } });
+  assert.equal((await bot('/sync')).status, 200);
+  assert.equal((await bot('/entries/999999')).status, 404);
+  // Without login: refused, an endpoint that does not exist, and the routine ones that are not written.
+  assert.equal((await fetch(`${url}/api/sync`)).status, 401);
+  assert.equal((await fetch(`${url}/api/wp-admin`)).status, 404);
+  assert.equal((await fetch(`${url}/api/info`)).status, 200);
+  assert.equal((await fetch(`${url}/api/sync`, { headers: { Authorization: 'Bearer org_fake' } })).status, 401);
+  await json('GET', '/sync'); // the app's own request
+  await new Promise(r => setTimeout(r, 100)); // written when the answer is over
+
+  const r = (await json('GET', '/admin/requests')).body;
+  const line = (m, p) => r.rows.find(x => x.method === m && x.path === p && (p !== '/api/sync' || x.status === 401));
+  const viaBot = r.rows.filter(x => x.token_name === 'test bot');
+  assert.ok(viaBot.some(x => x.path === '/api/sync' && x.status === 200 && x.route === '/api/sync' && x.agent === 'test-bot/1.0'));
+  assert.ok(viaBot.some(x => x.route === '/api/entries/:id' && x.status === 404));
+  assert.ok(line('GET', '/api/wp-admin') && line('GET', '/api/wp-admin').route === '(unknown)');
+  assert.ok(r.rows.some(x => x.path === '/api/sync' && x.status === 401 && x.user_id === null && x.token_name === ''));
+  assert.ok(r.rows.some(x => x.token_name === '(invalid token)'));
+  assert.ok(!r.rows.some(x => x.path === '/api/info')); // routine, not written
+  assert.ok(r.anon.n >= 3 && r.anon.refused >= 3);
+  assert.ok(r.tokens.some(t => t.token_name === 'test bot' && t.n >= 2 && t.errors >= 1));
+  const anonOnly = (await json('GET', '/admin/requests?who=anon&errors=1')).body.rows;
+  assert.ok(anonOnly.length && anonOnly.every(x => x.user_id === null && x.status >= 400));
+
+  const me = (await json('GET', '/admin/usage?days=7')).body.users.find(u => u.username === 'fede');
+  assert.ok(me.requests.app >= 1 && me.requests.api >= 2 && me.requests.errors >= 1);
+});

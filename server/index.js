@@ -12,7 +12,7 @@ import { serveAppIcon } from './appicons.js';
 import './backup.js';
 import './access-api.js';
 import { logAccessOnce } from './access.js';
-import { noteRequest } from './usage.js';
+import { noteRequest, noteApiCall } from './usage.js';
 import './workspaces.js';
 import './remote.js';
 import './webpage.js';
@@ -58,9 +58,14 @@ const SECURITY_HEADERS = {
 async function handleApi(req, res, url, lang) {
   let match;
   const r = routes.find(r => r.method === req.method && (match = url.pathname.match(r.re)));
+  // Every API request is noted when its answer is over (status and time known): who (if anyone), with what, how it
+  // ended. Also the refused ones, those without login and to endpoints that do not exist (see usage.js).
+  const call = { route: r, path: url.pathname, started: performance.now(), user: null, bearer: false };
+  res.once('close', () => noteApiCall(req, res, { ...call, ms: performance.now() - call.started }));
   if (!r) throw new HttpError(404, 'No such endpoint');
   // The CLI and external programs authenticate with an API token (Authorization: Bearer ...), the app with the cookie.
   const bearer = req.headers.authorization?.match(/^Bearer\s+(\S+)$/i)?.[1];
+  call.bearer = !!bearer;
   // With the cookie, calls that change data must come from our app (a form on another site cannot set this
   // header). The browser never sends the token by itself, so the check is not needed there.
   if (!bearer && req.method !== 'GET' && req.headers['x-requested-with'] !== 'organizer') throw new HttpError(403, 'Invalid request');
@@ -81,6 +86,8 @@ async function handleApi(req, res, url, lang) {
   // The interface language, kept for what is written to this person later (notifications, see notify.js).
   if (user && req.headers['x-lang'] && auth.account.lang !== lang) acc.prepare('UPDATE users SET lang = ? WHERE id = ?').run(lang, user.id);
   if (r.auth !== 'none' && !user) throw new HttpError(401, 'Login required');
+  // Logged when the answer is over (status and time known, errors and long streams included).
+  call.user = user;
   if (r.auth === 'admin' && !user.is_admin) throw new HttpError(403, 'Workspace admins only');
   if (r.ws && !user?.workspace_id) throw new HttpError(409, 'You are not in any workspace');
   // The app area the route belongs to: read for GET, write for the rest (unless level says otherwise).

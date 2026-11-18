@@ -1515,6 +1515,8 @@ dialog.fb::backdrop { background: rgb(0 0 0 / 50%); }
 .acc-m { grid-column: 2; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .acc-m b { color: var(--text); font-weight: 500; }
 .acc-m .mono { font-size: 11.5px; }
+.acc-e .mono { font-size: 12px; overflow-wrap: anywhere; }
+.use-line .bad { color: var(--danger); }
 dialog.mdl { width: min(440px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); box-shadow: 0 16px 48px rgb(0 0 0 / 35%); }
 dialog.mdl::backdrop { background: rgb(0 0 0 / 45%); }
 dialog.mdl[open] { animation: pop 0.16s cubic-bezier(0.22, 1, 0.36, 1); }

@@ -42,7 +42,7 @@ export const routes = [];
 export function route(method, pattern, handler, { auth = 'user', ws = auth !== 'none', quiet = false, area = null, level = null } = {}) {
   const keys = [];
   const re = new RegExp('^' + pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)'; }) + '$');
-  routes.push({ method, re, keys, handler, auth, ws, quiet, area, level });
+  routes.push({ method, pattern, re, keys, handler, auth, ws, quiet, area, level });
 }
 
 // ---------- visibility ----------

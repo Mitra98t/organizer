@@ -61,6 +61,14 @@ if (cmd === 'reset-password' && arg) {
     FROM access_log l LEFT JOIN users u ON u.id = l.user_id
     ${failed ? `WHERE l.event IN (${FAILED.map(e => `'${e}'`).join(', ')})` : ''} ORDER BY l.id DESC LIMIT ?`).all(n);
   console.table(rows.reverse());
+} else if (cmd === 'requests') {
+  // requests [N] [anon|token|errors]: the last N API requests written (with a token or without login).
+  const n = Math.min(Number(arg) || 50, 5000);
+  const f = [arg, arg2].find(x => ['anon', 'token', 'errors'].includes(x));
+  const where = { anon: 'WHERE l.user_id IS NULL', token: 'WHERE l.token_id IS NOT NULL', errors: 'WHERE l.status >= 400' }[f] || '';
+  const rows = acc.prepare(`SELECT l.at, l.method, l.path, l.status, l.ms, COALESCE(u.username, '') AS user, l.token_name AS token, l.ip,
+    substr(l.agent, 1, 40) AS agent FROM api_log l LEFT JOIN users u ON u.id = l.user_id ${where} ORDER BY l.id DESC LIMIT ?`).all(n);
+  console.table(rows.reverse());
 } else {
-  console.log(say('Commands: reset-password <user> | make-admin <user> [workspace] | invite [workspace] | users | workspaces | access [N] [failed]'));
+  console.log(say('Commands: reset-password <user> | make-admin <user> [workspace] | invite [workspace] | users | workspaces | access [N] [failed] | requests [N] [anon|token|errors]'));
 }

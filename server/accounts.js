@@ -197,6 +197,33 @@ const MIGRATIONS = [
   ALTER TABLE sessions ADD COLUMN ip TEXT NOT NULL DEFAULT '';
   ALTER TABLE sessions ADD COLUMN agent TEXT NOT NULL DEFAULT '';
   `,
+  // API requests (server/usage.js): one line for each request made with a token (CLI, bots, Thunderbird), kept 90
+  // days; and per person and day how many requests the app and the tokens made, and how many ended in an error.
+  `
+  CREATE TABLE api_log (
+    id INTEGER PRIMARY KEY,
+    at TEXT NOT NULL,
+    user_id INTEGER REFERENCES users ON DELETE SET NULL,
+    token_id INTEGER,
+    token_name TEXT NOT NULL DEFAULT '',
+    method TEXT NOT NULL,
+    route TEXT NOT NULL,
+    path TEXT NOT NULL,
+    status INTEGER NOT NULL,
+    ms INTEGER NOT NULL,
+    ip TEXT NOT NULL DEFAULT '',
+    agent TEXT NOT NULL DEFAULT ''
+  );
+  CREATE INDEX api_log_at ON api_log(at);
+  CREATE TABLE request_daily (
+    user_id INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    app INTEGER NOT NULL DEFAULT 0,
+    api INTEGER NOT NULL DEFAULT 0,
+    errors INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, day)
+  );
+  `,
 ];
 
 {

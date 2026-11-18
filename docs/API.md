@@ -43,6 +43,7 @@ Each member of a workspace has a level per area: `none` (does not see it), `read
 - Without write access to projects and inventory, `@new` in an entry does not create the project (403) and `#NEW` does not create the item (it stays text).
 - `POST /api/usage` `{ page: "agenda" }`: the app says which section was opened (for the usage below; the CLI does not need it).
 - `GET /api/admin/usage?days=30` (whoever runs the instance only): per account `{ activeDays, views, writes, perDay, areas: [{ area, views, writes }], lastUse, lastLogin, sessions, tokens, workspaces, involved: [{ user_id, n }] }`.
+- `GET /api/admin/requests?limit=300&who=token|anon&errors=1` (whoever runs the instance only): the API requests written (with a token or without login), newest first, with `tokens` (7 days), `anon` (24 hours: `n`, `refused`, `ips`, `routes`) and `dropped`.
 - `GET /api/admin/access?limit=200&failed=1` (whoever runs the instance only): the access log, newest first `{ rows: [{ at, event, user_id, username, name, ip, country, agent }], failed24h, ips24h, failed }` (`failed` = the events that count as failed attempts).
 - `PATCH /api/admin/users/:id` `{ perms: { mail: "read", chat: "none", canali: "write", … } }` (admins only; `perms: null` = full access, without managing channels): areas not given stay at write and the dependencies are completed by raising what is needed. `canali` (managing chat channels) is `none` if not given.
 

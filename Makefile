@@ -9,7 +9,7 @@ NODE       := node --disable-warning=ExperimentalWarning
 APP_PORT    ?= 8080
 
 .DEFAULT_GOAL := help
-.PHONY: help up down restart logs ps https wait check-data reset protect unprotect access demo seed backup backup-auto backup-schedule backup-unschedule backup-log restore \
+.PHONY: help up down restart logs ps https wait check-data reset protect unprotect access requests demo seed backup backup-auto backup-schedule backup-unschedule backup-log restore \
         users invite workspaces reset-password make-admin mail-helper mail-helper-uninstall feedback cli cli-uninstall tunnel tunnel-off tunnel-status shell info test dev dev-reset dev-demo confirm
 
 help: ## Shows this list
@@ -118,6 +118,9 @@ workspaces: ## Lists the workspaces
 
 access: ## Access log: logins and attempts (make access [N=200] [FAILED=1] for only the failed ones)
 	$(COMPOSE) exec -T app $(NODE) server/cli.js access $(or $(N),50) $(if $(FAILED),failed,)
+
+requests: ## API requests with a token or without login (make requests [N=200] [ONLY=anon|token|errors])
+	$(COMPOSE) exec -T app $(NODE) server/cli.js requests $(or $(N),50) $(ONLY)
 
 reset-password: ## New password for a user: make reset-password NAME=marco
 	@test -n "$(NAME)" || { echo "Usage: make reset-password NAME=username"; exit 1; }
