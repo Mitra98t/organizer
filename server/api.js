@@ -9,13 +9,14 @@ import { hashPassword, verifyPassword, sessionCookie, validUsername, validPasswo
 import {
   acc, atx, userCount, getAccount, workspaceById, workspacesOf, membersOf, roleIn, adminCount,
   addMember, createWorkspace, removeMember, syncMirror, createSession, destroySession, defaultWorkspace, setSessionWorkspace,
-  revokeApiTokens, permsIn, setPerms, mailAddressesOf, mailIgnoreOf, openFeedback, tourInfo,
+  revokeApiTokens, permsIn, setPerms, mailAddressesOf, mailIgnoreOf, openFeedback, tourInfo, isOwner,
 } from './accounts.js';
 import { HttpError, fail, now, bool, str, sendJson, clientIp } from './util.js';
 import { rev, openStream, dropUser, mailExtOn, mailExtVersion } from './events.js';
 import { chatSync, readKey } from './chatdata.js';
 import { threadsSync, ensureEntryThread, autoLink, relinkItem, cleanSubject } from './maildata.js';
 import { notify, notificationsOf } from './notify.js';
+import { logAccess, logAccessOnce, alertBlocked, failedSince } from './access.js';
 import { allows, assertCan, entryArea, readableKinds } from './perms.js';
 import { currentWorkspace } from './db.js';
 import { zip } from './zip.js';
@@ -250,17 +251,37 @@ function setFields(table, id, f) {
 }
 
 // ---------- authentication ----------
+// At most 10 wrong attempts per address and account every 15 minutes; then the block (written in the access log).
 const attempts = new Map();
-export function throttle(key) {
+export function throttle(key, onBlocked) {
   const a = attempts.get(key);
-  if (a && a.n >= 10 && Date.now() - a.t < 15 * 60e3) fail(429, 'Too many attempts, try again in a few minutes');
+  if (a && a.n >= 10 && Date.now() - a.t < 15 * 60e3) {
+    onBlocked?.();
+    fail(429, 'Too many attempts, try again in a few minutes');
+  }
 }
 export const clearFailures = key => attempts.delete(key);
+// true when this failure is the one that blocks.
 export function noteFailure(key) {
   let a = attempts.get(key);
   if (!a || Date.now() - a.t > 15 * 60e3) a = { n: 0, t: Date.now() };
   a.n++;
   attempts.set(key, a);
+  return a.n === 10;
+}
+
+// A password login (app or CLI): limits, access log, alert when an account gets blocked. Returns the account.
+export async function checkLogin(req, b) {
+  const key = `${clientIp(req)}|${String(b.username).toLowerCase()}`;
+  throttle(key, () => logAccessOnce(req, 'login_blocked', key, { username: b.username }));
+  const u = acc.prepare('SELECT id, pass FROM users WHERE username = ?').get(str(b.username, 32));
+  if (!u || !(await verifyPassword(String(b.password || ''), u.pass))) {
+    logAccess(req, 'login_failed', { userId: u?.id, username: b.username });
+    if (noteFailure(key)) alertBlocked(req, b.username);
+    fail(401, 'Wrong credentials');
+  }
+  attempts.delete(key);
+  return u;
 }
 
 // New session; the active workspace is the last one used (or the one given, e.g. after an invite).
@@ -313,22 +334,17 @@ route('POST', '/api/setup', async ({ req, res, body }) => {
     return insertAccount(u);
   });
   const ws = createWorkspace(str(b.workspace, 80) || tr('Main'), id);
+  logAccess(req, 'setup', { userId: id, username: u.username });
   return login(req, res, id, ws.id);
 }, { auth: 'none' });
 
 route('POST', '/api/login', async ({ req, res, body }) => {
   const b = await body();
-  const key = `${clientIp(req)}|${String(b.username).toLowerCase()}`;
-  throttle(key);
-  const u = acc.prepare('SELECT id, pass FROM users WHERE username = ?').get(str(b.username, 32));
-  if (!u || !(await verifyPassword(String(b.password || ''), u.pass))) {
-    noteFailure(key);
-    fail(401, 'Wrong credentials');
-  }
-  attempts.delete(key);
+  const u = await checkLogin(req, b);
   // Logging in with an invite code: whoever already has an account also joins the new workspace.
   const inv = b.code && validInvite(b.code);
   if (b.code && !inv) fail(400, 'Invalid or expired invite');
+  logAccess(req, 'login', { userId: u.id, username: b.username });
   return login(req, res, u.id, inv ? acceptInvite(inv, u.id).id : undefined);
 }, { auth: 'none' });
 
@@ -340,14 +356,16 @@ route('GET', '/api/invites/:code', ({ params }) => {
 route('POST', '/api/register', async ({ req, res, body }) => {
   const b = await body();
   const key = `${clientIp(req)}|invite`;
-  throttle(key);
+  throttle(key, () => logAccessOnce(req, 'login_blocked', key, { username: b.username }));
   if (!validInvite(b.code)) {
+    logAccess(req, 'register_failed', { username: b.username });
     noteFailure(key);
     fail(400, 'Invalid or expired invite');
   }
   const u = await newAccount(b);
   const id = atx(() => insertAccount(u));
   const inv = validInvite(b.code) || fail(400, 'Invalid or expired invite');
+  logAccess(req, 'register', { userId: id, username: u.username });
   return login(req, res, id, acceptInvite(inv, id).id);
 }, { auth: 'none' });
 
@@ -359,13 +377,14 @@ route('POST', '/api/invites/:code/accept', ({ req, params, user, token }) => {
   return { workspace: { id: ws.id, name: ws.name } };
 }, { ws: false });
 
-route('POST', '/api/logout', ({ req, res, token }) => {
+route('POST', '/api/logout', ({ req, res, token, user }) => {
+  if (user) logAccess(req, 'logout', { userId: user.id, username: user.username });
   destroySession(token);
   res.setHeader('Set-Cookie', sessionCookie(req, ''));
   return { ok: true };
 }, { auth: 'none' });
 
-route('PATCH', '/api/me', async ({ user, body }) => {
+route('PATCH', '/api/me', async ({ req, user, body }) => {
   const b = await body();
   if (b.name !== undefined) {
     acc.prepare('UPDATE users SET name = ? WHERE id = ?').run(str(b.name, 60) || user.username, user.id);
@@ -377,9 +396,13 @@ route('PATCH', '/api/me', async ({ user, body }) => {
   }
   if (b.password !== undefined) {
     const row = acc.prepare('SELECT pass FROM users WHERE id = ?').get(user.id);
-    if (!(await verifyPassword(String(b.current || ''), row.pass))) fail(400, 'Wrong current password');
+    if (!(await verifyPassword(String(b.current || ''), row.pass))) {
+      logAccess(req, 'password_failed', { userId: user.id, username: user.username });
+      fail(400, 'Wrong current password');
+    }
     if (!validPassword(b.password)) fail(400, 'The password needs at least 8 characters');
     acc.prepare('UPDATE users SET pass = ? WHERE id = ?').run(await hashPassword(b.password), user.id);
+    logAccess(req, 'password_changed', { userId: user.id, username: user.username });
   }
   return { user: getAccount(user.id) };
 }, { ws: false });
@@ -450,6 +473,8 @@ route('GET', '/api/sync', ({ req, res, user }) => {
     myAddresses: mailAddressesOf(uid),
     mailIgnore: mailIgnoreOf(uid), // "to save" contacts not to suggest (addresses or parts)
     feedbackOpen: openFeedback(uid), // null = does not handle feedback
+    // Failed accesses in the last 24 hours, for whoever runs the instance (null = does not see the access log).
+    accessFailed: isOwner(uid) ? failedSince(new Date(Date.now() - 864e5).toISOString()) : null,
     ...tourInfo(uid), // onboarded (tour invitation already seen), tourWs (demo workspace)
     ...notificationsOf(uid), // notifications (of every workspace), unread ones, devices with push
     // Mail threads (personal): the threads, their messages without the full text, the links.

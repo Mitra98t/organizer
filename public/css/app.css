@@ -1494,6 +1494,15 @@ button.nav.fb-btn { width: 100%; border: 0; background: transparent; font: inher
 dialog.fb { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); box-shadow: 0 20px 60px rgb(0 0 0 / 45%); }
 dialog.fb::backdrop { background: rgb(0 0 0 / 50%); }
 /* The app's windows instead of prompt/confirm/alert (core.js: askText, askConfirm, notice, showText). */
+/* Access log (Settings → Access): one line per event, the failed ones in red. */
+.acc-list { display: flex; flex-direction: column; font-size: 13px; }
+.acc-row { display: grid; grid-template-columns: 8.5em minmax(0, 1fr); gap: 2px 12px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.acc-row:last-child { border-bottom: 0; }
+.acc-t { color: var(--muted); }
+.acc-row.bad .acc-e { color: var(--danger); font-weight: 500; }
+.acc-m { grid-column: 2; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.acc-m b { color: var(--text); font-weight: 500; }
+.acc-m .mono { font-size: 11.5px; }
 dialog.mdl { width: min(440px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); box-shadow: 0 16px 48px rgb(0 0 0 / 35%); }
 dialog.mdl::backdrop { background: rgb(0 0 0 / 45%); }
 dialog.mdl[open] { animation: pop 0.16s cubic-bezier(0.22, 1, 0.36, 1); }

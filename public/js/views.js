@@ -1388,6 +1388,65 @@ function loadInvites() {
   api('GET', '/admin/invites').then(r => { ui.invites = r; render(); }).catch(() => {});
 }
 
+// ---------- access log (whoever runs the instance) ----------
+const ACCESS_LABEL = {
+  login: () => tr('Signed in'), login_failed: e => (e.user_id ? tr('Wrong password') : tr('Unknown account')),
+  login_blocked: () => tr('Blocked: too many attempts'), logout: () => tr('Signed out'), setup: () => tr('First setup'),
+  register: () => tr('New account (invite)'), register_failed: () => tr('Invalid invite'), password_changed: () => tr('Password changed'),
+  password_failed: () => tr('Wrong current password'), password_reset: () => tr('Password reset from the terminal'),
+  token_created: () => tr('Token created'), token_revoked: () => tr('Token revoked'), token_refused: () => tr('Token refused'),
+};
+
+function loadAccess() {
+  ui.access = { ...ui.access, loading: true };
+  api('GET', `/admin/access?limit=300${ui.accessFailedOnly ? '&failed=1' : ''}`)
+    .then(r => { ui.access = { ...r, at: Date.now() }; render(); })
+    .catch(e => { ui.access = { error: e.message, at: Date.now() }; render(); });
+}
+
+// "Mozilla/5.0 (Macintosh…) … Safari/605" → "Safari · macOS"; the CLI and the extension by name.
+function deviceOf(agent) {
+  const a = String(agent || '');
+  if (!a) return '';
+  if (a === 'server terminal') return tr('server terminal');
+  const app = /Thunderbird\//.test(a) ? 'Thunderbird' : /Edg\//.test(a) ? 'Edge' : /Firefox\//.test(a) ? 'Firefox' : /Chrome\//.test(a) ? 'Chrome'
+    : /Safari\//.test(a) ? 'Safari' : /^node|undici/i.test(a) ? 'CLI' : /curl/i.test(a) ? 'curl' : a.split(/[\s/]/)[0];
+  const os = /iPhone|iPad/.test(a) ? 'iOS' : /Android/.test(a) ? 'Android' : /Mac OS X|Macintosh/.test(a) ? 'macOS' : /Windows/.test(a) ? 'Windows' : /Linux/.test(a) ? 'Linux' : '';
+  return [app, os].filter(Boolean).join(' · ');
+}
+
+function accessPane() {
+  // Loaded when the section opens, and again if it is more than a minute old.
+  if (!ui.access || (!ui.access.loading && Date.now() - (ui.access.at || 0) > 60e3)) loadAccess();
+  const x = ui.access || {};
+  const failed = new Set(x.failed || []);
+  const rows = x.rows || [];
+  return [
+    card('set-access-sum', tr('Last 24 hours'), [
+      h('p', x.failed24h ? trn(x.failed24h, '1 failed attempt', '{n} failed attempts') : tr('No failed attempts.'),
+        x.failed24h ? h('span.muted', ` · ${trn(x.ips24h, 'from 1 address', 'from {n} addresses')}`) : null),
+      h('p.muted', tr('After 10 wrong passwords for the same account from the same address, logins from there are blocked for 15 minutes and you get a notification.')),
+    ]),
+    card('set-access', tr('Logins and attempts'), [
+      h('div.toolbar',
+        h('button.chip', { class: ui.accessFailedOnly ? 'on' : null, onclick: () => { ui.accessFailedOnly = !ui.accessFailedOnly; loadAccess(); } }, tr('Failed only')),
+        h('span.grow'),
+        h('button.btn.sm.ghost', { onclick: loadAccess }, icon('restore'), tr('Refresh'))),
+      x.error && h('p.warn', x.error),
+      !rows.length && !x.loading && !x.error && h('p.muted', tr('Nothing yet.')),
+      // Two lines each: when and what; then who, from which address (and country) and with what.
+      rows.length > 0 && h('div.acc-list', rows.map(e => h('div.acc-row', { class: failed.has(e.event) ? 'bad' : null },
+        h('span.acc-t', fmtTime(e.at)),
+        h('span.acc-e', (ACCESS_LABEL[e.event] || (() => e.event))(e)),
+        h('span.acc-m',
+          h('b', e.username ? (e.name && e.name !== e.username ? `${e.name} (@${e.username})` : `@${e.username}`) : '—'),
+          e.ip && [' · ', h('span.mono', e.ip), e.country && ` ${e.country}`],
+          deviceOf(e.agent) && h('span', { title: e.agent || null }, ` · ${deviceOf(e.agent)}`))))),
+      h('p.muted', tr('Kept for a year. From the terminal: '), kbd('make access'), tr(' (FAILED=1 only the failed ones).')),
+    ]),
+  ];
+}
+
 function loadTokens() {
   ui.tokens = [];
   api('GET', '/tokens').then(r => { ui.tokens = r; render(); }).catch(() => {});
@@ -1577,6 +1636,7 @@ function settingsCategories(D) {
     ['app', tr('App and help'), 'phone', `${tr('Installation, language, what\'s new, feedback')}${S.version ? ` · v${S.version}` : ''}`],
     ['backup', me.is_admin ? tr('Backup and data') : tr('Your data'), 'download', me.is_admin ? tr('Workspace backup, export and import') : tr('Export and import your data')],
     D.feedbackOpen != null && ['feedback', tr('Feedback received'), 'bug', D.feedbackOpen ? tr('{n} to look at', { n: D.feedbackOpen }) : tr('none to look at')],
+    D.accessFailed != null && ['accessi', tr('Access'), 'shield', D.accessFailed ? trn(D.accessFailed, '1 failed attempt in 24 hours', '{n} failed attempts in 24 hours') : tr('Logins and attempts')],
   ].filter(Boolean);
 }
 
@@ -1706,6 +1766,7 @@ function settingsPane(sec, D) {
       h('p.muted', tr('Restoring replaces all the data with that of the chosen .db file (even from an earlier version of the app). It applies only to this workspace; first the server saves a safety copy of the current data. Accounts and members do not change.')),
       restoreInput,
     ])];
+    case 'accessi': return D.accessFailed != null ? accessPane() : null;
     case 'feedback': return D.feedbackOpen != null ? [card('set-fb', tr('To review'), [
       h('p', D.feedbackOpen ? trn(D.feedbackOpen, '1 feedback to look at.', '{n} feedback to look at.') : tr('No feedback to look at.')),
       h('div.toolbar', h('a.btn.primary', { href: '#/feedback' }, icon('bug'), tr('Open the feedback'))),

@@ -1,10 +1,10 @@
 // API tokens: the CLI (cli/ folder) and external programs (Telegram bots, scripts) use the same endpoints as the
 // app, authenticating with "Authorization: Bearer org_..." instead of the cookie. See docs/API.md.
 import fs from 'node:fs';
-import { route, throttle, noteFailure, clearFailures } from './api.js';
-import { acc, createApiToken, apiTokensOf, revokeApiTokens, getAccount } from './accounts.js';
-import { verifyPassword } from './auth.js';
-import { fail, str, clientIp } from './util.js';
+import { route, checkLogin } from './api.js';
+import { createApiToken, apiTokensOf, revokeApiTokens, getAccount } from './accounts.js';
+import { logAccess } from './access.js';
+import { fail, str } from './util.js';
 
 // Version of the public API: it changes only if an existing client would stop working.
 export const API_VERSION = 1;
@@ -28,26 +28,25 @@ route('GET', '/api/changelog', ({ res }) => {
 route('GET', '/api/tokens', ({ user }) => apiTokensOf(user.id).map(t => ({ ...t, current: t.id === user.api_token })), { ws: false });
 
 // From the app (session): a new token for a bot or a script. A token cannot create others.
-route('POST', '/api/tokens', async ({ user, body }) => {
+route('POST', '/api/tokens', async ({ req, user, body }) => {
   if (user.api_token) fail(403, 'Tokens are created from the app or with username and password');
   const b = await body();
-  return createApiToken(user.id, str(b.name, 60) || fail(400, 'Give the token a name (e.g. "telegram bot")'));
+  const t = createApiToken(user.id, str(b.name, 60) || fail(400, 'Give the token a name (e.g. "telegram bot")'));
+  logAccess(req, 'token_created', { userId: user.id, username: user.username });
+  return t;
 }, { ws: false });
 
 // From the CLI: username and password in exchange for a token. Same attempt limits as the login.
 route('POST', '/api/auth/token', async ({ req, body }) => {
   const b = await body();
-  const key = `${clientIp(req)}|${String(b.username).toLowerCase()}`;
-  throttle(key);
-  const u = acc.prepare('SELECT id, pass FROM users WHERE username = ?').get(str(b.username, 32));
-  if (!u || !(await verifyPassword(String(b.password || ''), u.pass))) {
-    noteFailure(key);
-    fail(401, 'Wrong credentials');
-  }
-  clearFailures(key);
-  return { ...createApiToken(u.id, str(b.name, 60) || 'cli'), user: getAccount(u.id) };
+  const u = await checkLogin(req, b);
+  const t = createApiToken(u.id, str(b.name, 60) || 'cli');
+  logAccess(req, 'login', { userId: u.id, username: b.username });
+  logAccess(req, 'token_created', { userId: u.id, username: b.username });
+  return { ...t, user: getAccount(u.id) };
 }, { auth: 'none' });
 
-route('DELETE', '/api/tokens/:id', ({ params, user }) => {
+route('DELETE', '/api/tokens/:id', ({ req, params, user }) => {
   if (!revokeApiTokens(user.id, +params.id)) fail(404, 'Token not found');
+  logAccess(req, 'token_revoked', { userId: user.id, username: user.username });
 }, { ws: false });

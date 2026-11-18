@@ -59,7 +59,7 @@ Useful commands: `make tunnel-status` (status and log), `make tunnel-off` (turns
 
 - **No open ports**: the tunnel is outgoing; the app listens only on `127.0.0.1`.
 - **HTTPS** always, with Cloudflare's certificate; the browser remembers to use only HTTPS (HSTS).
-- **Access to the app**: user and password (scrypt), sign-up only with an invite, a limit of 10 wrong attempts every 15 minutes per address and user (behind the tunnel the real address counts, from `CF-Connecting-IP`). Sessions with `HttpOnly`, `Secure`, `SameSite=Lax` cookies; revocable API tokens; permissions per area.
+- **Access to the app**: user and password (scrypt), sign-up only with an invite, a limit of 10 wrong attempts every 15 minutes per address and user (behind the tunnel the real address counts, from `CF-Connecting-IP`). Every login, failed attempt, block and token is written in the **access log** (Settings → Access for whoever runs the instance, `make access` from the terminal), with address, country (`CF-IPCountry`) and browser; a block sends a notification. Sessions with `HttpOnly`, `Secure`, `SameSite=Lax` cookies; revocable API tokens; permissions per area.
 - **Extra (optional)**: Cloudflare **Access** (Zero Trust → Access → Applications) puts a second sign-in in front of the app (code by email, Google…). Careful: it also blocks the CLI, bots and the Thunderbird extension, which use the API without going through that page; if you turn it on, create a rule that lets `/api/` through or use Cloudflare service tokens for those programs.
 - **Before exposing a new installation** (e.g. the Raspberry Pi): bring the data over first (section below). On an empty installation the first-start page creates the admin for whoever arrives first.
 

@@ -5,6 +5,7 @@
 import { hashPassword, randomCode } from './auth.js';
 import { acc, workspaceById, roleIn, syncMirror } from './accounts.js';
 import { now } from './util.js';
+import { logAccess, FAILED } from './access.js';
 import { trIn, sysLang } from './i18n.js';
 
 const lang = sysLang();
@@ -19,6 +20,7 @@ if (cmd === 'reset-password' && arg) {
   acc.prepare('UPDATE users SET pass = ? WHERE id = ?').run(await hashPassword(pw), u.id);
   acc.prepare('DELETE FROM sessions WHERE user_id = ?').run(u.id);
   acc.prepare('DELETE FROM api_tokens WHERE user_id = ?').run(u.id);
+  logAccess(null, 'password_reset', { userId: u.id, username: arg });
   console.log(say('New password for {name}: {password}', { name: arg, password: pw }));
 } else if (cmd === 'make-admin' && arg) {
   // make-admin <user> [workspace]: admin in the given workspace (default: the first one).
@@ -51,6 +53,14 @@ if (cmd === 'reset-password' && arg) {
 } else if (cmd === 'workspaces') {
   console.table(acc.prepare(`SELECT w.id, w.name, w.file, (SELECT COUNT(*) FROM memberships m WHERE m.workspace_id = w.id) AS members
     FROM workspaces w WHERE w.deleted_at IS NULL ORDER BY w.id`).all());
+} else if (cmd === 'access') {
+  // access [N] [failed]: the last N entries of the access log (default 50); "failed" only the failed attempts.
+  const n = Math.min(Number(arg) || 50, 5000);
+  const failed = [arg, arg2].includes('failed');
+  const rows = acc.prepare(`SELECT l.at, l.event, COALESCE(u.username, l.username) AS user, l.ip, l.country, substr(l.agent, 1, 60) AS agent
+    FROM access_log l LEFT JOIN users u ON u.id = l.user_id
+    ${failed ? `WHERE l.event IN (${FAILED.map(e => `'${e}'`).join(', ')})` : ''} ORDER BY l.id DESC LIMIT ?`).all(n);
+  console.table(rows.reverse());
 } else {
-  console.log(say('Commands: reset-password <user> | make-admin <user> [workspace] | invite [workspace] | users | workspaces'));
+  console.log(say('Commands: reset-password <user> | make-admin <user> [workspace] | invite [workspace] | users | workspaces | access [N] [failed]'));
 }

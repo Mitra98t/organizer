@@ -4,7 +4,7 @@
 import { h, icon, S, api, act, render, toast, fmtTime, switchWorkspace, popButton, popItem, popSep } from './core.js';
 import { tr } from './i18n.js';
 
-const KIND_ICON = { mention: 'user', mail: 'mail', chat: 'chat' };
+const KIND_ICON = { mention: 'user', mail: 'mail', chat: 'chat', security: 'shield' };
 
 // Opens where the notification leads: if it is from another workspace, switch there first (reloading the app).
 export async function openNotification(n) {

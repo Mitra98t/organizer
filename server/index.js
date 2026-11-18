@@ -10,6 +10,8 @@ import './mail.js';
 import { migrateInbox, relinkAllActive } from './thunderbird.js';
 import { serveAppIcon } from './appicons.js';
 import './backup.js';
+import './access-api.js';
+import { logAccessOnce } from './access.js';
 import './workspaces.js';
 import './remote.js';
 import './webpage.js';
@@ -22,7 +24,7 @@ import './transfer.js';
 import { purgeExpired } from './trash.js';
 import { resolveAuth, resolveApiToken, workspaceById, acc } from './accounts.js';
 import { bump } from './events.js';
-import { HttpError, sendJson, parseCookies, readJson, isHttps, wantsGzip } from './util.js';
+import { HttpError, sendJson, parseCookies, readJson, isHttps, wantsGzip, clientIp } from './util.js';
 import { langOf, trIn, withLang } from './i18n.js';
 import { DATA_DIR, withWorkspace, closeAll } from './db.js';
 
@@ -64,7 +66,10 @@ async function handleApi(req, res, url, lang) {
 
   const token = bearer ? null : parseCookies(req.headers.cookie).sid;
   const auth = bearer ? resolveApiToken(bearer, req.headers['x-workspace']) : resolveAuth(token);
-  if (bearer && !auth) throw new HttpError(401, 'Invalid or revoked token');
+  if (bearer && !auth) {
+    logAccessOnce(req, 'token_refused', clientIp(req));
+    throw new HttpError(401, 'Invalid or revoked token');
+  }
   // user.is_admin = admin of the active workspace; workspace_id = the session's active workspace (or null).
   const user = auth && {
     id: auth.account.id, username: auth.account.username, name: auth.account.name,

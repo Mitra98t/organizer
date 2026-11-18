@@ -166,6 +166,20 @@ const MIGRATIONS = [
   `
   ALTER TABLE users ADD COLUMN lang TEXT NOT NULL DEFAULT 'en';
   `,
+  // Access log (server/access.js): logins, failed attempts, tokens; kept for a year.
+  `
+  CREATE TABLE access_log (
+    id INTEGER PRIMARY KEY,
+    at TEXT NOT NULL,
+    event TEXT NOT NULL,
+    user_id INTEGER REFERENCES users ON DELETE SET NULL,
+    username TEXT NOT NULL DEFAULT '',
+    ip TEXT NOT NULL DEFAULT '',
+    country TEXT NOT NULL DEFAULT '',
+    agent TEXT NOT NULL DEFAULT ''
+  );
+  CREATE INDEX access_log_at ON access_log(at);
+  `,
 ];
 
 {

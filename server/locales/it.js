@@ -117,7 +117,10 @@ export default {
   '{name} is now admin of "{ws}"': '{name} ora è admin di "{ws}"',
   'No such workspace: create it from the app': 'Workspace inesistente: crealo dall\'app',
   'Invite code for "{ws}" (valid for 7 days): {code}': 'Codice invito per "{ws}" (valido 7 giorni): {code}',
-  'Commands: reset-password <user> | make-admin <user> [workspace] | invite [workspace] | users | workspaces': 'Comandi: reset-password <utente> | make-admin <utente> [workspace] | invite [workspace] | users | workspaces',
+  'Commands: reset-password <user> | make-admin <user> [workspace] | invite [workspace] | users | workspaces | access [N] [failed]': 'Comandi: reset-password <utente> | make-admin <utente> [workspace] | invite [workspace] | users | workspaces | access [N] [failed]',
+  'Only whoever runs the instance sees the access log': 'Solo chi gestisce l\'istanza vede il registro degli accessi',
+  'Too many wrong passwords for "{name}"': 'Troppe password sbagliate per "{name}"',
+  'Login blocked for 15 minutes for {ip}{country}. Settings → Access shows the attempts.': 'Accesso bloccato per 15 minuti per {ip}{country}. In Impostazioni → Accessi vedi i tentativi.',
   // notifications.js, workspaces.js
   'Invalid subscription': 'Iscrizione non valida',
   'No device with notifications turned on': 'Nessun dispositivo con le notifiche attive',

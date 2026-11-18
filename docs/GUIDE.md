@@ -216,6 +216,8 @@ A **workspace** is a separate set of data (projects, entries, inventory, contact
 
 On the server: `accounts.db` holds accounts, sessions, workspaces and invites; each workspace has its own file (`organizer.db` the first one, `ws-<id>.db` the others). Updating from a version without workspaces, the existing installation becomes the "Main" workspace (name changeable with `WORKSPACE_NAME`) with the same users and roles.
 
+
+**Access log** (whoever runs the instance, that is the admin of the first workspace): Settings → **Access** lists who signed in and who tried, newest first: signed in and out (app and CLI), wrong password, unknown account, blocked after too many attempts, invite used or invalid, password changed or wrong current password, password reset from the terminal, tokens created, revoked or refused. Each line has the account, the address with its country (behind Cloudflare) and browser and system. At the top, the failed attempts of the last 24 hours and from how many addresses; **Failed only** filters them. After 10 wrong passwords for the same account from the same address, logins from there stop for 15 minutes and a notification arrives. Kept for a year. From the terminal: `make access` (`N=200` lines, `FAILED=1` only the failed ones).
 ## Chat
 
 Each workspace has a chat with **channels** (Chat in the sidebar; on a phone the icon at the top). #general belongs to everyone; the other channels have their own people, each one who reads or also writes. Admins and whoever has the "Manage chat channels" permission create and manage them. In messages you link the app's things: `@project`, `#CODE`, `+person` and, typing `[[`, a document, an entry (todo, mail, note) or a contact, chosen from the suggestions. In the message they become links with the always up-to-date name. The number on the badge is the unread messages of all channels; from the terminal `org chat -f` follows it live (`-c channel` for one channel, `org chat channels` for the list).
@@ -333,7 +335,7 @@ public/vendor/dxf-parser  dxf-parser 1.1.2 (MIT) to read DXF files
 
 Data: `/data/organizer.db` (SQLite, WAL) and `/data/uploads/` in the `organizer-data` volume.
 
-Security: passwords with scrypt, sessions in HttpOnly cookies (tokens stored as hashes), CSRF protection through a required header, login attempts limit, downloaded files served with `nosniff` and a sandbox CSP.
+Security: passwords with scrypt, sessions in HttpOnly cookies (tokens stored as hashes), CSRF protection through a required header, login attempts limit, access log, downloaded files served with `nosniff` and a sandbox CSP.
 
 ## Translating
 
