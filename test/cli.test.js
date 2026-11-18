@@ -321,7 +321,7 @@ test('thunderbird: thread, sent, reply, history, links, archive', async () => {
   // Without references: same subject and a person in common → same conversation; different person → new one.
   const s3 = await tb('POST', '/mail/incoming', { ...old, message_id: '<s3@studio.example>', subject: 'R: Bracket drawings', date: '2025-03-03T10:00:00Z', import: true }).then(json);
   assert.equal(s3.thread, i1.thread);
-  const s4 = await tb('POST', '/mail/incoming', { ...old, from: 'altri@ditta.it', message_id: '<s4@ditta.it>', date: '2025-03-03T11:00:00Z', import: true }).then(json);
+  const s4 = await tb('POST', '/mail/incoming', { ...old, from: 'altri@ditta.example', message_id: '<s4@ditta.example>', date: '2025-03-03T11:00:00Z', import: true }).then(json);
   assert.notEqual(s4.thread, i1.thread);
   const tree = await tb('GET', `/mail/threads/${i1.thread}`).then(json);
   assert.deepEqual(tree.messages.map(m => [m.message_id, m.in_reply_to]), [['s1@studio.example', ''], ['s2@studio.example', 's1@studio.example'], ['s3@studio.example', '']]);

@@ -1,6 +1,6 @@
 {
   "name": "organizer",
-  "version": "0.31.0-rc.1",
+  "version": "0.31.0",
   "private": true,
   "description": "Todos, mail, journal and parts inventory, synced, for people who work with boards and firmware",
   "type": "module",
