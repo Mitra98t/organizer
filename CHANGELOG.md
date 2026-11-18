@@ -3,6 +3,10 @@
 What's new in each version, most recent first. Versions are the git tags (`v0.7`, `v0.6.2`…); the number in `package.json` is the same.
 Updating needs nothing by hand: the database migrates by itself at startup (the schema version is given when it changes).
 
+## 0.30.2 — 2026-11-18
+- **Faster on a slow connection**: the server compresses its answers (gzip): the full update goes from about 330 KB to a fraction of it, scripts and styles too. Behind the Cloudflare tunnel everything crosses the home line, so with a slow line the app is noticeably quicker.
+- **Edits survive a slow network**: a change to an entry (a mail's text, subject, recipients, the details of a todo) stays on screen until the server has it, even if an update asked for earlier arrives in the meantime; before, with a slow connection, the text could go back to the old one. If the change does not get through (network, server restarting) it stays visible with **Try again** instead of vanishing.
+
 ## 0.30.1 — 2026-11-10
 - A reply loaded afterwards (first load of the mails, history, "Bring the thread into Organizer") now closes the wait for a reply of the mails sent before it; before, the sent mail stayed "awaiting reply". A mail passed again closes nothing, so a wait reopened by hand stays open.
 - **Data outside Docker**: with `ORGANIZER_DATA=/path` in `.env` the data is in a folder of the computer instead of the Docker volume, so resetting or cleaning Docker Desktop does not touch it; `make up` refuses to start if the folder is missing (disk not connected).
